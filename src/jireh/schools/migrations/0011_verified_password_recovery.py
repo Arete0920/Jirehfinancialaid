@@ -16,6 +16,14 @@ BEGIN
             MESSAGE = 'Jireh recovery evidence cannot be deleted';
     END IF;
     IF TG_TABLE_NAME = 'schools_verifiedrecoverycontact' THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM schools_mailboxchallenge
+            WHERE id = NEW.proof_id AND user_id = NEW.user_id
+              AND email = NEW.email AND consumed_at IS NOT NULL
+        ) THEN
+            RAISE EXCEPTION USING ERRCODE = '23514',
+                MESSAGE = 'Jireh recovery contact proof mismatch';
+        END IF;
         IF TG_OP = 'UPDATE' THEN
             IF ROW(NEW.user_id, NEW.proof_id, NEW.email, NEW.verified_at)
               IS DISTINCT FROM
@@ -25,6 +33,13 @@ BEGIN
             END IF;
         END IF;
     ELSIF TG_TABLE_NAME = 'schools_passwordrecoverychallenge' THEN
+        IF NOT EXISTS (
+            SELECT 1 FROM schools_verifiedrecoverycontact
+            WHERE id = NEW.contact_id AND user_id = NEW.user_id
+        ) THEN
+            RAISE EXCEPTION USING ERRCODE = '23514',
+                MESSAGE = 'Jireh recovery challenge account mismatch';
+        END IF;
         IF TG_OP = 'UPDATE' THEN
             IF ROW(NEW.user_id, NEW.contact_id, NEW.token_digest, NEW.expires_at)
               IS DISTINCT FROM
