@@ -306,16 +306,17 @@ class GrantTransitionEvent(UUIDStampedModel):
 
 
 class SchoolGrantDecisionEvent(UUIDStampedModel):
-    """Actor-attributed record of an authorized school grant revocation.
+    """Actor-attributed record of authorized school access decisions.
 
     Unlike database-role-only GrantTransitionEvent, actor_user records the
     authenticated principal that passed the school-scoped director check.
-    This log covers ONLY calls through grant_admin. PostgreSQL prevents
+    This log covers only authorized calls through grant_admin. PostgreSQL prevents
     ordinary raw SQL updates/deletes; privileged DB roles remain a limit.
     """
 
     KIND_HOUSEHOLD = "HOUSEHOLD"
     KIND_STAFF = "STAFF"
+    ACTION_CREATED = "CREATED"
     ACTION_REVOKED = "REVOKED"
 
     school = models.ForeignKey(
@@ -338,7 +339,8 @@ class SchoolGrantDecisionEvent(UUIDStampedModel):
     grant_id = models.UUIDField()
     scope_id = models.UUIDField()
     action = models.CharField(
-        max_length=16, choices=[(ACTION_REVOKED, "Revoked")]
+        max_length=16,
+        choices=[(ACTION_CREATED, "Created"), (ACTION_REVOKED, "Revoked")],
     )
 
     objects = ScopedQuerySet.as_manager()
@@ -350,8 +352,8 @@ class SchoolGrantDecisionEvent(UUIDStampedModel):
                 name="jireh_operator_valid_kind",
             ),
             models.CheckConstraint(
-                condition=Q(action="REVOKED"),
-                name="jireh_operator_revoke_only",
+                condition=Q(action__in=["CREATED", "REVOKED"]),
+                name="jireh_operator_action_valid",
             ),
         ]
         indexes = [

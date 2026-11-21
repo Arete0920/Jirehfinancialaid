@@ -6,6 +6,7 @@ change ownership of, or discover grants outside that school. Initial director
 provisioning and verified household invitations are deliberately separate.
 """
 
+from django.contrib.auth import get_user_model
 from django.core.exceptions import ValidationError
 from django.db import transaction
 from django.http import Http404
@@ -16,6 +17,7 @@ from .models import (
     School,
     SchoolGrantDecisionEvent,
     SchoolStaffAccess,
+    VerifiedRecoveryContact,
 )
 
 
@@ -123,5 +125,49 @@ def revoke_staff_access(*, actor, school_id, subject_user_id):
         grant=grant,
         kind=SchoolGrantDecisionEvent.KIND_STAFF,
         scope_id=school.pk,
+    )
+    return grant
+
+
+
+@transaction.atomic
+def grant_additional_director(*, actor, school_id, subject_user_id):
+    """Grant a NEW director seat to an existing verified active user.
+
+    A currently authorized director is required, so this cannot bootstrap
+    the first director. Existing revoked grants are never reactivated.
+    School locking serializes multiple administrators' decisions.
+    """
+    school = _lock_authorized_school(actor=actor, school_id=school_id)
+    if not subject_user_id:
+        raise Http404("Eligible staff account not found.")
+    subject = get_user_model()._default_manager.select_for_update().filter(
+        pk=subject_user_id, is_active=True,
+    ).first()
+    if subject is None:
+        raise Http404("Eligible staff account not found.")
+    # An email on User is not proof of control of a recovery mailbox.
+    if not VerifiedRecoveryContact.objects.filter(
+        user=subject, superseded_at__isnull=True,
+    ).exists():
+        raise ValidationError("Staff account requires a verified recovery contact.")
+    if SchoolStaffAccess.objects.for_school(school.pk).filter(
+        user=subject,
+    ).exists():
+        raise ValidationError("A school staff grant already exists; no reactivation.")
+
+    grant = SchoolStaffAccess.objects.create(
+        school=school,
+        user=subject,
+        role=SchoolStaffAccess.ROLE_AID_DIRECTOR,
+    )
+    SchoolGrantDecisionEvent.objects.create(
+        school=school,
+        actor_user=actor,
+        target_user=subject,
+        grant_kind=SchoolGrantDecisionEvent.KIND_STAFF,
+        grant_id=grant.pk,
+        scope_id=school.pk,
+        action=SchoolGrantDecisionEvent.ACTION_CREATED,
     )
     return grant
