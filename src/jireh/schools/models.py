@@ -367,3 +367,130 @@ class SchoolGrantDecisionEvent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Grant decision records cannot be deleted.")
+
+
+
+class HouseholdInvitation(UUIDStampedModel):
+    """Pending household invitation. This is NOT an access grant.
+
+    Only a SHA-256 digest of a high-entropy one-time secret is persisted.
+    No public redemption or delivery routes are enabled by this model.
+    """
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="household_invitations"
+    )
+    household = models.ForeignKey(
+        Household, on_delete=models.PROTECT, related_name="invitations"
+    )
+    email = models.EmailField(max_length=254)
+    token_digest = models.CharField(max_length=64, unique=True)
+    invited_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="jireh_household_invitations_issued",
+    )
+    expires_at = models.DateTimeField()
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["household", "email"],
+                condition=Q(revoked_at__isnull=True),
+                name="jireh_open_household_invite",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["school", "household"], name="jireh_invite_school_house"
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.school_id and self.household_id:
+            if self.household.school_id != self.school_id:
+                raise ValidationError(
+                    "Invitation school must match the household's school."
+                )
+        if self.email and self.email != self.email.strip().casefold():
+            raise ValidationError({"email": "Use a normalized email address."})
+        if self._state.adding:
+            return
+        previous = type(self).objects.filter(pk=self.pk).values(
+            "id", "created_at", "school_id", "household_id", "email",
+            "token_digest", "invited_by_id", "expires_at", "revoked_at",
+        ).first()
+        if previous is None:
+            return
+        identity_fields = (
+            "id", "created_at", "school_id", "household_id", "email",
+            "token_digest", "invited_by_id", "expires_at",
+        )
+        if any(getattr(self, name) != previous[name] for name in identity_fields):
+            raise ValidationError("Invitation identity cannot be changed.")
+        if previous["revoked_at"] is not None and (
+            self.revoked_at != previous["revoked_at"]
+        ):
+            raise ValidationError("An invitation cannot be unrevoked or revised.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Invitations must be revoked, never deleted.")
+
+
+class SchoolInvitationEvent(UUIDStampedModel):
+    """Actor-attributed issue/revoke evidence for pending invitations."""
+
+    ACTION_ISSUED = "ISSUED"
+    ACTION_REVOKED = "REVOKED"
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="invitation_events"
+    )
+    invitation = models.ForeignKey(
+        HouseholdInvitation,
+        on_delete=models.PROTECT,
+        related_name="audit_events",
+    )
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="jireh_invitation_events_performed",
+    )
+    action = models.CharField(
+        max_length=16,
+        choices=[(ACTION_ISSUED, "Issued"), (ACTION_REVOKED, "Revoked")],
+    )
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["invitation", "action"],
+                name="jireh_invite_event_unique_action",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["school", "invitation"],
+                name="jireh_invite_event_lookup",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.school_id and self.invitation_id:
+            if self.invitation.school_id != self.school_id:
+                raise ValidationError("Invitation audit school mismatch.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Invitation audit events are append-only.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Invitation audit events cannot be deleted.")

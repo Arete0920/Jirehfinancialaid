@@ -311,3 +311,29 @@ or CI alone; do not expose real family information or collect payments.
 Configuration contract tests run in the lightweight Python job. The existing
 PostgreSQL CI job also verifies the actual Django runtime settings and the
 absence of family/staff routes without creating cloud resources.
+
+## School-controlled household invitation foundation (not yet available to users)
+
+The pending invitation data model and internal \`jireh.schools.invitations\` service
+allow an explicitly authorized school aid director to issue and cancel invitations
+**for active households at their own school only**. No Arete approval is needed
+for routine school management.
+
+- Each pending invitation contains a normalized recipient address, scope,
+  24-hour expiration, authorized issuing director, and SHA-256 digest of a
+  cryptographically generated 48-byte invitation secret. The raw secret is
+  returned **once** to the trusted internal caller and is not persisted.
+- Duplicate pending invitations to the same household/address are rejected.
+  Expired invitations are revoked and audit-recorded before reissue.
+- Issuance and cancellation write actor-attributed events transactionally;
+  PostgreSQL guards immutable invitation identity and append-only audit rows.
+- An invitation **never** confers household access by itself. Email addresses,
+  including an existing account email, are not authentication or identity
+  verification. No account activation, automated email delivery, public token
+  redemption, or financial-data endpoints are enabled.
+- These services are non-deployed foundations only. A future secure delivery
+  and verified, authenticated one-time redemption flow must be separately
+  implemented and reviewed before any family can use an invitation.
+
+Do not log invitation secrets, use this module with real recipients, or treat
+the presence of a pending invitation as authorization.
