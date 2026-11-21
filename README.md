@@ -391,3 +391,27 @@ not a public route, login system, queue, delivery guarantee, rate limiter,
 email-provider integration, or buyer-ready onboarding process. No real mail
 should be sent until SMTP configuration and authenticated UI flow receive
 separate approval and independent verification.
+
+
+## Authenticated redemption HTTP prototype (disposable test settings only)
+
+The \`jireh.schools.urls\` test URL configuration includes a **non-deployed**
+redemption endpoint:
+\`/api/v1/schools/<school UUID>/households/<household UUID>/invitation/redeem/\`.
+
+An authenticated, active Django test session can GET to obtain a CSRF cookie.
+POST requires that cookie's CSRF token and a bounded JSON object containing
+exactly \`invitation_token\` and \`mailbox_token\` (both one-time 64-character
+secrets). Invalid JSON, duplicate keys, unsupported methods, missing CSRF,
+wrong account, revoked or used codes, wrong school and cross-household scope
+fail without issuing a grant. Success returns only the household ID and
+\`redeemed\` status; secret values are never returned. Responses are
+non-cacheable, and the existing redemption service owns the atomic grant
+and audit transaction.
+
+**Explicitly not enabled:** \`jireh.runtime.urls\` still exposes liveness
+only. The test endpoint is neither a public API nor a complete account login,
+identity recovery, rate-limiting, CAPTCHA, abuse monitoring or production
+onboarding solution. Do not route it into the deployable runtime before
+authentication, operational rate limiting and provider-delivery controls
+receive independent acceptance.

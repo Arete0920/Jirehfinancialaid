@@ -3,12 +3,19 @@
 from django.urls import path
 
 from . import views
+from .redemption_views import test_household_redemption
 from jireh.financial_aid.views import staff_application_index
 from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import selected_students, select_student
 
 
 urlpatterns = [
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "invitation/redeem/",
+        test_household_redemption,
+        name="jireh_test_household_redemption",
+    ),
     path(
         "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/",
         views.household_detail,
