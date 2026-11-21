@@ -224,7 +224,11 @@ class HouseholdInvitationTests(TestCase):
 
     def test_unknown_invitation_cancellation_is_denied(self):
         with self.assertRaises(Http404):
-            self.revoke(None)
+            revoke_household_invitation(
+                actor=self.director,
+                school_id=self.school.pk,
+                invitation_id=None,
+            )
 
     def test_audit_failure_rolls_back_issue_and_cancel(self):
         with patch.object(
@@ -303,12 +307,8 @@ class HouseholdInvitationTests(TestCase):
         if connection.vendor != "postgresql":
             self.skipTest("PostgreSQL 16 trigger enforcement required.")
         invitation, _ = self.issue()
-        self.revoke(invitation)
-        with self.assertRaises(IntegrityError):
-            with transaction.atomic():
-                HouseholdInvitation.objects.filter(pk=invitation.pk).update(
-                    revoked_at=None,
-                )
+        # Create a forged REVOKED event while the only real event is ISSUED.
+        # This avoids an unrelated uniqueness violation masking the scope guard.
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
                 SchoolInvitationEvent.objects.bulk_create([
@@ -319,6 +319,12 @@ class HouseholdInvitationTests(TestCase):
                         action="REVOKED",
                     )
                 ])
+        self.revoke(invitation)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                HouseholdInvitation.objects.filter(pk=invitation.pk).update(
+                    revoked_at=None,
+                )
         self.assertEqual(
             SchoolInvitationEvent.objects.filter(invitation=invitation).count(), 2
         )
