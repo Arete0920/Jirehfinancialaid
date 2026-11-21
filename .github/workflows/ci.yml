@@ -135,6 +135,7 @@ jobs:
 
       - name: Test all Django contracts on PostgreSQL (no expected failures)
         run: |
+          set -euo pipefail
           python -m django test jireh.schools jireh.financial_aid --verbosity=2 2>&1 | tee /tmp/jireh-postgresql-tests.log
           if grep -q 'expected failures=' /tmp/jireh-postgresql-tests.log; then
             echo "PostgreSQL known integrity gaps remain unresolved"
@@ -165,4 +166,42 @@ jobs:
               count = cursor.fetchone()[0]
           assert count == 7, f"Trigger reapply incomplete: {count}"
           print("PostgreSQL trigger reapply: PASS")
+          PY
+
+      - name: Verify access grant guard migration can reverse and reapply
+        run: |
+          set -euo pipefail
+          python -m django migrate schools 0003 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger "
+                  "WHERE tgname IN ("
+                  "'jireh_household_access_identity_protect', "
+                  "'jireh_school_staff_access_identity_protect') "
+                  "AND NOT tgisinternal"
+              )
+              count = cursor.fetchone()[0]
+          assert count == 0, f"Grant trigger rollback incomplete: {count}"
+          print("PostgreSQL grant guard rollback: PASS")
+          PY
+          python -m django migrate schools 0004 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger "
+                  "WHERE tgname IN ("
+                  "'jireh_household_access_identity_protect', "
+                  "'jireh_school_staff_access_identity_protect') "
+                  "AND NOT tgisinternal"
+              )
+              count = cursor.fetchone()[0]
+          assert count == 2, f"Grant trigger reapply incomplete: {count}"
+          print("PostgreSQL grant guard reapply: PASS")
           PY

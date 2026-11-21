@@ -140,13 +140,58 @@ class HouseholdStudent(UUIDStampedModel):
 
 
 
-class HouseholdAccess(UUIDStampedModel):
+
+class GrantImmutableBinding(models.Model):
+    """Protect a persisted grant's identity through ordinary Django saves.
+
+    Privileged database writers and QuerySet.update() bypass clean(); on
+    PostgreSQL, migration schools.0004 also blocks direct UPDATE and DELETE.
+    The active flag may be changed for revocation; authorization to change
+    that flag and to create grants is a separate, not-yet-exposed workflow.
+    """
+
+    IMMUTABLE_FIELDS = ()
+
+    class Meta:
+        abstract = True
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        self._original_grant_id = self.pk
+
+    def clean(self):
+        super().clean()
+        if self._state.adding:
+            return
+        if self.pk != self._original_grant_id:
+            raise ValidationError({"id": "A persisted grant ID is immutable."})
+        previous = type(self).objects.filter(pk=self.pk).values(
+            *self.IMMUTABLE_FIELDS
+        ).first()
+        if previous is None:
+            return
+        changed = {
+            name: "A grant's existing identity cannot be reassigned."
+            for name in self.IMMUTABLE_FIELDS
+            if getattr(self, name) != previous[name]
+        }
+        if changed:
+            raise ValidationError(changed)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError(
+            "Access grants cannot be deleted; revoke them using is_active."
+        )
+
+class HouseholdAccess(GrantImmutableBinding, UUIDStampedModel):
     """Explicit user-to-household grant. Never inferred from a shared child.
 
     Grants are provisioned by trusted internal services; no self-enrollment or
     public write endpoint is provided here. A user's school access through this
     record is limited to this household, not all households at that school.
     """
+
+    IMMUTABLE_FIELDS = ("id", "created_at", "household_id", "user_id")
 
     household = models.ForeignKey(
         Household, on_delete=models.PROTECT, related_name="access_grants"
@@ -167,7 +212,7 @@ class HouseholdAccess(UUIDStampedModel):
         ]
 
 
-class SchoolStaffAccess(UUIDStampedModel):
+class SchoolStaffAccess(GrantImmutableBinding, UUIDStampedModel):
     """Explicit aid-director role at exactly one school.
 
     No self-service provisioning or implicit superuser/email-based privilege.
@@ -175,6 +220,7 @@ class SchoolStaffAccess(UUIDStampedModel):
     """
 
     ROLE_AID_DIRECTOR = "AID_DIRECTOR"
+    IMMUTABLE_FIELDS = ("id", "created_at", "school_id", "user_id", "role")
 
     school = models.ForeignKey(
         School, on_delete=models.PROTECT, related_name="staff_access_grants"
