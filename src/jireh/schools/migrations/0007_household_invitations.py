@@ -75,23 +75,23 @@ $body$ LANGUAGE plpgsql;
 """
 
 CREATE_TRIGGERS = (
-    "CREATE TRIGGER jireh_invitation_identity_guard "
+    "CREATE TRIGGER jireh_invitation_identity_protect "
     "BEFORE INSERT OR UPDATE ON schools_householdinvitation "
     "FOR EACH ROW EXECUTE FUNCTION jireh_guard_household_invitation()",
-    "CREATE TRIGGER jireh_invitation_delete_guard "
+    "CREATE TRIGGER jireh_invitation_delete_protect "
     "BEFORE DELETE ON schools_householdinvitation "
     "FOR EACH ROW EXECUTE FUNCTION jireh_reject_household_invitation_delete()",
-    "CREATE TRIGGER jireh_invitation_event_guard "
+    "CREATE TRIGGER jireh_invitation_event_protect "
     "BEFORE INSERT OR UPDATE OR DELETE ON schools_schoolinvitationevent "
     "FOR EACH ROW EXECUTE FUNCTION jireh_guard_invitation_event()",
 )
 
 DROP_TRIGGERS = (
-    "DROP TRIGGER IF EXISTS jireh_invitation_event_guard "
+    "DROP TRIGGER IF EXISTS jireh_invitation_event_protect "
     "ON schools_schoolinvitationevent",
-    "DROP TRIGGER IF EXISTS jireh_invitation_delete_guard "
+    "DROP TRIGGER IF EXISTS jireh_invitation_delete_protect "
     "ON schools_householdinvitation",
-    "DROP TRIGGER IF EXISTS jireh_invitation_identity_guard "
+    "DROP TRIGGER IF EXISTS jireh_invitation_identity_protect "
     "ON schools_householdinvitation",
     "DROP FUNCTION IF EXISTS jireh_guard_invitation_event()",
     "DROP FUNCTION IF EXISTS jireh_reject_household_invitation_delete()",
