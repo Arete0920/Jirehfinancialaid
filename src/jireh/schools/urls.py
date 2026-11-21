@@ -4,12 +4,15 @@ from django.urls import path
 
 from . import views
 from .redemption_views import test_household_redemption
+from .session_views import test_family_login, test_family_logout
 from jireh.financial_aid.views import staff_application_index
 from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import selected_students, select_student
 
 
 urlpatterns = [
+    path("test-auth/login/", test_family_login, name="jireh_test_family_login"),
+    path("test-auth/logout/", test_family_logout, name="jireh_test_family_logout"),
     path(
         "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
         "invitation/redeem/",
