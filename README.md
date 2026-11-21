@@ -105,3 +105,26 @@ resources return HTTP 404 without exposing school/customer information.
 disposable Django test settings. Staff invitation, credential security,
 staff permission review, pagination, financial data and authenticated
 production API configuration are future separately reviewed work.
+
+
+## Family annual draft HTTP (test-only)
+
+The authenticated household draft service now has one **GET/POST** route in
+disposable test settings:
+
+- `/api/v1/schools/<school UUID>/households/<household UUID>/academic-years/<year UUID>/aid-application/draft/`
+
+A verified, active household access grant is required on both methods.
+**GET is read-only**, returning an existing draft or 404.
+**POST creates or returns the same household/year draft**, using a Django
+authenticated session and CSRF protection; its response is HTTP 200 whether
+the existing draft is returned or a new one is created. POST without a valid
+CSRF token is rejected. The GET route issues the CSRF cookie for a subsequent
+authenticated request. No money is collected and no financial documents or
+answers are accepted.
+
+Tests explicitly cover separated-parent households, other schools,
+revocation, unauthorized superusers, inactive identities and CSRF denial.
+The endpoints are **not deployed** and must not be exposed through production
+settings until secure login, session policy, grant provisioning, rate limits,
+audit logging and PostgreSQL tenant/integrity tests are completed.
