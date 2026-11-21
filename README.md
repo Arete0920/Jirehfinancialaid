@@ -15,9 +15,10 @@ currently depend on CROWN's shared identity, authorization, tenant, aid, and
 financial services. Other CROWN modules remain in this repository until those
 dependencies can be separated and validated safely.
 
-The source migration omitted GitHub Actions workflows and agent instructions,
-as well as a checked-in private key. No credentials, local databases, or
-deployment workflow were copied.
+The source migration omitted GitHub Actions workflows, agent instructions,
+Crown-specific editor tasks, operational audit/runtime evidence, and a
+checked-in private key. No credentials, local databases, or deployment workflow
+were copied.
 
 ## Development
 
