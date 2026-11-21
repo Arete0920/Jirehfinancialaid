@@ -522,3 +522,28 @@ disabled by default. This service does not authorize a support agent,
 school employee, or an attacker with only a session to rotate the contact;
 production activation requires independent delivery, identity,
 monitoring and account-recovery policy acceptance.
+
+
+## Verified additional school aid directors (internal-only)
+
+An **existing active aid director** may grant the same director role to an
+additional existing active account in their own active school only after
+that account has enrolled a **currently verified recovery contact**. Merely
+populating the account's email field is insufficient. The issuing service
+locks the school and rechecks the actor's authority before granting; the
+subject account is locked and verified as active. It creates the grant and
+an actor-attributed \`CREATED\` school decision in one transaction. If the
+audit write fails, the privilege grant rolls back.
+
+A given school/user pair may be issued only once. A revoked director grant
+cannot be silently reactivated or recreated, and issuance never grants access
+to other schools or households. Existing director revocation retains its
+last-active-director protection and \`REVOKED\` audit events. Both actions
+remain internal services, **not HTTP administration endpoints**.
+
+**Initial director bootstrap is deliberately not implemented.** A school
+with no authorized director cannot use this service. Real-world first
+director assignment still requires a separately approved, strongly
+authenticated provisioning process and operational certification. No
+customer accounts, mail, cloud resources, payments, or CROWN dependencies
+are activated by this change.
