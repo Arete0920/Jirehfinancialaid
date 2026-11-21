@@ -1,0 +1,2 @@
+# Standalone domain models only. Matches the verified CROWN backend Django pin.
+Django==5.2.18
