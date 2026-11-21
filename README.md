@@ -35,3 +35,26 @@ python -m compileall -q src tests
 All changes should use a narrow, reversible pull request (normally fewer than 20 changed files), targeted tests, and evidence for the exact commit. The product owner is a solo developer: automated checks and Copilot feedback are useful, but must not be misrepresented as independent human approval.
 
 Commercial launch, hosting, live data, external integrations, and payment activation require separate approval and verified acceptance.
+
+
+## Household access (test-only)
+
+A signed-in Django user is **not automatically authorized** for a school, a
+household, or every household sharing a child. An explicit active
+`HouseholdAccess` grant is required for each household. Grants are keyed by
+authenticated user ID (never email, HTTP headers or a student's relationships),
+and access fails closed when the school, household, user or grant is inactive.
+
+Two **read-only** GET routes, configured in the disposable
+`jireh.schools.test_settings` URL routing, have negative HTTP tests:
+
+- `/api/v1/schools/<school UUID>/households/<household UUID>/`
+- `/api/v1/schools/<school UUID>/households/<household UUID>/students/`
+
+These endpoints cannot grant access or change records. They have no public
+registration or login endpoint and **are not deployed**. No production
+settings, host authorization, HTTPS, CSRF-protected write workflow, school staff
+authorization, or secure financial records are available yet. Never deploy
+`test_settings` or interpret passing SQLite tests as PostgreSQL-enforced
+tenant isolation. Authenticated staff access and authorized grant provisioning
+must be implemented and verified separately before commercial use.
