@@ -610,3 +610,117 @@ class LoginAttemptBudget(UUIDStampedModel):
             ),
         ]
 
+
+class VerifiedRecoveryContact(UUIDStampedModel):
+    """Account-bound mailbox proof; never trust User.email by itself."""
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_recovery_contact",
+    )
+    proof = models.OneToOneField(
+        MailboxChallenge, on_delete=models.PROTECT,
+        related_name="recovery_contact",
+    )
+    email = models.EmailField(max_length=254)
+    verified_at = models.DateTimeField()
+
+    def clean(self):
+        super().clean()
+        if self.email and self.email != self.email.strip().casefold():
+            raise ValidationError({"email": "Use a normalized mailbox."})
+        if self.proof_id:
+            if self.proof.user_id != self.user_id or self.proof.email != self.email:
+                raise ValidationError("Recovery proof must match account and mailbox.")
+            if self.proof.consumed_at is None:
+                raise ValidationError("Recovery proof must be consumed before enrollment.")
+        if not self._state.adding:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                "user_id", "proof_id", "email", "verified_at",
+            ).first()
+            if previous and any(
+                getattr(self, field) != previous[field]
+                for field in ("user_id", "proof_id", "email", "verified_at")
+            ):
+                raise ValidationError("Recovery contact is immutable.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Recovery contacts cannot be deleted.")
+
+
+class PasswordRecoveryChallenge(UUIDStampedModel):
+    """Opaque one-use recovery credential tied to a proven recovery contact."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_password_recovery_challenges",
+    )
+    contact = models.ForeignKey(
+        VerifiedRecoveryContact, on_delete=models.PROTECT,
+        related_name="recovery_challenges",
+    )
+    token_digest = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+    password_changed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=Q(consumed_at__isnull=True),
+                name="jireh_one_open_recovery_challenge",
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.contact_id and self.contact.user_id != self.user_id:
+            raise ValidationError("Recovery credential account mismatch.")
+        if self.password_changed_at is not None and self.consumed_at is None:
+            raise ValidationError("Completed recovery must consume its credential.")
+        if not self._state.adding:
+            previous = type(self).objects.filter(pk=self.pk).values(
+                "user_id", "contact_id", "token_digest", "expires_at",
+                "consumed_at", "password_changed_at",
+            ).first()
+            if previous:
+                immutable = ("user_id", "contact_id", "token_digest", "expires_at")
+                if any(getattr(self, field) != previous[field] for field in immutable):
+                    raise ValidationError("Recovery credential identity is immutable.")
+                if previous["consumed_at"] is not None and (
+                    self.consumed_at != previous["consumed_at"]
+                    or self.password_changed_at != previous["password_changed_at"]
+                ):
+                    raise ValidationError("Consumed recovery credential is immutable.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Recovery credentials cannot be deleted.")
+
+
+class RecoveryAttemptBudget(UUIDStampedModel):
+    """No raw account identifier or credential is saved in throttle rows."""
+
+    PURPOSE_ISSUE = "ISSUE"
+    PURPOSE_CONFIRM = "CONFIRM"
+
+    identifier_digest = models.CharField(max_length=64)
+    purpose = models.CharField(
+        max_length=8,
+        choices=[(PURPOSE_ISSUE, "Issue"), (PURPOSE_CONFIRM, "Confirm")],
+    )
+    window_started_at = models.DateTimeField()
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["identifier_digest", "purpose"],
+                name="jireh_recovery_budget_identity_purpose",
+            ),
+            models.CheckConstraint(
+                condition=Q(attempt_count__lte=10),
+                name="jireh_recovery_budget_max10",
+            ),
+        ]
+
