@@ -187,7 +187,7 @@ retention policy and operational monitoring are required before launch.
 
 A dedicated GitHub Actions job runs Jireh's Django migrations and complete
 test suite against a **temporary local PostgreSQL 16 container**, using
-fixed test-only credentials and a settings module that requires an explicit
+per-run, disposable CI-only credentials and a settings module that requires an explicit
 CI guard. It uses the PostgreSQL driver version already pinned in CROWN.
 The job requires the live database backend to be PostgreSQL 16; an SQLite
 fallback or other PostgreSQL major version fails the job.
@@ -227,3 +227,28 @@ be controlled. Existing data needs validation before any future production
 migration. Access-control grants, operations audit, read restrictions,
 customer authentication, hosting and sensitive-document management are
 separate security requirements.
+
+
+### Immutable access grants (not yet a provisioning workflow)
+
+Migration `schools.0004_pg_grant_guards` blocks PostgreSQL UPDATE or
+DELETE from silently changing the identity of an existing household or
+school-staff grant. The protected identity includes the grant UUID,
+creation timestamp, assigned user, household or school, and staff role.
+Ordinary Django instance updates/deletes receive matching model-level
+denials, including on SQLite. Grant revocation via `is_active=False`
+continues to work; access queries immediately exclude inactive grants.
+
+PostgreSQL CI exercises direct queryset reassignment, bulk deletion and
+revocation, verifies both database triggers, and reverses/reapplies the
+migration. The CI test command now uses shell `pipefail` so a failed
+Django test run cannot be masked by the `tee` output command.
+
+**This is not trusted identity provisioning or complete authorization.**
+Existing grants can still have their active flag modified by privileged
+database writers; grant creation and activation are not yet bound to a
+verified, audited operator. PostgreSQL table owners can disable triggers;
+SQLite has no database-level grant guard. A separately authorized grant
+issuance, revocation/reactivation, audit, authentication and privilege
+management design remains necessary before actual schools or families
+are onboarded.
