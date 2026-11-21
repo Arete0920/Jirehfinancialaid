@@ -62,7 +62,7 @@ def install(apps, schema_editor):
             "schools_recoverycontactrotationevent",
         ):
             cursor.execute(
-                "CREATE TRIGGER jireh_" + table + "_rotation_guard "
+                "CREATE TRIGGER jireh_" + table + "_rotation_protect "
                 "BEFORE INSERT OR UPDATE OR DELETE ON " + table
                 + " FOR EACH ROW EXECUTE FUNCTION jireh_recovery_rotation_guard()"
             )
@@ -77,7 +77,7 @@ def remove(apps, schema_editor):
             "schools_recoverycontactrotationevent",
         ):
             cursor.execute(
-                "DROP TRIGGER IF EXISTS jireh_" + table + "_rotation_guard ON " + table
+                "DROP TRIGGER IF EXISTS jireh_" + table + "_rotation_protect ON " + table
             )
         cursor.execute("DROP FUNCTION IF EXISTS jireh_recovery_rotation_guard()")
 
