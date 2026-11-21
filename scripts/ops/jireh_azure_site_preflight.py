@@ -21,9 +21,16 @@ def command(parts):
         return None
 
 
-def collect(resource_group='crown-rg', *, run=command):
-    if not SAFE.fullmatch(resource_group):
+def check_group(group):
+    if not isinstance(group, str) or not SAFE.fullmatch(group):
         raise ValueError('Invalid resource group')
+    if group.lower() == 'crown-rg':
+        raise ValueError('CROWN resource group is not a Jireh target')
+    return group
+
+
+def collect(resource_group, *, run=command):
+    check_group(resource_group)
     checks = {}
     account = run(['az', 'account', 'show', '--query', '{id:id,state:state}',
                    '-o', 'json', '--only-show-errors'])
@@ -54,8 +61,10 @@ def collect(resource_group='crown-rg', *, run=command):
         'resource_group': resource_group, 'checks': checks, 'static_sites': static,
         'budget_count': len(budgets) if isinstance(budgets, list) else None,
         'actual_cost_status': 'NOT_COLLECTED', 'launch_authorized': False,
+        'resource_isolation_status': 'NOT_VERIFIED',
         'release_status': 'BLOCKED_PENDING_OWNER_COST_AND_DNS_EVIDENCE',
         'required_next': [
+            'Owner verifies Jireh resource group ownership and isolation from CROWN',
             'Owner verifies current and previous month actual Azure spend at subscription scope',
             'Owner verifies budget alerts; alerts are not a hard spend cap',
             'Owner approves any recurring charges before provisioning',
@@ -96,9 +105,10 @@ def ownership(resource):
         raise AdmissionDenied("Unexpected Azure resource ownership ID")
     return match.group(1), match.group(2)
 
-def plan(resources, name="jireh-site", group="crown-rg"):
+def plan(resources, name="jireh-site", *, group):
     check_name(name)
     check_name(group)
+    check_group(group)
     if not isinstance(resources, list) or len(resources) > 500:
         raise AdmissionDenied("Subscription inventory cannot be trusted")
     found = []
@@ -120,12 +130,13 @@ def plan(resources, name="jireh-site", group="crown-rg"):
         raise AdmissionDenied("No free-tier quota remains")
     return "CREATE_FREE"
 
-def verify(resource, name="jireh-site", group="crown-rg"):
+def verify(resource, name="jireh-site", *, group):
     check_name(name)
     check_name(group)
+    check_group(group)
     owner_group, owner_name = ownership(resource)
     if tier(resource) != "free" or owner_group.lower() != group.lower() or owner_name.lower() != name.lower():
-        raise AdmissionDenied("Post-provision resource is not isolated and free")
+        raise AdmissionDenied("Resource name, group, or Free SKU does not match")
     return True
 
 
@@ -135,23 +146,32 @@ def main():
     modes.add_argument('--inventory')
     modes.add_argument('--verify-resource')
     parser.add_argument('--name', default='jireh-site')
-    parser.add_argument('--group', default='crown-rg')
-    parser.add_argument('--resource-group', default='crown-rg')
+    parser.add_argument('--group', help='Explicit Jireh target group for offline inventory checks')
+    parser.add_argument('--resource-group', help='Explicit Jireh target group for read-only collection')
     parser.add_argument('--output', default='jireh-azure-site-preflight.json')
     args = parser.parse_args()
     if args.inventory or args.verify_resource:
+        if not args.group:
+            parser.error('--group is required for offline inventory checks')
         try:
             with open(args.inventory or args.verify_resource, encoding='utf-8') as source:
                 resource = json.load(source)
             if args.inventory:
-                print(plan(resource, args.name, args.group))
+                print(plan(resource, args.name, group=args.group))
             else:
-                verify(resource, args.name, args.group)
+                verify(resource, args.name, group=args.group)
                 print('VERIFIED_FREE')
+            print('Current quota and resource isolation NOT VERIFIED; '
+                  'provisioning and deployment NOT AUTHORIZED.')
         except (AdmissionDenied, ValueError, OSError):
             raise SystemExit('BLOCKED: Azure Static Web Apps Free entitlement cannot be confirmed') from None
         return
-    data = collect(args.resource_group)
+    if not args.resource_group:
+        parser.error('--resource-group is required for read-only collection')
+    try:
+        data = collect(args.resource_group)
+    except ValueError:
+        raise SystemExit('BLOCKED: invalid or CROWN resource group') from None
     with open(args.output, 'w', encoding='utf-8') as target:
         json.dump(data, target, indent=2, sort_keys=True)
         target.write('\n')

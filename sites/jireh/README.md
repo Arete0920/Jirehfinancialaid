@@ -1,9 +1,12 @@
 # Jireh Financial Aid — Azure staging candidate (NOT DEPLOYED)
 
-First product website migration: **the entire Jireh financial-aid family**, not only Jireh SGO.
+This is a retained CROWN-era website candidate, not an approved standalone
+Jireh release. The current product scope is school financial aid only; SGO is
+excluded. Existing SGO content and assets are historical and must be reviewed
+before any future website release.
 
 - Primary: CROWN Jireh mission-aligned school financial aid.
-- Related pilot-development offering: Jireh SGO scholarship-grantor administration.
+- Historical pilot-development content: Jireh SGO scholarship-grantor administration.
 - Site source: `sites/jireh/index.html`
 - Shared family-wide appearance: `sites/shared/product-theme.css`
 - Built output: `sites/jireh/dist/` (generated; do not commit)
@@ -46,9 +49,16 @@ The SGO PDF, the official SGO logo, and the CROWN family billing concept image a
 The October 18 pilot overview is a newly authored typographic document built by `python sites/jireh/build-overview.py` using the locked backend ReportLab dependency. It replaces the imported October 8 brochure; the original and its intact authenticity records remain at commit `b5ccf6102a1bdc786e2348d58d2844d70256a810`. The builder does not modify the original or use its embedded media. Pilot status, grantor responsibilities, and operational acceptance requirements remain explicit. Review all rendered pages and update the exact binary admission in `scripts/ci/repository_identity_hygiene.py` after an intentional rebuild.
 
 
-## Jireh hosting: execution gates and accepted Azure facts (15 Oct 2026)
+## Historical CROWN hosting evidence (15 Oct 2026)
 
-**Source-controlled execution path:** Existing `.github/workflows/azure-classroom-preflight.yml` (manual dispatch on reviewed `main`; Azure federated identity, no new client secrets). Added `jireh_azure_site_preflight.py` performs only read-only Azure CLI commands and emits private, redacted evidence.
+**Historical reference only:** The CROWN workflow described below was not copied
+into this repository. Its prior approvals, CROWN resource group, and historical
+run are not authorization or evidence for a Jireh deployment. Azure resources,
+connections, and deployment remain deferred. Any future Jireh staging requires
+separate owner approval and a reviewed Jireh-specific workflow and resource
+isolation. `scripts/ops/jireh_azure_site_preflight.py` is a read-only collector,
+not a deployment workflow; it cannot establish resource isolation or authorize
+provisioning.
 
 ## Evidence collected from 12 Oct 2026 manual run
 
@@ -58,9 +68,9 @@ The October 18 pilot overview is a newly authored typographic document built by 
 - The hosted production API health check answered HTTP 200 with database reported OK, but was not exact-head release parity for the Jireh website.
 - Production CROWN runtime certification remained `NOT VERIFIED`; none of the historical preflight evidence authorizes payments, student financial data or a public Jireh portal.
 
-## Precise next gated operations
+## Historical gated operations — superseded for Jireh
 
-1. On current main run **Azure Classroom Release Preflight** via GitHub Actions > Run workflow. Verify the new `jireh-azure-site-preflight-<SHA>` artifact together with existing costs/runtime artifacts. Treat unavailable fields as blocked.
+1. Establish a separately reviewed Jireh-specific preflight and workflow when the owner authorizes that work. The historical CROWN workflow is not present here. Treat unavailable evidence as blocked.
 2. In Azure Portal Cost Management (authenticated owner), confirm actual current and last month costs, subscription budgets, alert recipients, and eligibility for an additional **Free** Azure Static Web App (and any feature/quota restrictions). The current Free listing alone is not a sufficient approval.
 3. Only after explicit approval of recurring charges, authorize a new isolated Jireh *staging* Static Web App. **Do not repurpose `crown-dash` or attach a new product site to its live resources.** Deploy only the committed `sites/jireh/dist` build to the Azure-assigned temporary hostname; disable search indexing.
 4. Validate TLS, security headers, 320/375/768/1440px browser appearance, internal links, robots and CTA handling with seeded *synthetic* data; verify actual inquiry notification and persistence through Arete's existing contact workflow or a separately accepted registration backend.
@@ -70,9 +80,10 @@ The October 18 pilot overview is a newly authored typographic document built by 
 **No public launch, resource provision, billable tier or DNS changes are authorized by this document.** No GitHub artifact substitutes for the owner's billing view or tested staging.
 
 
-## Jireh one-shot isolated Free-tier Azure staging
+## Historical CROWN one-shot staging proposal — not authorized here
 
-This adds a deliberately bounded deployment job to the existing governed Azure preflight workflow. No separate workflow is created. On PRs the staging job is **skipped**. On main push it runs only if the exact merge commit message includes `[jireh-staging-free-once]`.
+The following describes the prior CROWN proposal, not an available or authorized
+Jireh execution path. Its trigger must not be used as approval.
 
 - Source: accepted main commit only; Jireh site built and local tests pass before modifying Azure.
 - Authentication: existing GitHub Actions OIDC federation, no new client secret.
@@ -84,10 +95,13 @@ This adds a deliberately bounded deployment job to the existing governed Azure p
 - No custom domain assignment, DNS update, GoDaddy record alteration, live payments, real school financial-aid PII, or application production certification.
 - This does not resolve the earlier missing subscription-wide spending and budget visibility; paid tiers and broad production release remain blocked.
 
-GitHub branch protection controls merging. A single authorized squash merge with that marker triggers the one-time free staging action. If Azure RBAC, quota, resource creation or deploy permission is missing, the job fails closed with a check result instead of guessing.
+The historical proposal relied on a workflow and branch protections outside this
+repository; neither is evidence of current Jireh safeguards.
 
 Official reference: https://learn.microsoft.com/en-us/azure/static-web-apps/quotas and https://learn.microsoft.com/en-us/azure/static-web-apps/static-web-apps-cli-deploy
 
-## October 18 staging execution authorization
+## Historical October 18 staging authorization — superseded
 
-The owner has expressly requested immediate execution of the existing isolated Free-only Azure staging route. This change records the authorization to attempt the source-controlled one-shot staging job, **not** a claim of Azure deployment. After exact-head CI acceptance, merge this PR with a merge commit message containing `[jireh-staging-free-once]`. The job must fail closed if quota, RBAC, environment protection, Free SKU, or deployment verification fails. Do not change custom domains, Arete DNS or email, enable payments, or authorize a paid SKU. Confirm successful workflow execution and live site integrity before declaring Azure staging complete. Independent full migration/cutover approval remains separate.
+The prior CROWN staging authorization does not apply to this separate Jireh
+repository. Do not provision, deploy, change DNS, or use real data without
+separate approval and current evidence.

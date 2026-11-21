@@ -94,6 +94,20 @@ processing, or production access is authorized by this source copy. Treat any
 future infrastructure setup or release as a separate, explicitly reviewed
 change.
 
+The retained website preflight requires an explicitly named resource group and
+rejects the historical `crown-rg` target. A different name alone does not prove
+isolation, cost approval, or permission to provision. Historical CROWN website
+deployment instructions are not an execution path for this repository. The
+repository owner is the decision owner for a separately reviewed Jireh staging
+proposal and its costs.
+
+The preflight isolation change is based on Jireh commit
+`c13c48d2c80c693b7447510c62379eadb5766b51`. If it must be reverted, revert the
+change together with its tests and documentation; do not use the historical
+CROWN defaults or workflow to deploy. Standalone operation, Azure resource
+isolation, hosted acceptance, backup/restore, and production readiness remain
+NOT VERIFIED.
+
 Source availability and automated checks do not establish that a feature or
 hosted environment is ready for release. See [SECURITY.md](SECURITY.md) for
 security reporting information and the repository's inherited [NOTICE.md](NOTICE.md)
