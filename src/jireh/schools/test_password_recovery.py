@@ -353,7 +353,10 @@ class VerifiedPasswordRecoveryTests(TestCase):
             purpose=RecoveryAttemptBudget.PURPOSE_CONFIRM,
         )
         self.assertEqual(confirm.attempt_count, 10)
-        self.assertNotEqual(confirm.identifier_digest, issue.identifier_digest)
+        # HMAC identifier is the same; the composite (digest, purpose) key
+        # deliberately keeps the two independent budgets separate.
+        self.assertEqual(confirm.identifier_digest, issue.identifier_digest)
+        self.assertNotEqual(confirm.purpose, issue.purpose)
 
     def test_audit_rows_cannot_be_modified_via_model(self):
         self.enroll()
