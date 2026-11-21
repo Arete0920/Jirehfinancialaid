@@ -5,7 +5,7 @@ from datetime import timedelta
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
-from django.db import IntegrityError, transaction
+from django.db import DatabaseError, IntegrityError, transaction
 from django.test import Client, TestCase
 from django.urls import reverse
 from django.utils import timezone
@@ -211,6 +211,9 @@ class TestOnlyFamilySessionTests(TestCase):
             '{"username":"x","username":"y","password":"secret"}',
             '{"username":"x"}',
             '{"username":null,"password":"secret"}',
+            json.dumps({"username": "invalid\\u0000user", "password": PASSWORD}),
+            json.dumps({"username": "  spaced", "password": PASSWORD}),
+            json.dumps({"username": "x" * 151, "password": PASSWORD}),
             '{"username":"x","password":null}',
             '{"username":"x","password":"secret","extra":1}',
             '[]',
@@ -236,6 +239,22 @@ class TestOnlyFamilySessionTests(TestCase):
         )
         self.assertEqual(wrong_type.status_code, 400)
         self.assertFalse(LoginAttemptBudget.objects.exists())
+
+    def test_throttle_database_outage_fails_closed_before_authentication(self):
+        client, csrf = self.new_client()
+        with patch(
+            "jireh.schools.session_views.charge_login_attempt",
+            side_effect=DatabaseError("sensitive database diagnostics"),
+        ):
+            with patch("jireh.schools.session_views.authenticate") as check:
+                response = self.login(client, csrf)
+                check.assert_not_called()
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(
+            response.json(), {"detail": "Service unavailable."},
+        )
+        self.assertNotIn("sensitive", response.content.decode())
+        self.assertEqual(client.get(self.household_url()).status_code, 403)
 
     def test_get_logout_and_other_methods_do_not_create_sessions(self):
         client, csrf = self.new_client()
