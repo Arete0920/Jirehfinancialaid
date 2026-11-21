@@ -208,7 +208,10 @@ class RedemptionHTTPTests(TestCase):
         self.assertEqual(HouseholdAccess.objects.count(), 0)
 
     def test_unsupported_methods_are_not_allowed(self):
-        client, _ = self.client_with_csrf()
+        client, csrf = self.client_with_csrf()
         for call in (client.put, client.patch, client.delete):
             with self.subTest(method=call.__name__):
-                self.assertEqual(call(self.url()).status_code, 405)
+                self.assertEqual(
+                    call(self.url(), HTTP_X_CSRFTOKEN=csrf).status_code, 405
+                )
+        self.assertEqual(HouseholdAccess.objects.count(), 0)
