@@ -73,9 +73,9 @@ jobs:
       - name: Verify schema matches migrations
         env:
           PYTHONPATH: src
-        run: python -m django makemigrations schools --check --dry-run --settings=jireh.schools.test_settings
+        run: python -m django makemigrations schools financial_aid --check --dry-run --settings=jireh.schools.test_settings
 
       - name: Test school and household models
         env:
           PYTHONPATH: src
-        run: python -m django test jireh.schools --settings=jireh.schools.test_settings --verbosity=2
+        run: python -m django test jireh.schools jireh.financial_aid --settings=jireh.schools.test_settings --verbosity=2

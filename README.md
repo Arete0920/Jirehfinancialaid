@@ -14,7 +14,7 @@ Jireh is being developed as an independent financial-aid product for **Christian
 
 ## Source preservation
 
-The historical implementation remains in [`Arete0920/Crown-CSMS`](https://github.com/Arete0920/Crown-CSMS). The broad CROWN source copy in [draft PR #1](https://github.com/Arete0920/Jirehfinancialaid/pull/1) is a **migration reference, not a standalone application**. Do not merge that source copy wholesale. Transfer only reviewed, appropriately licensed components with validated standalone dependencies and regression coverage.
+The historical implementation remains in [`Arete0920/Crown-CSMS`](https://github.com/Arete0920/Crown-CSMS). The broad CROWN source copy in [retired PR #1](https://github.com/Arete0920/Jirehfinancialaid/pull/1) is a **migration reference, not a standalone application**. Do not merge that source copy wholesale. Transfer only reviewed, appropriately licensed components with validated standalone dependencies and regression coverage.
 
 The five bucket identifiers follow `backend/financial_aid/models.py` in CROWN at source revision `ac9fab0981c281f9815b20160d37da4fa8e5bd1f`. The current repository's standalone contracts are independently tested; historic CROWN tests do not certify this product.
 
@@ -58,3 +58,24 @@ authorization, or secure financial records are available yet. Never deploy
 `test_settings` or interpret passing SQLite tests as PostgreSQL-enforced
 tenant isolation. Authenticated staff access and authorized grant provisioning
 must be implemented and verified separately before commercial use.
+
+
+## Annual household application draft (internal service only)
+
+Jireh now has an independent `AidApplication` database model and an
+authenticated `get_or_create_annual_draft` service. The database enforces at
+most **one application per household, school and academic year**; all students
+linked to that household share the application. A student may be associated
+with two households, but these households have **separate applications and
+access grants**.
+
+The service requires an authenticated, active user with an explicit active
+grant to the household and a matching school-specific academic year. A second
+authorized member of the *same* household resumes the same draft rather than
+creating another application. The original creator remains recorded.
+
+Only **DRAFT** is implemented. No public application creation endpoint,
+submission, appeal, financial income/document collection, payment, fee waiver,
+refund or financial award decision has been enabled. A separate, reviewed
+workflow must implement submission, consent, financial evidence and the
+owner-approved $55 household fee contract before accepting any real families.
