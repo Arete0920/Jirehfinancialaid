@@ -239,9 +239,6 @@ class DeliveryTests(TestCase):
 
     @override_settings(**SMTP_SETTINGS)
     def test_mailbox_send_returning_zero_consumes_challenge(self):
-        with patch("jireh.schools.delivery.EmailMessage.send", return_value=1):
-            # Generate valid raw invitation token by capturing first send.
-            pass
         seen = []
         with patch(
             "jireh.schools.delivery.EmailMessage.send",
