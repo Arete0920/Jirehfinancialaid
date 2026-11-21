@@ -303,3 +303,67 @@ class GrantTransitionEvent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Grant transition events are append-only.")
+
+
+class SchoolGrantDecisionEvent(UUIDStampedModel):
+    """Actor-attributed record of an authorized school grant revocation.
+
+    Unlike database-role-only GrantTransitionEvent, actor_user records the
+    authenticated principal that passed the school-scoped director check.
+    This log covers ONLY calls through grant_admin. PostgreSQL prevents
+    ordinary raw SQL updates/deletes; privileged DB roles remain a limit.
+    """
+
+    KIND_HOUSEHOLD = "HOUSEHOLD"
+    KIND_STAFF = "STAFF"
+    ACTION_REVOKED = "REVOKED"
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="grant_decisions"
+    )
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="jireh_grant_decisions_performed",
+    )
+    target_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="jireh_grant_decisions_received",
+    )
+    grant_kind = models.CharField(
+        max_length=16,
+        choices=[(KIND_HOUSEHOLD, "Household"), (KIND_STAFF, "Staff")],
+    )
+    grant_id = models.UUIDField()
+    scope_id = models.UUIDField()
+    action = models.CharField(
+        max_length=16, choices=[(ACTION_REVOKED, "Revoked")]
+    )
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(grant_kind__in=["HOUSEHOLD", "STAFF"]),
+                name="jireh_operator_valid_kind",
+            ),
+            models.CheckConstraint(
+                condition=Q(action="REVOKED"),
+                name="jireh_operator_revoke_only",
+            ),
+        ]
+        indexes = [
+            models.Index(
+                fields=["school", "grant_id"], name="jireh_operator_grant_lookup"
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Existing grant decision records cannot be edited.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Grant decision records cannot be deleted.")
