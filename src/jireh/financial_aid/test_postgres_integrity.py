@@ -1,15 +1,14 @@
 """PostgreSQL-only verification and explicit known integrity gaps.
 
 These tests run only against the disposable PostgreSQL 16 service.
-Expected failures are security deficiencies to fix, NOT passing controls.
-Remove each expectedFailure marker only after database-level enforcement
-is implemented and the corrected test passes on real PostgreSQL.
+Previously failing raw-write tenant tests must now pass as ordinary negative
+assertions on PostgreSQL. SQLite continues to use model-level validation,
+not database triggers.
 """
 
 from datetime import date
 from queue import Queue
 from threading import Thread
-from unittest import expectedFailure
 
 from django.contrib.auth import get_user_model
 from django.db import DatabaseError, IntegrityError, connection, transaction
@@ -132,8 +131,7 @@ class PostgreSQLIntegrityTests(TransactionTestCase):
                 outcomes.get_nowait(), "55P03", "Expected PostgreSQL lock_not_available"
             )
 
-    @expectedFailure
-    def test_known_gap_raw_cross_school_household_student_update(self):
+    def test_database_rejects_raw_cross_school_household_student_update(self):
         # REQUIRED FUTURE CONTRACT: database must reject this bulk update.
         with self.assertRaises(IntegrityError):
             with transaction.atomic():
@@ -141,8 +139,7 @@ class PostgreSQLIntegrityTests(TransactionTestCase):
                     student_id=self.other_child.pk
                 )
 
-    @expectedFailure
-    def test_known_gap_raw_application_academic_year_school_mismatch(self):
+    def test_database_rejects_raw_application_academic_year_school_mismatch(self):
         # REQUIRED FUTURE CONTRACT: app year must be from its own school.
         draft = self._draft()
         with self.assertRaises(IntegrityError):
@@ -151,8 +148,7 @@ class PostgreSQLIntegrityTests(TransactionTestCase):
                     academic_year_id=self.other_year.pk
                 )
 
-    @expectedFailure
-    def test_known_gap_raw_selection_cross_household_relink(self):
+    def test_database_rejects_raw_selection_cross_household_relink(self):
         # REQUIRED FUTURE CONTRACT: selection link belongs to application house.
         self._draft()
         selection = select_student_for_draft(
@@ -166,8 +162,7 @@ class PostgreSQLIntegrityTests(TransactionTestCase):
                     household_student_id=self.other_link.pk
                 )
 
-    @expectedFailure
-    def test_known_gap_raw_audit_event_school_mismatch(self):
+    def test_database_rejects_raw_audit_event_school_mismatch(self):
         # REQUIRED FUTURE CONTRACT: event school must match its application.
         draft = self._draft()
         event = AidAuditEvent.objects.get(
@@ -178,3 +173,89 @@ class PostgreSQLIntegrityTests(TransactionTestCase):
                 AidAuditEvent.objects.filter(pk=event.pk).update(
                     school_id=self.other_school.pk
                 )
+
+    def test_postgres_relationship_triggers_installed(self):
+        with connection.cursor() as cursor:
+            cursor.execute(
+                "SELECT count(*) FROM pg_trigger "
+                "WHERE tgname LIKE 'jireh%guard' AND NOT tgisinternal"
+            )
+            trigger_count = cursor.fetchone()[0]
+        self.assertEqual(trigger_count, 7)
+
+    def test_raw_bulk_create_cross_school_household_student_rejected(self):
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                HouseholdStudent.objects.bulk_create([
+                    HouseholdStudent(
+                        household=self.household, student=self.other_child
+                    )
+                ])
+
+    def test_raw_bulk_create_cross_household_selection_rejected(self):
+        draft = self._draft()
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                AidApplicationStudent.objects.bulk_create([
+                    AidApplicationStudent(
+                        application=draft, household_student=self.other_link
+                    )
+                ])
+
+    def test_raw_bulk_create_cross_school_audit_rejected(self):
+        draft = self._draft()
+        selection = AidApplicationStudent.objects.create(
+            application=draft, household_student=self.link
+        )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                AidAuditEvent.objects.bulk_create([
+                    AidAuditEvent(
+                        school=self.other_school,
+                        application=draft,
+                        actor_user=self.user,
+                        action=AidAuditEvent.ACTION_STUDENT_SELECTED,
+                        student_selection=selection,
+                    )
+                ])
+
+    def test_direct_school_transfer_of_parent_is_rejected(self):
+        for model, row in (
+            (Household, self.household),
+            (Student, self.child),
+            (AcademicYear, self.year),
+        ):
+            with self.subTest(model=model.__name__):
+                with self.assertRaises(IntegrityError):
+                    with transaction.atomic():
+                        model.objects.filter(pk=row.pk).update(
+                            school_id=self.other_school.pk
+                        )
+                self.assertEqual(
+                    model.objects.get(pk=row.pk).school_id, self.school.pk
+                )
+
+    def test_direct_application_reassignment_is_rejected(self):
+        draft = self._draft()
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                AidApplication.objects.filter(pk=draft.pk).update(
+                    household_id=self.same_school_household.pk
+                )
+        self.assertEqual(
+            AidApplication.objects.get(pk=draft.pk).household_id,
+            self.household.pk,
+        )
+
+    def test_direct_audit_mutation_and_deletion_are_rejected(self):
+        draft = self._draft()
+        event = AidAuditEvent.objects.get(application=draft)
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                AidAuditEvent.objects.filter(pk=event.pk).update(
+                    actor_user_id=self.user.pk
+                )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                AidAuditEvent.objects.filter(pk=event.pk).delete()
+        self.assertEqual(AidAuditEvent.objects.filter(pk=event.pk).count(), 1)

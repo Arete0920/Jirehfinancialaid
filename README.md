@@ -194,14 +194,36 @@ fallback or other PostgreSQL major version fails the job.
 
 Additional PostgreSQL tests verify the database-backed annual uniqueness
 constraint and a real second-connection `SELECT FOR UPDATE NOWAIT` lock.
-Four tests explicitly document **expected failures**, i.e. current
-database-level tenant-integrity deficiencies. These are **not** passing
-security controls: raw/bulk changes can cross school or household
-relationships without invoking Django model validation. They must be
-converted into ordinary passing negative tests after database-level
-protections are implemented.
+The formerly expected-failing cross-table tenant-integrity tests are
+now **required negative controls**: direct and bulk writes must reject
+school/household mismatches in PostgreSQL. The CI job fails if tests
+are marked as expected failures, and checks that the PostgreSQL-only
+trigger migration is reversible and re-applies on a disposable database.
 
 This job uses only disposable CI data and does not deploy or modify Azure
 or any existing database. PostgreSQL validation is a prerequisite, but it
 does not establish enterprise security, production availability, or
 compliance certification.
+
+
+### PostgreSQL relationship integrity (no production rollout)
+
+Migration `financial_aid.0004_pg_tenant_triggers` adds **PostgreSQL-only**
+table triggers enforcing relationships across household/student,
+application/year/household, application/student-selection and audit-event
+tables, even for direct queryset updates or bulk inserts that bypass
+`full_clean`. School ownership of parent household/student/academic-year
+records and established application/selection identities cannot be changed
+in place. Audit event update/delete is blocked in ordinary SQL.
+
+On SQLite, migration 0004 is intentionally a no-op: SQLite tests still
+validate the service/model layer, but they do NOT certify database-level
+cross-table enforcement. PostgreSQL CI verifies real raw/bulk denials,
+expected-failure count zero, migrations, and forward/reverse replay.
+
+**Limits:** These triggers are not PostgreSQL row-level security (RLS).
+Privileged database roles may disable them; rollback/migration history must
+be controlled. Existing data needs validation before any future production
+migration. Access-control grants, operations audit, read restrictions,
+customer authentication, hosting and sensitive-document management are
+separate security requirements.
