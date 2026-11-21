@@ -614,9 +614,9 @@ class LoginAttemptBudget(UUIDStampedModel):
 class VerifiedRecoveryContact(UUIDStampedModel):
     """Account-bound mailbox proof; never trust User.email by itself."""
 
-    user = models.OneToOneField(
+    user = models.ForeignKey(
         settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
-        related_name="jireh_recovery_contact",
+        related_name="jireh_recovery_contacts",
     )
     proof = models.OneToOneField(
         MailboxChallenge, on_delete=models.PROTECT,
@@ -624,6 +624,16 @@ class VerifiedRecoveryContact(UUIDStampedModel):
     )
     email = models.EmailField(max_length=254)
     verified_at = models.DateTimeField()
+    superseded_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user"],
+                condition=Q(superseded_at__isnull=True),
+                name="jireh_one_current_recovery_contact",
+            ),
+        ]
 
     def clean(self):
         super().clean()
@@ -637,15 +647,64 @@ class VerifiedRecoveryContact(UUIDStampedModel):
         if not self._state.adding:
             previous = type(self).objects.filter(pk=self.pk).values(
                 "user_id", "proof_id", "email", "verified_at",
+                "superseded_at",
             ).first()
-            if previous and any(
-                getattr(self, field) != previous[field]
-                for field in ("user_id", "proof_id", "email", "verified_at")
-            ):
-                raise ValidationError("Recovery contact is immutable.")
+            if previous:
+                if any(
+                    getattr(self, field) != previous[field]
+                    for field in ("user_id", "proof_id", "email", "verified_at")
+                ):
+                    raise ValidationError("Recovery contact identity is immutable.")
+                if previous["superseded_at"] is not None and (
+                    self.superseded_at != previous["superseded_at"]
+                ):
+                    raise ValidationError("Superseded recovery contacts are immutable.")
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Recovery contacts cannot be deleted.")
+
+
+class RecoveryContactRotationEvent(UUIDStampedModel):
+    """Actor-attributed immutable evidence of an old-to-new mailbox rotation."""
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_recovery_contact_rotations",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_recovery_rotations_performed",
+    )
+    old_contact = models.OneToOneField(
+        VerifiedRecoveryContact, on_delete=models.PROTECT,
+        related_name="rotation_out",
+    )
+    new_contact = models.OneToOneField(
+        VerifiedRecoveryContact, on_delete=models.PROTECT,
+        related_name="rotation_in",
+    )
+
+    def clean(self):
+        super().clean()
+        if self.old_contact_id and self.new_contact_id:
+            if self.old_contact_id == self.new_contact_id:
+                raise ValidationError("Rotation requires distinct contacts.")
+            if (self.old_contact.user_id != self.user_id
+                    or self.new_contact.user_id != self.user_id
+                    or self.actor_id != self.user_id):
+                raise ValidationError("Recovery rotation account mismatch.")
+            if self.old_contact.superseded_at is None:
+                raise ValidationError("Old recovery contact must be superseded.")
+            if self.new_contact.superseded_at is not None:
+                raise ValidationError("New recovery contact must be active.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Recovery rotation evidence is append-only.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Recovery rotation evidence cannot be deleted.")
 
 
 class PasswordRecoveryChallenge(UUIDStampedModel):
