@@ -439,3 +439,31 @@ flow, or security-certified sign-in system. It must remain test-only until
 trusted login, session policy, host-level protections and operations monitoring
 are separately implemented and verified. The standalone runtime still routes
 only \`/healthz/\`.
+
+
+## Disposable family session sign-in and logout prototype (not deployed)
+
+The **test-only** \`jireh.schools.urls\` configuration includes two
+authentication routes: \`/test-auth/login/\` and \`/test-auth/logout/\`.
+The login GET establishes a CSRF cookie; POST requires a valid CSRF
+token and a bounded JSON object containing \`username\` and \`password\`.
+The route delegates password checking to Django's configured authentication
+backend. Invalid passwords, unknown accounts and inactive accounts receive
+the same generic denial. On successful sign-in Django rotates the session
+identifier and CSRF token; the new session expires within 15 minutes.
+Logout is POST-only, CSRF protected and invalidates the caller's session.
+
+A database-backed per-identifier budget allows at most **10 syntactically
+valid login submissions per 15-minute window**, shared between sessions.
+The identifier is stored only as an HMAC-SHA256 digest using Django's secret
+key; passwords and raw usernames are never persisted in budget records.
+A missing budget database fails closed. These controls do not replace
+distributed IP/network enforcement, MFA, account recovery or credential
+abuse monitoring. Limiting an identifier can itself allow targeted
+denial-of-service; no customer-facing authentication is authorized until
+those additional protections have been independently reviewed.
+
+**No production exposure:** \`jireh.runtime.urls\` continues to expose only
+\`/healthz/\`. Self-registration, account recovery, password reset,
+external identity providers, live email, SMS, hosting, payments and
+customer data remain out of scope. Tests use synthetic Django users only.

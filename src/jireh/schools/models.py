@@ -589,3 +589,24 @@ class RedemptionAttemptBudget(UUIDStampedModel):
                 name="jireh_redemption_attempt_max10",
             ),
         ]
+
+
+class LoginAttemptBudget(UUIDStampedModel):
+    """Test-only durable authentication throttle, keyed by an HMAC digest.
+
+    No username, password, client IP, user-agent or session ID is persisted.
+    An index on identifier_digest and a database check enforce the budget.
+    """
+
+    identifier_digest = models.CharField(max_length=64, unique=True)
+    window_started_at = models.DateTimeField()
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(attempt_count__lte=10),
+                name="jireh_login_attempt_max10",
+            ),
+        ]
+
