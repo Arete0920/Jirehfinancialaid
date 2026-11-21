@@ -83,6 +83,9 @@ instructions. For the Jireh product boundaries and current capabilities, see
 the [Jireh website migration guide](docs/operations/JIREH_FAMILY_WEBSITE_MIGRATION_20261015.md)
 and [Jireh site README](sites/jireh/README.md).
 
+For a separate ChatGPT/Codex session, start with the
+[Jireh ChatGPT/Codex handoff](docs/engineering/JIREH_CHATGPT_CODEX_HANDOFF.md).
+
 ## Hosting and release status
 
 Azure credentials, connections, resources, and deployment workflows have not
