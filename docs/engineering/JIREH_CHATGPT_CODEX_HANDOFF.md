@@ -1,7 +1,7 @@
 # Jireh ChatGPT/Codex Handoff
 
-**Repository:** `Arete0920/Jirehfinancialaid`  
-**Prepared:** 2026-11-21  
+**Repository:** `Arete0920/Jirehfinancialaid`
+**Prepared:** 2026-11-21
 **Purpose:** Transfer current repository state and engineering constraints to ChatGPT/Codex without implying that Jireh is already a standalone or commercially ready product.
 
 ## Handoff summary
