@@ -133,5 +133,36 @@ jobs:
       - name: Verify migrations match models on PostgreSQL
         run: python -m django makemigrations schools financial_aid --check --dry-run
 
-      - name: Test all Django contracts on PostgreSQL
-        run: python -m django test jireh.schools jireh.financial_aid --verbosity=2
+      - name: Test all Django contracts on PostgreSQL (no expected failures)
+        run: |
+          python -m django test jireh.schools jireh.financial_aid --verbosity=2 2>&1 | tee /tmp/jireh-postgresql-tests.log
+          if grep -q 'expected failures=' /tmp/jireh-postgresql-tests.log; then
+            echo "PostgreSQL known integrity gaps remain unresolved"
+            exit 1
+          fi
+
+      - name: Verify PostgreSQL trigger migration can reverse and reapply
+        run: |
+          python -m django migrate --noinput
+          python -m django migrate financial_aid 0003 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute("SELECT COUNT(*) FROM pg_trigger WHERE tgname LIKE 'jireh%guard' AND NOT tgisinternal")
+              count = cursor.fetchone()[0]
+          assert count == 0, f"Trigger rollback incomplete: {count}"
+          print("PostgreSQL trigger rollback: PASS")
+          PY
+          python -m django migrate financial_aid 0004 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute("SELECT COUNT(*) FROM pg_trigger WHERE tgname LIKE 'jireh%guard' AND NOT tgisinternal")
+              count = cursor.fetchone()[0]
+          assert count == 7, f"Trigger reapply incomplete: {count}"
+          print("PostgreSQL trigger reapply: PASS")
+          PY
