@@ -5,6 +5,7 @@ from django.urls import path
 from . import views
 from jireh.financial_aid.views import staff_application_index
 from jireh.financial_aid.family_views import family_annual_draft
+from jireh.financial_aid.student_views import selected_students, select_student
 
 
 urlpatterns = [
@@ -31,5 +32,19 @@ urlpatterns = [
         "academic-years/<uuid:academic_year_id>/aid-application/draft/",
         family_annual_draft,
         name="jireh_family_annual_draft",
+    ),
+
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/students/",
+        selected_students,
+        name="jireh_aid_selected_students",
+    ),
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/students/"
+        "<uuid:student_id>/",
+        select_student,
+        name="jireh_aid_select_student",
     ),
 ]

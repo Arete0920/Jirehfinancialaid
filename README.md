@@ -2,7 +2,7 @@
 
 Jireh is being developed as an independent financial-aid product for **Christian and Catholic schools**.
 
-**Engineering status:** Initial standalone Django school, academic-year, household and student models, migrations, and tests. This is a **data-domain foundation only**: there is no authenticated application, public API, proven end-to-end tenant isolation, secure financial-document storage, or payment processing. It is **not ready for customer use**.
+**Engineering status:** Initial standalone Django school, household, student, annual aid draft and test-only authenticated API components, with migrations and regression tests. This is **not a deployable product**: real login/onboarding, end-to-end tenant isolation, secure financial-document storage, compliance controls, and payment processing remain incomplete. It is **not ready for customer use**.
 
 ## Approved product boundaries
 
@@ -24,9 +24,9 @@ Python **3.12** is the initial supported test runtime. The original contract tes
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v
-python -m pip install -r requirements.txt
-PYTHONPATH=src python -m django makemigrations schools --check --dry-run --settings=jireh.schools.test_settings
-PYTHONPATH=src python -m django test jireh.schools --settings=jireh.schools.test_settings
+python -m pip install --only-binary=:all: --require-hashes -r requirements.txt
+PYTHONPATH=src python -m django makemigrations schools financial_aid --check --dry-run --settings=jireh.schools.test_settings
+PYTHONPATH=src python -m django test jireh.schools jireh.financial_aid --settings=jireh.schools.test_settings
 python -m compileall -q src tests
 ```
 
@@ -53,8 +53,8 @@ Two **read-only** GET routes, configured in the disposable
 
 These endpoints cannot grant access or change records. They have no public
 registration or login endpoint and **are not deployed**. No production
-settings, host authorization, HTTPS, CSRF-protected write workflow, school staff
-authorization, or secure financial records are available yet. Never deploy
+settings, host authorization, HTTPS, public login, audited grant provisioning,
+or secure financial records are available yet. Never deploy
 `test_settings` or interpret passing SQLite tests as PostgreSQL-enforced
 tenant isolation. Authenticated staff access and authorized grant provisioning
 must be implemented and verified separately before commercial use.
@@ -128,3 +128,33 @@ revocation, unauthorized superusers, inactive identities and CSRF denial.
 The endpoints are **not deployed** and must not be exposed through production
 settings until secure login, session policy, grant provisioning, rate limits,
 audit logging and PostgreSQL tenant/integrity tests are completed.
+
+
+## Draft child selection (test-only)
+
+A household's annual draft can include multiple children using the existing
+`HouseholdStudent` association. Each selection has a protected FK to the
+**specific household-student relationship**, not merely the child. A shared
+child can therefore be selected independently by each authorized parent
+household without linking their applications or financial information.
+
+Two test-only routes extend the existing authenticated annual draft API:
+
+- **GET** `.../aid-application/draft/students/` returns IDs for children
+  selected in the authorized existing draft and sets a CSRF cookie.
+- **POST** `.../aid-application/draft/students/<student UUID>/` includes that
+  already-linked child idempotently, with CSRF validation.
+
+Both require an active user, school, household grant and existing draft.
+The child must be linked to that exact household and school. Wrong-school,
+unlinked-child, unauthorized and revoked-access requests fail closed. No
+application, new child, or household link is created implicitly. Selection
+removal is deliberately **not implemented** pending an auditable edit
+workflow.
+
+The database enforces selection uniqueness and protects referenced household
+links against ordinary deletes. **Cross-table school consistency is checked by
+Django model/service validation, not by a complete database-enforced tenant
+constraint**: raw SQL and bulk updates can bypass those checks. PostgreSQL
+integrity testing, audit logging, secure login and full production authorization
+remain prerequisites to handling real financial information.
