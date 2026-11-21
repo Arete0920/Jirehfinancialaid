@@ -280,9 +280,9 @@ class HouseholdInvitationTests(TestCase):
         with connection.cursor() as cursor:
             cursor.execute(
                 "SELECT COUNT(*) FROM pg_trigger WHERE tgname IN "
-                "('jireh_invitation_identity_guard', "
-                "'jireh_invitation_delete_guard', "
-                "'jireh_invitation_event_guard') AND NOT tgisinternal"
+                "('jireh_invitation_identity_protect', "
+                "'jireh_invitation_delete_protect', "
+                "'jireh_invitation_event_protect') AND NOT tgisinternal"
             )
             self.assertEqual(cursor.fetchone()[0], 3)
         for query, mutation in (
