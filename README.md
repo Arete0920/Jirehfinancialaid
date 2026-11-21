@@ -20,6 +20,40 @@ Crown-specific editor tasks, operational audit/runtime evidence, and a
 checked-in private key. No credentials, local databases, or deployment workflow
 were copied.
 
+## Jireh source inventory
+
+The following paths are present in this baseline. Presence is not evidence of
+standalone or production readiness.
+
+| Area | Source and boundaries |
+| --- | --- |
+| Website and assets | [`sites/jireh`](sites/jireh/) contains the site, SGO logo, family-billing image, overview PDF, and site tests. The site also uses [`sites/shared/product-theme.css`](sites/shared/product-theme.css). |
+| School aid | [`backend/aid`](backend/aid/), [`backend/financial_aid`](backend/financial_aid/), the [family preparation page](frontend/dashboards/src/pages/ParentFinancialAidPreparationPage.jsx), and [decision page](frontend/dashboards/src/pages/JirehAidDecisionsPage.jsx) retain existing application and review work. These are not a claim that both aid implementations are interchangeable. |
+| Wizard and dashboard | The [aid wizard](frontend/dashboards/src/pages/FinancialAidWizard.jsx), [wizard steps](frontend/dashboards/src/pages/financial_aid_wizard/), [dashboard](frontend/dashboards/src/pages/FinancialAidDashboard.jsx), and [dashboard template](frontend/dashboards/src/config/dashboardTemplates/financialAidDashboard.js) remain embedded in the shared CROWN shell. Illustrative template metrics are withheld by the dashboard page; runtime data must be verified separately. |
+| SGO pilot | [`backend/jireh_sgo`](backend/jireh_sgo/) and the SGO dashboard, login, and intake pages are separate pilot work, not an accepted production scholarship or funds-processing service. See the [fictional intake boundary](docs/jireh-sgo-fictional-intake.md). |
+| Tests | Existing targeted backend, frontend, site, and browser tests accompany the copied work. See the [local presenter boundary](docs/sandbox/UNIVERSAL_JIREH.md) for what the fictional aid journey does and does not prove. |
+
+On 2026-11-21, a source comparison of these backend directories, dashboard
+pages and template, Jireh site, and shared theme found no content differences
+from the pinned CROWN revision, ignoring line endings. This is not a full
+asset census: external designs, prior history, and other branches must be
+reviewed separately. A targeted search of open CROWN pull requests did not
+identify a Jireh-titled open PR; it is not an exhaustive branch comparison.
+
+## Standalone and commercial boundary
+
+Jireh must work without a running CROWN installation before it can be offered as
+an independent product. Its school, user, family, student, financial and audit
+dependencies, customer journeys, permissions, reporting, onboarding, recovery,
+privacy and operational controls require assessment and acceptance. Any future
+CROWN integration needs agreed ownership and synchronization rules; it must
+remain optional. School-aid and SGO authority must remain distinct.
+
+Fictional local tests and a copied interface do not authorize real customer
+data, hosted activation, financial settlement or a commercial release. The
+owner must approve the product scope, relevant controls and deployment plan
+before those activities. Azure remains deferred.
+
 ## Development
 
 Start with the [engineering setup guide](docs/engineering/DEV_SETUP.md) for
