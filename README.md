@@ -467,3 +467,33 @@ those additional protections have been independently reviewed.
 \`/healthz/\`. Self-registration, account recovery, password reset,
 external identity providers, live email, SMS, hosting, payments and
 customer data remain out of scope. Tests use synthetic Django users only.
+
+
+## Verified-contact password recovery foundation (internal-only)
+
+A new **non-deployed** password-recovery service requires an account to
+first enroll a recovery contact while authenticated, using a fresh,
+account-bound 15-minute one-time mailbox challenge. Merely setting an email
+on the Django user does **not** establish a recovery contact.
+
+After this enrollment, an internal recovery request can send a separately
+generated one-time 15-minute password reset code **only** to the verified
+contact through the existing explicitly enabled, authenticated TLS SMTP
+adapter. Unknown accounts, accounts without verified contacts, and blocked
+requests return the same generic outcome. Only a SHA-256 digest of the
+64-character reset secret is persisted; the raw code is never returned by
+the request service. Reissue consumes the previous code, and a failed or
+ambiguous send consumes the undelivered code. Both issuance and confirmation
+have separate durable 10-per-15-minute attempt budgets backed by HMAC-only
+account identifiers. Recovery confirmation validates the new password,
+changes the Django password hash atomically and consumes the credential
+with durable completion evidence. Changing the hash invalidates existing
+authenticated sessions.
+
+**Critical boundaries:** This is an *internal service* with no password
+recovery HTTP endpoint, real SMTP configuration, public registration,
+verified delivery certification, MFA, identity-support procedure, or
+customer activation. Existing enrollment is deliberately immutable;
+contact rotation requires a separately designed and verified workflow.
+It must not be used for real user onboarding until these controls are
+independently accepted. The standalone runtime remains liveness-only.
