@@ -165,3 +165,41 @@ class HouseholdAccess(UUIDStampedModel):
                 name="jireh_household_access_unique",
             )
         ]
+
+
+class SchoolStaffAccess(UUIDStampedModel):
+    """Explicit aid-director role at exactly one school.
+
+    No self-service provisioning or implicit superuser/email-based privilege.
+    Future staff roles require a separately approved permission matrix.
+    """
+
+    ROLE_AID_DIRECTOR = "AID_DIRECTOR"
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="staff_access_grants"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="jireh_school_staff_access",
+    )
+    role = models.CharField(
+        max_length=32,
+        choices=[(ROLE_AID_DIRECTOR, "Financial aid director")],
+    )
+    is_active = models.BooleanField(default=True)
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school", "user"],
+                name="jireh_staff_access_school_user_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(role="AID_DIRECTOR"),
+                name="jireh_staff_aid_director_only",
+            ),
+        ]

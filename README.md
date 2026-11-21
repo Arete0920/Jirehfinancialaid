@@ -79,3 +79,29 @@ submission, appeal, financial income/document collection, payment, fee waiver,
 refund or financial award decision has been enabled. A separate, reviewed
 workflow must implement submission, consent, financial evidence and the
 owner-approved $55 household fee contract before accepting any real families.
+
+
+## School-staff aid inventory (test-only)
+
+A new `SchoolStaffAccess` grant explicitly authorizes a user as an
+`AID_DIRECTOR` at one active school. It does not imply a household grant,
+general administrative access or permission at another school. No superuser
+bypass exists for this prototype. Grant provisioning is internal/trusted:
+there is no staff registration, invitation, role assignment or public write
+endpoint.
+
+The disposable test URL configuration provides one read-only GET route:
+
+- `/api/v1/schools/<school UUID>/academic-years/<year UUID>/aid-applications/`
+
+The handler requires an authenticated active user, an active director grant
+at the requested active school, and a matching academic year. It returns
+only draft application IDs, household IDs and status, capped at 100 rows
+with `has_more` (pagination is **not yet implemented**). Anonymous access
+returns HTTP 403; missing role, wrong school, revoked grants and nonexistent
+resources return HTTP 404 without exposing school/customer information.
+
+**Not deployable:** This is only a verified authorization prototype in
+disposable Django test settings. Staff invitation, credential security,
+staff permission review, pagination, financial data and authenticated
+production API configuration are future separately reviewed work.
