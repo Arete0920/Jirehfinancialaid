@@ -404,3 +404,30 @@ class VerifiedPasswordRecoveryTests(TestCase):
                 PasswordRecoveryChallenge.objects.filter(
                     pk=challenge.pk,
                 ).delete()
+        # Bulk inserts bypass model.clean(); the database must still deny a
+        # recovery credential bound to somebody else's verified contact.
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                PasswordRecoveryChallenge.objects.bulk_create([
+                    PasswordRecoveryChallenge(
+                        user=self.other,
+                        contact=VerifiedRecoveryContact.objects.get(),
+                        token_digest="d" * 64,
+                        expires_at=timezone.now() + RECOVERY_LIFETIME,
+                    )
+                ])
+        forged_proof, _ = issue_mailbox_challenge(
+            user=self.other, email="alternate@example.org",
+        )
+        MailboxChallenge.objects.filter(pk=forged_proof.pk).update(
+            consumed_at=timezone.now(),
+        )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                VerifiedRecoveryContact.objects.bulk_create([
+                    VerifiedRecoveryContact(
+                        user=self.other, proof=forged_proof,
+                        email="forged@example.org",
+                        verified_at=timezone.now(),
+                    )
+                ])
