@@ -59,6 +59,8 @@ def _parse_login_credentials(request):
     if (
         not isinstance(username, str)
         or not 1 <= len(username) <= 150
+        or username != username.strip()
+        or any(ord(char) < 32 or ord(char) == 127 for char in username)
         or not isinstance(password, str)
         or not 1 <= len(password) <= 1024
     ):
