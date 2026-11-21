@@ -42,7 +42,7 @@ def _audit(*, school, invitation, actor, action):
 
 def _revoke(*, school, invitation, actor, now):
     """Idempotent state transition and actor audit in caller's transaction."""
-    if invitation.revoked_at is not None:
+    if invitation.revoked_at is not None or invitation.redeemed_at is not None:
         return False
     invitation.revoked_at = now
     invitation.save(update_fields=["revoked_at", "updated_at"])
@@ -81,7 +81,10 @@ def issue_household_invitation(*, actor, school_id, household_id, email):
     pending = (
         HouseholdInvitation.objects.for_school(school.pk)
         .select_for_update()
-        .filter(household=household, email=recipient, revoked_at__isnull=True)
+        .filter(
+            household=household, email=recipient,
+            revoked_at__isnull=True, redeemed_at__isnull=True,
+        )
         .first()
     )
     if pending is not None:
