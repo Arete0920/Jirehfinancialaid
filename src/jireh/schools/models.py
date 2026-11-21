@@ -8,6 +8,7 @@ household separately before reading sensitive data.
 
 import uuid
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
 from django.db.models import F, Q
@@ -136,3 +137,31 @@ class HouseholdStudent(UUIDStampedModel):
             raise ValidationError(
                 "Household and student must belong to the same school."
             )
+
+
+
+class HouseholdAccess(UUIDStampedModel):
+    """Explicit user-to-household grant. Never inferred from a shared child.
+
+    Grants are provisioned by trusted internal services; no self-enrollment or
+    public write endpoint is provided here. A user's school access through this
+    record is limited to this household, not all households at that school.
+    """
+
+    household = models.ForeignKey(
+        Household, on_delete=models.PROTECT, related_name="access_grants"
+    )
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="jireh_household_access",
+    )
+    is_active = models.BooleanField(default=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["household", "user"],
+                name="jireh_household_access_unique",
+            )
+        ]
