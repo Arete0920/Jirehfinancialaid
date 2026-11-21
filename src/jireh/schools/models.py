@@ -392,6 +392,12 @@ class HouseholdInvitation(UUIDStampedModel):
     )
     expires_at = models.DateTimeField()
     revoked_at = models.DateTimeField(null=True, blank=True)
+    redeemed_at = models.DateTimeField(null=True, blank=True)
+    redeemed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name="jireh_household_invitations_redeemed",
+    )
 
     objects = ScopedQuerySet.as_manager()
 
@@ -399,7 +405,7 @@ class HouseholdInvitation(UUIDStampedModel):
         constraints = [
             models.UniqueConstraint(
                 fields=["household", "email"],
-                condition=Q(revoked_at__isnull=True),
+                condition=Q(revoked_at__isnull=True, redeemed_at__isnull=True),
                 name="jireh_open_household_invite",
             ),
         ]
@@ -423,6 +429,7 @@ class HouseholdInvitation(UUIDStampedModel):
         previous = type(self).objects.filter(pk=self.pk).values(
             "id", "created_at", "school_id", "household_id", "email",
             "token_digest", "invited_by_id", "expires_at", "revoked_at",
+            "redeemed_at", "redeemed_by_id",
         ).first()
         if previous is None:
             return
@@ -436,6 +443,15 @@ class HouseholdInvitation(UUIDStampedModel):
             self.revoked_at != previous["revoked_at"]
         ):
             raise ValidationError("An invitation cannot be unrevoked or revised.")
+        if previous["redeemed_at"] is not None and (
+            self.redeemed_at != previous["redeemed_at"]
+            or self.redeemed_by_id != previous["redeemed_by_id"]
+        ):
+            raise ValidationError("A redeemed invitation cannot be changed.")
+        if self.revoked_at is not None and self.redeemed_at is not None:
+            raise ValidationError("Redeemed invitations cannot be revoked.")
+        if (self.redeemed_at is None) != (self.redeemed_by_id is None):
+            raise ValidationError("Redemption must identify the actor and time.")
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Invitations must be revoked, never deleted.")
@@ -446,6 +462,7 @@ class SchoolInvitationEvent(UUIDStampedModel):
 
     ACTION_ISSUED = "ISSUED"
     ACTION_REVOKED = "REVOKED"
+    ACTION_REDEEMED = "REDEEMED"
 
     school = models.ForeignKey(
         School, on_delete=models.PROTECT, related_name="invitation_events"
@@ -462,7 +479,11 @@ class SchoolInvitationEvent(UUIDStampedModel):
     )
     action = models.CharField(
         max_length=16,
-        choices=[(ACTION_ISSUED, "Issued"), (ACTION_REVOKED, "Revoked")],
+        choices=[
+            (ACTION_ISSUED, "Issued"),
+            (ACTION_REVOKED, "Revoked"),
+            (ACTION_REDEEMED, "Redeemed"),
+        ],
     )
 
     objects = ScopedQuerySet.as_manager()
@@ -494,3 +515,53 @@ class SchoolInvitationEvent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Invitation audit events cannot be deleted.")
+
+
+class MailboxChallenge(UUIDStampedModel):
+    """Single-use mailbox-control proof, independent of a household invitation.
+
+    Its opaque token must be sent only to its designated mailbox by a
+    separately verified trusted sender. This model is never itself a grant.
+    """
+
+    user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_mailbox_challenges",
+    )
+    email = models.EmailField(max_length=254)
+    token_digest = models.CharField(max_length=64, unique=True)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["user", "email"],
+                condition=Q(consumed_at__isnull=True),
+                name="jireh_one_open_mailbox_proof",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.email and self.email != self.email.strip().casefold():
+            raise ValidationError({"email": "Use a normalized email address."})
+        if self._state.adding:
+            return
+        previous = type(self).objects.filter(pk=self.pk).values(
+            "id", "created_at", "user_id", "email", "token_digest",
+            "expires_at", "consumed_at",
+        ).first()
+        if previous is None:
+            return
+        immutable = ("id", "created_at", "user_id", "email", "token_digest", "expires_at")
+        if any(getattr(self, name) != previous[name] for name in immutable):
+            raise ValidationError("Mailbox challenge identity cannot change.")
+        if previous["consumed_at"] is not None and (
+            self.consumed_at != previous["consumed_at"]
+        ):
+            raise ValidationError("A used challenge cannot be modified.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Mailbox challenge records cannot be deleted.")
+

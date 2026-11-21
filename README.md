@@ -337,3 +337,30 @@ for routine school management.
 
 Do not log invitation secrets, use this module with real recipients, or treat
 the presence of a pending invitation as authorization.
+
+
+## Authenticated two-proof household redemption (internal-only)
+
+The non-deployed \`jireh.schools.redemption\` service is a **foundation**, not
+a complete onboarding or mailbox-verification product. A family member's
+existing active, authenticated Django account must present **both** the
+school director's invitation secret and a separate, 15-minute mailbox
+challenge secret bound to that specific account and the invitation recipient
+email. A stored account email, matching username, or invitation alone never
+authorizes household access.
+
+After verifying both secrets, the internal service atomically creates one
+school/household-specific access grant, records the authenticated recipient,
+marks the invitation and mailbox proof as used, and appends an actor-attributed
+\`REDEEMED\` audit event. Failed audit persistence rolls everything back;
+replay, revoked invitations, expired proofs, other accounts and cross-school
+scopes are denied. Previously revoked access is **never** reactivated through
+this path.
+
+**Not implemented:** trusted email delivery, proven mailbox control, real
+login/identity onboarding, CSRF-protected redemption endpoints, rate limiting,
+public API exposure, or operational recovery. The proof-preparation service
+returns a short-lived token to an internal trusted caller; only a separately
+certified sender can deliver it to its bound address. Until such delivery
+is certified, no real family should be invited or onboarded. Neither raw
+secret is persisted. Runtime URL routing remains liveness-only.

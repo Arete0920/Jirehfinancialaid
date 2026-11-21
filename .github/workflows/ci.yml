@@ -284,6 +284,38 @@ jobs:
           print("Invitation guard reapply: PASS")
           PY
 
+      - name: Verify mailbox redemption guard migration replay
+        run: |
+          set -euo pipefail
+          python -m django migrate schools 0007 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger WHERE "
+                  "tgname='jireh_mailbox_challenge_protect' "
+                  "AND NOT tgisinternal"
+              )
+              assert cursor.fetchone()[0] == 0, "Mailbox rollback incomplete"
+          print("Mailbox guard rollback: PASS")
+          PY
+          python -m django migrate schools 0008 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger WHERE "
+                  "tgname='jireh_mailbox_challenge_protect' "
+                  "AND NOT tgisinternal"
+              )
+              assert cursor.fetchone()[0] == 1, "Mailbox reapply incomplete"
+          print("Mailbox guard reapply: PASS")
+          PY
+
       - name: Check standalone runtime and closed routes (no deployment)
         env:
           JIREH_ENABLE_RUNTIME: '1'
