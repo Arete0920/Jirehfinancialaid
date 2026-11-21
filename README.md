@@ -547,3 +547,32 @@ director assignment still requires a separately approved, strongly
 authenticated provisioning process and operational certification. No
 customer accounts, mail, cloud resources, payments, or CROWN dependencies
 are activated by this change.
+
+
+## First financial-aid director bootstrap (disabled-by-default, internal-only)
+
+A school with **no historical director grant** may have an initial
+financial-aid director proposed and approved only through an explicitly
+enabled, internal two-operator procedure. Two distinct, individually
+allowlisted, active staff-superuser accounts must each re-enter their
+password. The proposed director must be an existing active nonprivileged
+account with a verified recovery mailbox. Proposals expire after 15 minutes,
+require a bounded external authorization reference, and do **not** grant
+access at the proposal stage.
+
+A second operator must independently confirm the school's external
+authorization reference before invoking the approval service. Approval
+rechecks school, subject, and operator eligibility, creates exactly one
+school-specific grant, and records actor-attributed approval and grant
+decision evidence in one transaction. An audit failure rolls back the
+privilege grant. Even a **revoked** historical director grant blocks initial
+bootstrap, preventing use as a privilege-restoration path. Expired proposals
+may be closed and replaced without deleting their history.
+
+**Not enabled or deployed:** The bootstrap setting defaults to disabled
+and no operator IDs are configured by runtime settings. The service is not
+an HTTP endpoint, a customer onboarding workflow, a school creator, or
+proof of institutional approval by itself. External institutional approval,
+operator identity management, secret storage, and production certification
+must precede any real provisioning. No real school, account, or cloud
+resource is modified by this feature.

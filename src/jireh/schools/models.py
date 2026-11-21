@@ -785,3 +785,102 @@ class RecoveryAttemptBudget(UUIDStampedModel):
             ),
         ]
 
+
+class FirstDirectorBootstrapRequest(UUIDStampedModel):
+    """Internal-only, two-operator first director approval record.
+
+    Both operators must be separately allowlisted and authenticated by a
+    trusted caller. No public routes or deployment settings enable this.
+    A prior director grant at this school permanently disqualifies bootstrap.
+    """
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT,
+        related_name="first_director_bootstrap_requests",
+    )
+    subject = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_first_director_requests",
+    )
+    proposed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_first_director_proposals",
+    )
+    authorization_reference = models.CharField(max_length=120)
+    expires_at = models.DateTimeField()
+    approved_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name="jireh_first_director_approvals",
+    )
+    approved_at = models.DateTimeField(null=True, blank=True)
+    closed_at = models.DateTimeField(null=True, blank=True)
+    grant = models.OneToOneField(
+        SchoolStaffAccess, on_delete=models.PROTECT,
+        null=True, blank=True,
+        related_name="initial_director_approval",
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["school"],
+                condition=Q(approved_at__isnull=True, closed_at__isnull=True),
+                name="jireh_one_pending_initial_director",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(
+                        approved_at__isnull=True,
+                        approved_by__isnull=True,
+                        grant__isnull=True,
+                    ) | Q(
+                        approved_at__isnull=False,
+                        approved_by__isnull=False,
+                        grant__isnull=False,
+                        closed_at__isnull=True,
+                    )
+                ),
+                name="jireh_initial_director_state_valid",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(approved_by__isnull=True)
+                    | ~Q(proposed_by=F("approved_by"))
+                ),
+                name="jireh_initial_director_dual_control",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if not self._state.adding:
+            before = type(self).objects.filter(pk=self.pk).values(
+                "school_id", "subject_id", "proposed_by_id",
+                "authorization_reference", "expires_at",
+                "approved_by_id", "approved_at", "closed_at", "grant_id",
+            ).first()
+            if before:
+                identity = (
+                    "school_id", "subject_id", "proposed_by_id",
+                    "authorization_reference", "expires_at",
+                )
+                if any(getattr(self, field) != before[field] for field in identity):
+                    raise ValidationError("Initial director proposal identity is immutable.")
+                if before["approved_at"] is not None or before["closed_at"] is not None:
+                    state = ("approved_by_id", "approved_at", "closed_at", "grant_id")
+                    if any(getattr(self, field) != before[field] for field in state):
+                        raise ValidationError("Closed director approval is immutable.")
+
+        if self.approved_by_id and self.approved_by_id == self.proposed_by_id:
+            raise ValidationError("Distinct operators are required.")
+        if self.grant_id and (
+            self.grant.school_id != self.school_id
+            or self.grant.user_id != self.subject_id
+            or self.grant.role != SchoolStaffAccess.ROLE_AID_DIRECTOR
+            or not self.grant.is_active
+        ):
+            raise ValidationError("Initial director approval grant binding invalid.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Initial director approvals cannot be deleted.")
