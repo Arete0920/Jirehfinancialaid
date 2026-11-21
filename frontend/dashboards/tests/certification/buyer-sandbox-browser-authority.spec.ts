@@ -1,0 +1,692 @@
+import { mkdirSync, writeFileSync } from 'node:fs';
+import { dirname, resolve } from 'node:path';
+import { test, expect, type Page, type TestInfo } from '@playwright/test';
+import { BUYER_WALKTHROUGH } from '../../src/sandbox/buyerWalkthrough.js';
+
+type RouteResult = {
+  persona: string;
+  label: string;
+  route: string;
+  finalUrl: string;
+  status: number | null;
+  title: string;
+  screenshot: string;
+};
+
+const results: RouteResult[] = [];
+const actionProofs: string[] = [];
+const requestDiagnostics = new Map<Page, {
+  session: import('@playwright/test').CDPSession;
+  failures: object[];
+}>();
+const outputPath = resolve(
+  process.cwd(),
+  process.env.CROWN_BROWSER_AUTHORITY_OUTPUT || 'test-results/buyer-sandbox-browser-authority.json',
+);
+
+function slug(value: string) {
+  return value
+    .toLowerCase()
+    .replace(/^https?:\/\//, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '') || 'root';
+}
+
+function hostedBuyerEntryRoute() {
+  // Hosted Azure personas must use the bound invitation owned by an isolated
+  // fictional buyer school. Never emulate the local Heritage open-session path.
+  // The Windows Heritage runner reuses the live Playwright mode to target its
+  // already-running preview server. Its launcher sets the local runtime
+  // markers before the first buyer suite; presenter-only flags are set later.
+  // A hosted/nonloopback browser still requires an invited buyer workspace.
+  const localHeritagePreview =
+    process.env.CROWN_LIVE_FRONTEND_URL === 'http://localhost:4173' &&
+    process.env.CROWN_ENV === 'local' &&
+    process.env.DJANGO_ENV === 'local' &&
+    process.env.VITE_LOCAL_DEMO === '1';
+  if (process.env.CROWN_CERTIFICATION_LIVE_RUNTIME !== '1' || localHeritagePreview) {
+    return BUYER_WALKTHROUGH.entryRoute;
+  }
+  const inviteId = String(process.env.CROWN_LIVE_SANDBOX_INVITE_ID || '').trim();
+  if (!/^sbx_inv_[A-Za-z0-9]{1,24}$/.test(inviteId)) {
+    throw new Error('Live buyer certification requires a valid DEV invitation and isolated workspace.');
+  }
+  return `${BUYER_WALKTHROUGH.entryRoute}?invite=${encodeURIComponent(inviteId)}`;
+}
+
+async function assertCrownVisualAuthority(page: Page) {
+  const tokens = await page.evaluate(() => {
+    const styles = getComputedStyle(document.documentElement);
+    return {
+      primaryDeep: styles.getPropertyValue('--crown-primary-deep').trim(),
+      surface: styles.getPropertyValue('--crown-surface').trim(),
+      text: styles.getPropertyValue('--crown-text').trim(),
+      radius: styles.getPropertyValue('--crown-radius-md').trim(),
+    };
+  });
+
+  expect(tokens.primaryDeep, 'CROWN primary token missing').not.toBe('');
+  expect(tokens.surface, 'CROWN surface token missing').not.toBe('');
+  expect(tokens.text, 'CROWN text token missing').not.toBe('');
+  expect(tokens.radius, 'CROWN radius token missing').not.toBe('');
+}
+
+async function assertNoHorizontalOverflow(page: Page) {
+  const overflow = await page.evaluate(() => ({
+    scrollWidth: document.documentElement.scrollWidth,
+    clientWidth: document.documentElement.clientWidth,
+  }));
+  expect(overflow.scrollWidth, `horizontal overflow: ${JSON.stringify(overflow)}`).toBeLessThanOrEqual(
+    overflow.clientWidth + 2,
+  );
+}
+
+async function launchPersona(page: Page, label: string) {
+  const entry = await page.goto(hostedBuyerEntryRoute(), { waitUntil: 'networkidle' });
+  expect(entry?.status() ?? 200).toBeLessThan(400);
+  await expect(page).not.toHaveURL(/\/login(?:[/?#]|$)/i);
+  await expect(page.getByText('No buyer password')).toBeVisible();
+  await expect(page.getByText('Heritage Christian Academy', { exact: true })).toBeVisible();
+
+  const card = page.locator('.sandbox-persona-card').filter({ has: page.getByText(label, { exact: true }) });
+  await expect(card, `sandbox persona card missing: ${label}`).toBeVisible();
+  const launchButton = card.getByRole('button', { name: /Start guided/i });
+  await Promise.all([
+    page.waitForURL(
+      (url) => url.pathname !== BUYER_WALKTHROUGH.entryRoute,
+      { timeout: 30000 },
+    ),
+    launchButton.click(),
+  ]);
+  await page.waitForLoadState('networkidle');
+  await expect(page).not.toHaveURL(/\/login(?:[/?#]|$)/i);
+  await expect(page).not.toHaveURL(/\/not-authorized(?:[/?#]|$)/i);
+  await expect(page).not.toHaveURL(/\/forbidden(?:[/?#]|$)/i);
+}
+
+// The Azure buyer is an invited, independent fictional school. Heritage-only
+// admissions, student and parent fixtures below remain local Windows proofs.
+const HOSTED_DEV_FRONTEND = 'https://yellow-forest-0eecc8b0f-devcertification.eastus2.7.azurestaticapps.net';
+const HOSTED_DEV_API = 'https://crown-api-dev.azurewebsites.net';
+const HERITAGE_SHARED_SCHOOL = '19801b59-8c05-4c84-9312-5d792e4e839d';
+const liveOrigin = String(process.env.CROWN_LIVE_FRONTEND_URL || '').replace(/\/$/, '');
+const isRemoteLive = process.env.CROWN_CERTIFICATION_LIVE_RUNTIME === '1'
+  && !!liveOrigin && !/^https?:\/\/(?:localhost|127\.0\.0\.1)(?::\d+)?(?:\/|$)/.test(liveOrigin);
+if (isRemoteLive) {
+  if (liveOrigin !== HOSTED_DEV_FRONTEND ||
+      String(process.env.CROWN_LIVE_API_BASE_URL || '').replace(/\/$/, '') !== HOSTED_DEV_API) {
+    throw new Error('Hosted buyer browser proof is restricted to the existing Azure DEV origin.');
+  }
+  const invitedId = String(process.env.CROWN_LIVE_SANDBOX_INVITE_ID || '').trim();
+  const expectedDevSha = String(process.env.CROWN_EVIDENCE_RUNTIME_SHA || '');
+  if (!/^sbx_inv_[A-Za-z0-9]{1,24}$/.test(invitedId) || !/^[0-9a-f]{40}$/.test(expectedDevSha)) {
+    throw new Error('Hosted browser proof requires an exact source and active buyer invitation.');
+  }
+
+  async function launchInvitedBuyer(page: Page, label: string) {
+    const entry = await page.goto('/sandbox?invite=' + encodeURIComponent(invitedId), { waitUntil: 'networkidle' });
+    expect(entry?.status()).toBe(200);
+    await expect(page.getByText('No buyer password')).toBeVisible();
+    const card = page.locator('.sandbox-persona-card').filter({ has: page.getByText(label, { exact: true }) });
+    await expect(card).toBeVisible();
+    await Promise.all([
+      page.waitForURL(url => url.pathname !== '/sandbox', { timeout: 30000 }),
+      card.getByRole('button', { name: /^Start (?:guided|self-guided)$/i }).click(),
+    ]);
+    await expect(page).not.toHaveURL(/\/(?:login|forbidden|not-authorized)(?:[/?#]|$)/i);
+    const actor = await page.evaluate(() => ({
+      access: sessionStorage.getItem('crown.jwt.access') || '',
+      school: sessionStorage.getItem('crown.school.id') || '',
+    }));
+    if (!/^[^.]+\.[^.]+\.[^.]+$/.test(actor.access) ||
+        !/^[0-9a-f-]{36}$/i.test(actor.school) ||
+        actor.school.toLowerCase() === HERITAGE_SHARED_SCHOOL) {
+      throw new Error('Hosted browser actor is not a source-bound invited school principal.');
+    }
+    // Never attach or print credentials or tenant identifiers to browser evidence.
+    return { Authorization: 'Bearer ' + actor.access, 'X-School-Id': actor.school };
+  }
+
+  test.describe('Azure DEV invite-owned buyer smoke and persisted Jireh acceptance', () => {
+
+    test('pins source identities and rejects uninvited sessions', async ({ request }) => {
+      const responses = await Promise.all([
+        request.get(HOSTED_DEV_FRONTEND + '/build.json'),
+        request.get(HOSTED_DEV_API + '/api/health/'),
+      ]);
+      for (const response of responses) expect(response.status()).toBe(200);
+      const [frontend, backend] = await Promise.all(responses.map(response => response.json()));
+      expect(frontend.build_sha).toBe(expectedDevSha);
+      expect(backend.build_sha).toBe(expectedDevSha);
+      expect(backend.artifact_build_sha).toBe(expectedDevSha);
+      expect(backend.db).toBe('ok');
+      const uninvited = await request.post(HOSTED_DEV_API + '/api/v1/sandbox/session/', {
+        data: { role: 'parent', track: 'school', school: 'heritage-core' },
+      });
+      expect(uninvited.status()).toBeGreaterThanOrEqual(400);
+      expect(uninvited.status()).toBeLessThan(500);
+    });
+
+    test('Jireh parent submits or independently rechecks a persisted fictional application', async ({ page }) => {
+      const headers = await launchInvitedBuyer(page, 'Parent / Guardian');
+      const endpoint = HOSTED_DEV_API + '/api/v1/buyer-demo/jireh/aid/family/';
+      const initial = await page.request.get(endpoint, { headers });
+      expect(initial.status()).toBe(200);
+      const before = await initial.json();
+      expect(Array.isArray(before.applications)).toBe(true);
+      expect(before.applications.length).toBeLessThanOrEqual(1);
+      await page.goto('/parent/financial-aid', { waitUntil: 'networkidle' });
+      await expect(page.getByTestId('jireh-family-demo')).toBeVisible();
+      if (before.applications.length === 0) {
+        await page.getByRole('checkbox', { name: /I confirm all application/i }).check();
+        const written = page.waitForResponse(response =>
+          response.url() === endpoint && response.request().method() === 'POST');
+        await page.getByRole('button', { name: 'Submit fictional Financial Aid application' }).click();
+        expect((await written).status()).toBe(201);
+        await expect(page.getByTestId('jireh-submit-confirmation')).toContainText('independently verified');
+      }
+      await page.reload({ waitUntil: 'networkidle' });
+      const saved = await page.request.get(endpoint, { headers });
+      expect(saved.status()).toBe(200);
+      const after = await saved.json();
+      expect(after.applications).toHaveLength(1);
+      expect(after.applications[0].id).toBeTruthy();
+      expect(after.applications[0].submitted_at).toBeTruthy();
+      expect(after.applications[0].status).toBe('SUBMITTED');
+      const foreign = await page.request.get(endpoint, {
+        headers: { ...headers, 'X-School-Id': HERITAGE_SHARED_SCHOOL },
+      });
+      expect(foreign.status()).toBeGreaterThanOrEqual(400);
+      expect(foreign.status()).toBeLessThan(500);
+    });
+
+    test('Jireh SGO verifies invited partner submission and persisted readback', async ({ page }) => {
+      const headers = await launchInvitedBuyer(page, 'Parent / Guardian');
+      await page.goto('/jireh-sgo/intake', { waitUntil: 'networkidle' });
+      const partner = page.getByLabel('Partner SGO and program');
+      await expect(partner.locator('option')).toHaveCount(2);
+      const programs = await partner.locator('option').evaluateAll(options => options.map(option => (option as HTMLOptionElement).value));
+      for (const program of programs) {
+        await partner.selectOption(program);
+        const submit = page.getByRole('button', { name: 'Submit fictional application', exact: true });
+        if (await submit.isVisible()) {
+          await page.getByRole('checkbox').check();
+          const posted = page.waitForResponse(response =>
+            response.url().endsWith('/api/v1/buyer-demo/jireh/sgo/family/submit/') &&
+            response.request().method() === 'POST');
+          await submit.click();
+          expect((await posted).status()).toBe(201);
+          await expect(page.getByText('Saved. The submitted fictional application was read back from the server.')).toBeVisible();
+        }
+        await page.reload({ waitUntil: 'networkidle' });
+        await partner.selectOption(program);
+        await expect(page.getByText(/SUBMITTED|RESUBMITTED|CORRECTION_REQUESTED/).first()).toBeVisible();
+        const savedPrograms = await page.request.get(
+          HOSTED_DEV_API + '/api/v1/buyer-demo/jireh/sgo/family/programs/', { headers });
+        expect(savedPrograms.status()).toBe(200);
+        const grants = await savedPrograms.json();
+        const savedProgram = grants.programs?.find((entry: { id: string }) => entry.id === program);
+        expect(savedProgram?.application_id).toBeTruthy();
+        const savedApplication = await page.request.get(
+          HOSTED_DEV_API + '/api/v1/buyer-demo/jireh/sgo/family/applications/' + encodeURIComponent(savedProgram.application_id) + '/',
+          { headers });
+        expect(savedApplication.status()).toBe(200);
+        const verified = await savedApplication.json();
+        expect(verified.application?.id).toBe(savedProgram.application_id);
+        expect(verified.application?.program_id).toBe(program);
+        expect(['SUBMITTED', 'RESUBMITTED', 'CORRECTION_REQUESTED']).toContain(verified.application?.status);
+      }
+    });
+
+    test('Daycare staff identity and school-scoped roster are not shared Heritage records', async ({ page }) => {
+      const director = await launchInvitedBuyer(page, 'Diadem Daycare Director');
+      const sites = await page.request.get(HOSTED_DEV_API + '/api/v1/aftercare/daycare/sites/', { headers: director });
+      expect(sites.status()).toBe(200);
+      const body = await sites.json();
+      expect(body.sites).toHaveLength(1);
+      const siteId = String(body.sites[0]?.site_id || '');
+      if (!/^[0-9a-f-]{36}$/i.test(siteId)) throw new Error('Authorized fictional Daycare site is missing.');
+      const roster = await page.request.get(
+        HOSTED_DEV_API + '/api/v1/aftercare/daycare/sites/' + siteId + '/roster/', { headers: director });
+      expect(roster.status()).toBe(200);
+      const custodyRoster = await roster.json();
+      expect(custodyRoster.site_id).toBe(siteId);
+      expect(Array.isArray(custodyRoster.rows)).toBe(true);
+      expect(custodyRoster.children_present).toBe(custodyRoster.rows.length);
+      const parent = await launchInvitedBuyer(page, 'Parent / Guardian');
+      const denied = await page.request.get(HOSTED_DEV_API + '/api/v1/aftercare/daycare/sites/', { headers: parent });
+      expect(denied.status()).toBeGreaterThanOrEqual(400);
+      expect(denied.status()).toBeLessThan(500);
+    });
+
+    test('Hosted SGO enforces parent, processor and school-scoped authority', async ({ page }) => {
+      // Read-only security-negative checks; no processor or scholarship mutation.
+      const parent = await launchInvitedBuyer(page, 'Parent / Guardian');
+      const familyUrl = HOSTED_DEV_API + '/api/v1/buyer-demo/jireh/sgo/family/programs/';
+      const processorUrl = HOSTED_DEV_API + '/api/v1/buyer-demo/jireh/sgo/processor/programs/';
+      const family = await page.request.get(familyUrl, { headers: parent });
+      expect(family.status()).toBe(200);
+      const familyRecords = await family.json();
+      expect(familyRecords.synthetic_only).toBe(true);
+      expect(familyRecords.funds_status).toBe('NONCASH_ONLY');
+      expect(Array.isArray(familyRecords.programs)).toBe(true);
+      expect(familyRecords.programs.length).toBeGreaterThan(0);
+
+      const deniedProcessor = await page.request.get(processorUrl, { headers: parent });
+      expect([403, 404]).toContain(deniedProcessor.status());
+      const wrongSchool = await page.request.get(familyUrl, {
+        headers: { ...parent, 'X-School-Id': HERITAGE_SHARED_SCHOOL },
+      });
+      expect([400, 403, 404]).toContain(wrongSchool.status());
+
+      const admin = await launchInvitedBuyer(page, 'School Administrator');
+      const deniedFamily = await page.request.get(familyUrl, { headers: admin });
+      expect([403, 404]).toContain(deniedFamily.status());
+      const processor = await page.request.get(processorUrl, { headers: admin });
+      expect(processor.status()).toBe(200);
+      const processing = await processor.json();
+      expect(processing.synthetic_only).toBe(true);
+      expect(processing.authority).toBe('PROCESSOR_VERIFICATION_ONLY');
+      expect(processing.funds_status).toBe('NONCASH_ONLY');
+      expect(Array.isArray(processing.programs)).toBe(true);
+      expect(processing.programs.length).toBeGreaterThan(0);
+    });
+
+    test('Daycare, Extended Care and Camp reject foreign-school and parent staff access', async ({ page }) => {
+      const director = await launchInvitedBuyer(page, 'Diadem Daycare Director');
+      const wrongDaycare = await page.request.get(
+        HOSTED_DEV_API + '/api/v1/aftercare/daycare/sites/', {
+          headers: { ...director, 'X-School-Id': HERITAGE_SHARED_SCHOOL },
+        });
+      expect([400, 403, 404]).toContain(wrongDaycare.status());
+
+      const admin = await launchInvitedBuyer(page, 'School Administrator');
+      const endpoints = [
+        '/api/v1/aftercare/roster/today/?care_session=AM',
+        '/api/v1/aftercare/roster/today/?care_session=PM',
+        '/api/v1/summer-camp/programs/',
+      ];
+      for (const endpoint of endpoints) {
+        const foreign = await page.request.get(HOSTED_DEV_API + endpoint, {
+          headers: { ...admin, 'X-School-Id': HERITAGE_SHARED_SCHOOL },
+        });
+        expect([400, 403, 404], endpoint).toContain(foreign.status());
+      }
+
+      const parent = await launchInvitedBuyer(page, 'Parent / Guardian');
+      for (const endpoint of endpoints) {
+        const denied = await page.request.get(HOSTED_DEV_API + endpoint, { headers: parent });
+        expect([403, 404], endpoint).toContain(denied.status());
+      }
+    });
+
+    test('AM/PM Extended Care and Camp require real buyer-school scoped reads', async ({ page }) => {
+      const admin = await launchInvitedBuyer(page, 'School Administrator');
+      // A 200 response without fictional enrollment/program records is not
+      // five-module acceptance. Check enrollments separately: today's roster
+      // may be empty on weekends even when current AM/PM enrolments exist.
+      const enrolledResponse = await page.request.get(
+        HOSTED_DEV_API + '/api/v1/aftercare/enrollments/', { headers: admin });
+      expect(enrolledResponse.status()).toBe(200);
+      const enrollments = await enrolledResponse.json();
+      expect(Array.isArray(enrollments)).toBe(true);
+      for (const session of ['AM', 'PM']) {
+        const active = enrollments.filter(
+          (row: { care_session?: string; is_active?: boolean }) =>
+            row.care_session === session && row.is_active === true,
+        );
+        expect(active.length, session + ' requires a fictional active enrollment').toBeGreaterThan(0);
+        const roster = await page.request.get(
+          HOSTED_DEV_API + '/api/v1/aftercare/roster/today/?care_session=' + session, { headers: admin });
+        expect(roster.status(), session + ' Care roster').toBe(200);
+        const body = await roster.json();
+        expect(body.care_session).toBe(session);
+        expect(Array.isArray(body.rows)).toBe(true);
+        expect(body.rows.every((row: { care_session?: string }) => row.care_session === session)).toBe(true);
+      }
+      const camp = await page.request.get(HOSTED_DEV_API + '/api/v1/summer-camp/programs/', { headers: admin });
+      expect(camp.status()).toBe(200);
+      const programs = await camp.json();
+      expect(Array.isArray(programs)).toBe(true);
+      expect(programs.length, 'Camp requires a fictional school-scoped program').toBeGreaterThan(0);
+    });
+  });
+} else {
+test.describe('CROWN buyer sandbox live browser authority', () => {
+  test.beforeEach(async ({ page }) => {
+    await page.setViewportSize({ width: 1440, height: 1000 });
+  });
+
+  // Keep independent role/action tests running after a failure. The runner
+  // uses one worker; every failed assertion still fails the certification.
+  test.afterEach(async ({ page }, testInfo) => {
+    const diagnostics = requestDiagnostics.get(page);
+    if (diagnostics) {
+      await testInfo.attach('api-network-diagnostics.json', {
+        body: Buffer.from(JSON.stringify(diagnostics.failures, null, 2)),
+        contentType: 'application/json',
+      });
+      await diagnostics.session.detach();
+      requestDiagnostics.delete(page);
+    }
+  });
+
+  test.beforeEach(async ({ page }) => {
+    const session = await page.context().newCDPSession(page);
+    const requests = new Map<string, { path: string; status?: number; corsHeaderPresent?: boolean }>();
+    const failures: object[] = [];
+    requestDiagnostics.set(page, { session, failures });
+    session.on('Network.requestWillBeSent', (event) => {
+      const url = new URL(event.request.url);
+      if (url.pathname.startsWith('/api/')) requests.set(event.requestId, { path: url.pathname });
+    });
+    session.on('Network.responseReceivedExtraInfo', (event) => {
+      const request = requests.get(event.requestId);
+      if (!request) return;
+      request.status = event.statusCode;
+      request.corsHeaderPresent = Object.keys(event.headers).some(
+        (name) => name.toLowerCase() === 'access-control-allow-origin',
+      );
+    });
+    session.on('Network.loadingFailed', (event) => {
+      const request = requests.get(event.requestId);
+      if (request) failures.push({
+        ...request,
+        error: event.errorText,
+        canceled: event.canceled || false,
+        corsError: event.corsErrorStatus?.corsError || null,
+      });
+    });
+    await session.send('Network.enable');
+  });
+
+  test.afterAll(() => {
+    mkdirSync(dirname(outputPath), { recursive: true });
+    writeFileSync(
+      outputPath,
+      JSON.stringify(
+        {
+          generatedAt: new Date().toISOString(),
+          testSourceSha: process.env.CROWN_REHEARSAL_TEST_SHA || process.env.GITHUB_SHA || null,
+          liveFrontendUrl: process.env.CROWN_LIVE_FRONTEND_URL || null,
+          entryRoute: BUYER_WALKTHROUGH.entryRoute,
+          school: BUYER_WALKTHROUGH.school,
+          routeCount: results.length,
+          results,
+          actionProofs,
+        },
+        null,
+        2,
+      ),
+      'utf8',
+    );
+  });
+
+  test('records exact deployed frontend build identity', async ({ request }, testInfo) => {
+    const response = await request.get('/build.json');
+    expect(response.status(), '/build.json must resolve').toBe(200);
+    const build = await response.json();
+    expect(String(build.build_sha || '')).toMatch(/^[0-9a-f]{40}$/i);
+    expect(String(build.deploy_tag || '')).not.toBe('');
+    await testInfo.attach('deployed-build-identity.json', {
+      body: Buffer.from(JSON.stringify(build, null, 2)),
+      contentType: 'application/json',
+    });
+  });
+
+  for (const journey of BUYER_WALKTHROUGH.journeys) {
+    test(`${journey.label}: passwordless launch and full journey`, async ({ page }, testInfo) => {
+      const consoleErrors: string[] = [];
+      const pageErrors: string[] = [];
+
+      page.on('console', (message) => {
+        if (message.type() === 'error') consoleErrors.push(message.text());
+      });
+      page.on('pageerror', (error) => pageErrors.push(error.message));
+
+      await launchPersona(page, journey.label);
+      await assertCrownVisualAuthority(page);
+      await assertNoHorizontalOverflow(page);
+
+      for (const route of journey.routes) {
+        const response = await page.goto(route, { waitUntil: 'networkidle' });
+        const status = response?.status() ?? null;
+        if (status !== null) expect(status, `${journey.label} ${route}`).toBeLessThan(400);
+
+        await expect(page).not.toHaveURL(/\/login(?:[/?#]|$)/i);
+        await expect(page).not.toHaveURL(/\/not-authorized(?:[/?#]|$)/i);
+        await expect(page).not.toHaveURL(/\/forbidden(?:[/?#]|$)/i);
+        await expect(page.locator('body')).not.toBeEmpty();
+        await assertCrownVisualAuthority(page);
+        await assertNoHorizontalOverflow(page);
+
+        const bodyText = (await page.locator('body').innerText()).trim();
+        expect(bodyText.length, `${journey.label} ${route} rendered too little content`).toBeGreaterThan(40);
+
+        const screenshotName = `${slug(journey.persona)}--${slug(route)}.png`;
+        const screenshot = testInfo.outputPath(screenshotName);
+        await page.screenshot({ path: screenshot, fullPage: true });
+        await testInfo.attach(screenshotName, { path: screenshot, contentType: 'image/png' });
+
+        results.push({
+          persona: journey.persona,
+          label: journey.label,
+          route,
+          finalUrl: page.url(),
+          status,
+          title: await page.title(),
+          screenshot: screenshotName,
+        });
+      }
+
+      expect(pageErrors, `page errors for ${journey.label}`).toEqual([]);
+      expect(consoleErrors, `console errors for ${journey.label}`).toEqual([]);
+    });
+  }
+
+
+  test('admissions enrollment completes or preserves the same fictional student handoff', async ({ page }) => {
+    // The Windows local SQLite server may queue initial read-only requests.
+    // Do not declare this journey complete unless real navigation and the
+    // seeded family both load; preserve the enrollment mutation and readback.
+    test.setTimeout(120000);
+    await launchPersona(page, 'Admissions Director');
+    await page.goto('/admissions/pipeline', { waitUntil: 'networkidle' });
+    await expect(page.getByText('Live / Role Scoped', { exact: true })).toBeVisible({ timeout: 45000 });
+    const targetFamily = 'Mercer Enrollment Conversion Demo Family';
+    const row = page.getByRole('row').filter({
+      has: page.getByRole('cell', { name: targetFamily, exact: true }),
+    });
+    await expect(row).toBeVisible({ timeout: 45000 });
+    const alreadyEnrolled = await row.getByRole('cell', { name: 'Enrolled', exact: true }).isVisible();
+    if (!alreadyEnrolled) {
+      await expect(row.getByRole('cell', { name: 'Accepted', exact: true })).toBeVisible();
+    }
+    await row.getByRole('button', { name: 'Open' }).click();
+    await expect(page.getByText('Household Admissions Review')).toBeVisible();
+    await page.getByRole('button', { name: 'Show details' }).first().click();
+    const application = page.getByTestId('admissions-household-review').locator('[data-application-id]').filter({
+      has: page.getByText(targetFamily, { exact: true }),
+    });
+    const applicationId = await application.getAttribute('data-application-id');
+    expect(applicationId).toBeTruthy();
+    if (alreadyEnrolled) {
+      await expect(application.getByRole('button', { name: 'Enrolled', exact: true })).toBeDisabled();
+      await page.reload({ waitUntil: 'networkidle' });
+      await expect(row.getByRole('cell', { name: 'Enrolled', exact: true })).toBeVisible();
+      await row.getByRole('button', { name: 'Open' }).click();
+      await expect(application).toHaveAttribute('data-application-id', applicationId!);
+      await application.getByRole('button', { name: 'Show details' }).click();
+      await expect(application.getByRole('button', { name: 'Enrolled', exact: true })).toBeDisabled();
+      actionProofs.push('admissions_existing_enrollment_persists');
+      return;
+    }
+    const conversion = page.waitForResponse((response) =>
+      response.url().includes('/api/admissions/enroll/') &&
+      response.request().method() === 'POST',
+    );
+    await page.getByRole('button', { name: 'Enroll Child' }).first().click();
+    const response = await conversion;
+    expect(response.ok()).toBe(true);
+    const enrolled = await response.json();
+    expect(enrolled.ok).toBe(true);
+    expect(enrolled.student_id).toBeTruthy();
+    expect(enrolled.canonical_gate).toBe('verified_identity_and_core_enrollment');
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(row.getByRole('cell', { name: 'Enrolled', exact: true })).toBeVisible();
+    actionProofs.push('admissions_conversion_persists');
+  });
+
+  test('student workspace shows school data and denies finance and administrative routes', async ({ page }) => {
+    await launchPersona(page, 'Student');
+    await page.goto('/student', { waitUntil: 'networkidle' });
+    await expect(page.getByTestId('sandbox-student-self-service')).toBeVisible();
+    await expect(page.getByTestId('student-self-service-name')).toHaveText('Avery Reed');
+    await expect(page.getByTestId('student-schedule')).toContainText('Grade 7 English Language Arts');
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.getByTestId('student-learning-tasks')).toContainText('Vocabulary Check 1');
+    for (const route of ['/finance', '/school-admin-dashboard']) {
+      await page.goto(route, { waitUntil: 'domcontentloaded' });
+      await expect(page).not.toHaveURL(new RegExp(`${route}(?:$|[?#])`), { timeout: 10000 });
+    }
+    actionProofs.push('student_role_denials_and_workflow');
+  });
+
+  test('finance manual demonstration payment persists after reload', async ({ page }) => {
+    await launchPersona(page, 'Finance Director');
+    await page.goto('/finance', { waitUntil: 'networkidle' });
+    const panel = page.getByTestId('sandbox-finance-transaction');
+    await expect(panel).toBeVisible();
+    const alreadyReconciled = await panel.getByRole('button', { name: 'Payment Reconciled' }).isVisible();
+    if (!alreadyReconciled) {
+      const payment = page.waitForResponse((response) =>
+        response.url().includes('/api/v1/sandbox/finance/apply-payment/') &&
+        response.request().method() === 'POST',
+      );
+      await panel.getByRole('button', { name: 'Apply Demo Payment' }).click();
+      const response = await payment;
+      expect(response.status()).toBe(200);
+      const payload = await response.json();
+      expect(payload.reconciliation_status).toBe('reconciled');
+      expect(payload.external_payment_processed).toBe(false);
+      expect(payload.over_refund_blocked).toBe(true);
+    }
+    await expect(panel.getByRole('button', { name: 'Payment Reconciled' })).toBeDisabled();
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.getByTestId('finance-reconciliation')).toHaveText('reconciled');
+    await expect(page.getByTestId('finance-remaining')).toHaveText('$0.00');
+    actionProofs.push('finance_manual_payment_persists');
+  });
+
+  test('teacher lesson plan persists with fictional classroom data', async ({ page }) => {
+    await launchPersona(page, 'Teacher / Staff');
+    await page.goto('/teacher/lesson-plans/today', { waitUntil: 'networkidle' });
+    await expect(page.getByTestId('teacher-lesson-plan-editor')).toBeVisible();
+    const select = page.getByLabel('Lesson plan section');
+    await expect(select.locator('option')).toHaveCount(2);
+    await select.selectOption({ index: 1 });
+    const proof = 'Heritage sales rehearsal lesson proof';
+    await page.getByLabel('Learning objectives').fill(proof);
+    await page.getByLabel('Materials and curriculum resources').fill('Fictional curriculum resource');
+    await page.getByLabel('Instructional activities').fill('Read, discuss and respond');
+    await page.getByLabel('Homework').fill('Write a paragraph');
+    await page.getByLabel('Private teacher notes').fill('Local sales readiness proof');
+    const save = page.waitForResponse((response) =>
+      response.url().includes('/lesson-plans/') && response.request().method() !== 'GET',
+    );
+    await page.getByRole('button', { name: /save lesson plan/i }).click();
+    expect((await save).ok()).toBe(true);
+    await expect(page.getByRole('status')).toContainText(/lesson plan saved/i);
+    await page.reload({ waitUntil: 'networkidle' });
+    await expect(page.getByLabel('Learning objectives')).toHaveValue(proof);
+    await expect(page.getByLabel('Private teacher notes')).toHaveValue('Local sales readiness proof');
+    actionProofs.push('teacher_lesson_plan_persists');
+  });
+
+  test('parent enrollment completes or retains the same fictional student handoff', async ({ page }) => {
+    await launchPersona(page, 'Parent / Guardian');
+    const enrollmentState = page.waitForResponse((response) =>
+      response.url().includes('/api/v1/sandbox/parent/enrollment/') &&
+      response.request().method() === 'GET',
+    );
+    await page.goto('/parent/admissions/status', { waitUntil: 'networkidle' });
+    const beforeResponse = await enrollmentState;
+    expect(beforeResponse.ok()).toBe(true);
+    const before = await beforeResponse.json();
+    expect(before.application_id).toBeTruthy();
+    expect(before.demo_payment_processed).toBe(false);
+    expect(['accepted', 'enrolled']).toContain(before.lifecycle_stage);
+
+    const panel = page.getByTestId('sandbox-parent-enrollment-panel');
+    await expect(panel).toBeVisible();
+    await expect(panel).toContainText('Jordan Reed');
+    let completed = before;
+    if (before.lifecycle_stage === 'accepted') {
+      await page.getByLabel('Accept sandbox enrollment agreement').check();
+      const completion = page.waitForResponse((response) =>
+        response.url().includes('/api/v1/sandbox/parent/enrollment/') &&
+        response.request().method() === 'POST',
+      );
+      await page.getByRole('button', { name: /accept enrollment and complete demo handoff/i }).click();
+      const response = await completion;
+      expect(response.ok()).toBe(true);
+      completed = await response.json();
+    }
+    expect(String(completed.application_id)).toBe(String(before.application_id));
+    expect(completed.lifecycle_stage).toBe('enrolled');
+    expect(completed.contract_status).toBe('countersigned');
+    expect(completed.deposit_status).toBe('paid');
+    expect(completed.applicant_to_student_status).toBe('completed');
+    expect(completed.child_id).toBeTruthy();
+    expect(completed.demo_payment_processed).toBe(false);
+    await expect(page.getByTestId('sandbox-parent-enrollment-complete')).toContainText('Jordan Reed');
+
+    // First prove the reloaded browser performed both authenticated GETs.
+    // Chromium may evict response bodies during navigation, so parse a
+    // read-only replay of the exact GET requests through Playwright's
+    // browser-context API client. This preserves the original identity and
+    // school headers, shares its cookie jar, and never replays the POST.
+    const reloadedState = page.waitForResponse((response) =>
+      response.url().includes('/api/v1/sandbox/parent/enrollment/') &&
+      response.request().method() === 'GET',
+    );
+    const reloadedOverview = page.waitForResponse((response) =>
+      response.url().includes('/api/v1/parent360/me/overview/') &&
+      response.request().method() === 'GET',
+    );
+    await page.reload({ waitUntil: 'networkidle' });
+    const browserResponses = await Promise.all([reloadedState, reloadedOverview]);
+    const [after, overview] = await Promise.all(browserResponses.map(async (response) => {
+      expect(response.ok()).toBe(true);
+      expect(response.request().method()).toBe('GET');
+      const persistedRead = await page.request.fetch(response.request());
+      expect(persistedRead.ok()).toBe(true);
+      return persistedRead.json();
+    }));
+    expect(String(after.application_id)).toBe(String(completed.application_id));
+    expect(String(after.child_id)).toBe(String(completed.child_id));
+    expect(after.lifecycle_stage).toBe('enrolled');
+    expect(after.applicant_to_student_status).toBe('completed');
+    expect(after.demo_payment_processed).toBe(false);
+    const sameApplication = (overview?.admissions_continuity?.applications || []).find(
+      (application: { application_id: unknown }) =>
+        String(application.application_id) === String(completed.application_id),
+    );
+    expect(sameApplication?.lifecycle_stage).toBe('enrolled');
+    await expect(page.getByTestId('sandbox-parent-enrollment-complete')).toContainText('Jordan Reed');
+    actionProofs.push(before.lifecycle_stage === 'enrolled'
+      ? 'parent_existing_enrollment_handoff_persists'
+      : 'parent_enrollment_handoff_completed');
+  });
+
+  test('buyer entry remains usable at mobile width', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    const response = await page.goto(hostedBuyerEntryRoute(), { waitUntil: 'networkidle' });
+    expect(response?.status() ?? 200).toBeLessThan(400);
+    await expect(page.getByText('No buyer password')).toBeVisible();
+    await assertCrownVisualAuthority(page);
+    await assertNoHorizontalOverflow(page);
+  });
+});
+
+}

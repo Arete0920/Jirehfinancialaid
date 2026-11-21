@@ -1,0 +1,47 @@
+# Backend-only requirements for Crown-CSMS (Django/DRF API)
+# Keep in sync with root requirements.txt where applicable.
+Django==5.2.18
+djangorestframework==3.18.3
+django-extensions==4.1
+python-dotenv==1.2.4
+gunicorn==22.0.0
+dj-database-url==2.3.0
+# Database drivers
+# psycopg (v3) supports Python 3.14; psycopg2-binary is EOL for 3.14+
+psycopg[binary]==3.3.6
+# Testing
+pytest==9.2.0
+pytest-django==4.14.0
+# JWT auth (alongside sessions)
+# Reviewed SimpleJWT 5.5.1 migration graph; keep runtime and hosted image identical.
+djangorestframework-simplejwt==5.5.1
+PyJWT==2.15.1
+# CORS headers for frontend integration
+django-cors-headers==4.9.0
+drf-spectacular>=0.27.2
+drf-spectacular-sidecar>=2026.10.1
+# Microsoft 365 SSO (OAuth2 via Authlib)
+authlib>=1.9.1
+requests>=2.34.2
+cryptography>=50.0.2
+# Transitive security floors (pulled by requests/twilio/reportlab)
+urllib3>=2.8.0
+idna>=3.20
+aiohttp>=3.14.5
+pillow>=12.2.0
+qrcode==8.2
+# Sentry error telemetry (production only; loaded conditionally in settings.py)
+sentry-sdk>=2.71.0
+# Celery task queue (outbox drain, background jobs)
+celery>=5.6.3
+redis>=8.1.0
+# SMS provider client (used by comms/sms_service.py when SMS is enabled)
+twilio>=9.12.0
+# Board Packet PDF generation (Stage 4)
+reportlab>=5.1.0
+# Analytics runtime dependencies
+numpy>=1.26.4
+pandas>=3.1.1
+scikit-learn>=1.5.2
+tzlocal==5.4.5
+

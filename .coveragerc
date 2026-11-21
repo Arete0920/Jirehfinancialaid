@@ -1,0 +1,15 @@
+[run]
+source =
+    backend
+omit =
+    */migrations/*
+    */tests/*
+    */tests.py
+    */quarantine_old_tests/*
+    */venv/*
+    */node_modules/*
+
+[report]
+show_missing = True
+skip_covered = True
+fail_under = 75

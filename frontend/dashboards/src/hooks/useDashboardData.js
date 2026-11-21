@@ -1,0 +1,121 @@
+import { useEffect, useMemo, useState } from 'react';
+import { authenticatedJson } from '../utils/authClient.js';
+import { DASHBOARD_DATA_REGISTRY } from '../config/dashboardDataRegistry';
+import { DASHBOARD_CERTIFICATION_REGISTRY } from '../config/dashboardCertificationRegistry';
+
+function isStrictModeEnabled() {
+  const env = import.meta.env || {};
+  return String(env.VITE_DASHBOARD_STRICT_MODE).toLowerCase() === 'true';
+}
+
+function isFallbackRuntimeAllowed() {
+  const env = import.meta.env || {};
+  const mode = String(env.MODE || '').toLowerCase();
+  const isSandbox = String(env.VITE_DEMO_MODE || '').toLowerCase() === 'sandbox'
+    || String(env.VITE_SANDBOX_MODE || '') === '1';
+  const isProduction = Boolean(env.PROD) || mode === 'production';
+  if (isSandbox) return true;
+  return !isProduction;
+}
+
+function toRegistryKey(dashboardKey) {
+  return String(dashboardKey || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase();
+}
+
+export default function useDashboardData(dashboardKey, options = {}) {
+  const registryKey = toRegistryKey(dashboardKey);
+  const config = DASHBOARD_DATA_REGISTRY[dashboardKey] || DASHBOARD_DATA_REGISTRY[registryKey];
+  const certification =
+    DASHBOARD_CERTIFICATION_REGISTRY[dashboardKey]
+    || DASHBOARD_CERTIFICATION_REGISTRY[registryKey]
+    || { status: 'scaffold', owner: 'Unknown', notes: '' };
+
+  const [data, setData] = useState(
+    isFallbackRuntimeAllowed() && config?.allowScaffoldFallback
+      ? (config?.fallbackData ?? null)
+      : null
+  );
+  const [error, setError] = useState(
+    config ? null : new Error(`No dashboard data config found for "${dashboardKey}".`)
+  );
+  const [loading, setLoading] = useState(Boolean(config) && (options.enabled ?? true));
+  const [source, setSource] = useState(
+    isFallbackRuntimeAllowed() && config?.allowScaffoldFallback && config?.fallbackData
+      ? 'fallback'
+      : 'none'
+  );
+  const [lastLoadedAt, setLastLoadedAt] = useState(null);
+
+  const effectiveOptions = useMemo(
+    () => ({
+      enabled: options.enabled ?? true,
+      query: options.query,
+      timeoutMs: options.timeoutMs,
+    }),
+    [options.enabled, options.query, options.timeoutMs]
+  );
+
+  useEffect(() => {
+    if (!effectiveOptions.enabled || !config) return undefined;
+
+    let isMounted = true;
+    const controller = new AbortController();
+    const strictMode = isStrictModeEnabled();
+
+    async function load() {
+      setLoading(true);
+      setError(null);
+      try {
+        const response = await authenticatedJson(config.endpoint, {
+          method: config.method,
+          query: { ...config.query, ...effectiveOptions.query },
+          timeoutMs: effectiveOptions.timeoutMs,
+          signal: controller.signal,
+        });
+        const transformed = config.transform ? config.transform(response) : response;
+        if (!isMounted) return;
+        setData(transformed);
+        setSource('live');
+        setLastLoadedAt(new Date().toISOString());
+        setLoading(false);
+      } catch (fetchError) {
+        if (!isMounted || fetchError?.name === 'AbortError') return;
+        const canFallback =
+          isFallbackRuntimeAllowed()
+          && !strictMode
+          && config.allowScaffoldFallback
+          && config.fallbackData !== null
+          && config.fallbackData !== undefined;
+        if (canFallback) {
+          setData(config.fallbackData);
+          setSource('fallback');
+          setLastLoadedAt(new Date().toISOString());
+          setError(fetchError);
+          setLoading(false);
+          return;
+        }
+        setError(fetchError);
+        setSource('none');
+        setLoading(false);
+      }
+    }
+
+    load();
+    return () => {
+      isMounted = false;
+      controller.abort();
+    };
+  }, [dashboardKey, config, effectiveOptions]);
+
+  return {
+    data,
+    error,
+    loading: effectiveOptions.enabled ? loading : false,
+    source,
+    lastLoadedAt,
+    certification,
+    config,
+  };
+}

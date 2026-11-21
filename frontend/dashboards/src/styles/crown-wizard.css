@@ -1,0 +1,104 @@
+/* crown-wizard.css — tokens from crown-theme.css, no overrides */
+
+.crown-wizard-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.crown-wizard-steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.crown-wizard-step-pill {
+  border: 1px solid var(--crown-border, var(--crown-compat-color-b89dd2451e));
+  background: var(--crown-card, var(--crown-compat-color-f2074b6cef));
+  color: var(--crown-muted, var(--crown-compat-color-74d26b72f4));
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 12px;
+  line-height: 1;
+  -webkit-user-select: none;
+  user-select: none;
+}
+
+.crown-wizard-step-pill.active {
+  border-color: var(--crown-primary-strong, var(--crown-compat-color-135d678f70));
+  color: var(--crown-primary-strong, var(--crown-compat-color-135d678f70));
+  background: var(--crown-primary-faint, var(--crown-compat-color-611a1e8ce2));
+  box-shadow: 0 0 0 2px var(--crown-compat-color-85f7ac1fa7);
+}
+
+.crown-wizard-step-pill.done {
+  border-color: var(--crown-compat-color-701e8a0033);
+  color: var(--crown-success, var(--crown-compat-color-65efe5a3cb));
+  background: var(--crown-success-soft, var(--crown-compat-color-64033be9a6));
+}
+
+.crown-wizard-actions {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  margin-top: 18px;
+  padding-top: 14px;
+  border-top: 1px solid var(--crown-border, var(--crown-compat-color-b89dd2451e));
+}
+
+.crown-wizard-actions-right {
+  display: flex;
+  gap: 10px;
+  justify-content: flex-end;
+  flex-wrap: wrap;
+}
+
+/* Alerts */
+.crown-alert {
+  border: 1px solid var(--crown-compat-color-4a037ab478);
+  background: var(--crown-compat-color-c7fcf47cb6);
+  color: var(--crown-compat-color-524b4ebf7d);
+  padding: 10px 12px;
+  border-radius: 10px;
+  margin: 10px 0;
+  font-size: 13px;
+}
+
+.crown-alert.success {
+  border-color: var(--crown-compat-color-6617dbbec0);
+  background: var(--crown-compat-color-48fc9efa49);
+  color: var(--crown-compat-color-cf99080ba8);
+}
+
+/* Table variants used inside wizard steps */
+.crown-table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  border-radius: 10px;
+  border: 1px solid var(--crown-border, var(--crown-compat-color-b89dd2451e));
+  overflow: hidden;
+  font-size: 13px;
+}
+
+.crown-table th,
+.crown-table td {
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--crown-border, var(--crown-compat-color-b89dd2451e));
+  text-align: left;
+  vertical-align: top;
+}
+
+.crown-table th {
+  font-weight: 600;
+  background: var(--crown-surface-soft, var(--crown-compat-color-819fc5493f));
+  color: var(--crown-muted, var(--crown-compat-color-74d26b72f4));
+}
+
+.crown-table tbody tr:hover {
+  background: var(--crown-compat-color-8178950a62);
+}

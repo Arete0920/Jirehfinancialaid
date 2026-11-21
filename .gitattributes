@@ -1,0 +1,22 @@
+# CROWN repository EOL policy
+# Prevent Windows clone settings from creating false diff churn.
+
+* text=auto eol=lf
+
+# Windows scripts stay CRLF.
+*.ps1 text eol=crlf
+*.bat text eol=crlf
+*.cmd text eol=crlf
+
+# Binary files are never normalized.
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.webp binary
+*.ico binary
+*.pdf binary
+*.docx binary
+*.pptx binary
+*.xlsx binary
+*.zip binary

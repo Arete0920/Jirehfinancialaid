@@ -1,0 +1,70 @@
+{
+  "track": "school",
+  "pack": "heritage_core",
+  "display_name": "Heritage Christian Academy Core School Demo",
+  "status": "implementation_baseline",
+  "description": "Deterministic PK–12 Christian school sandbox scenario for leadership, admissions, academics, attendance, finance, communications, family, and student proof paths.",
+  "school": {
+    "name": "Heritage Christian Academy",
+    "archetype": "Flagship PK–12 Christian School",
+    "enrollment": 700,
+    "demo_domain": "heritage.example.org"
+  },
+  "default_mode": "guided",
+  "personas": [
+    {
+      "key": "school_admin",
+      "label": "Head of School",
+      "email": "admin@heritage.example.org",
+      "route": "/school-admin-dashboard"
+    },
+    {
+      "key": "admissions_director",
+      "label": "Admissions Director",
+      "email": "admissions@heritage.example.org",
+      "route": "/admissions-dashboard"
+    },
+    {
+      "key": "finance_director",
+      "label": "Finance Director",
+      "email": "finance@heritage.example.org",
+      "route": "/finance"
+    },
+    {
+      "key": "teacher",
+      "label": "Teacher",
+      "email": "teacher.lower@heritage.example.org",
+      "route": "/teacher"
+    },
+    {
+      "key": "parent",
+      "label": "Parent",
+      "email": "parent.reed@heritage.example.org",
+      "route": "/parent"
+    },
+    {
+      "key": "student",
+      "label": "Student",
+      "email": "student.avery.reed11@heritage.example.org",
+      "route": "/student"
+    }
+  ],
+  "guided_story": [
+    "Review the leadership dashboard.",
+    "Validate current attendance and enrollment signals.",
+    "Open admissions and confirm inquiry-to-enrollment visibility.",
+    "Switch to teacher view and inspect classroom workflow.",
+    "Switch to parent view and confirm family clarity."
+  ],
+  "expected_metrics": {
+    "students": 700,
+    "families": 286,
+    "enrollments": 700,
+    "student_tuitions": 700,
+    "finance_obligations": 12,
+    "finance_invoices": 12
+  },
+  "reset_required": true,
+  "demo_data_only": true,
+  "metrics_semantics": "Minimum baseline seed counts; scenario records may increase final counts. Measure actual counts after all seed steps. This manifest does not certify runtime workflow completion."
+}

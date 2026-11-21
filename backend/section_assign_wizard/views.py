@@ -1,0 +1,361 @@
+import uuid as _uuid
+import logging
+
+from django.db import transaction, IntegrityError
+from django.shortcuts import get_object_or_404
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
+from rest_framework_simplejwt.authentication import JWTAuthentication
+from rest_framework.response import Response
+from rest_framework import status
+
+from academics.models import Enrollment, Section
+from core.permissions import user_has_permission
+from households.models import Student
+from households.scoping import get_request_school_id
+
+from .models import SectionAssignWizardSession
+from drf_spectacular.utils import extend_schema
+from drf_spectacular.types import OpenApiTypes
+
+_AUTH = [JWTAuthentication, SessionAuthentication]
+_PERM = [IsAuthenticated]
+
+VALID_ACTIONS = {"add", "remove"}
+logger = logging.getLogger(__name__)
+
+
+def _get_session(session_id, school_id):
+    return get_object_or_404(SectionAssignWizardSession, id=session_id, school__id=school_id)
+
+
+def _parse_uuid(value, field_name):
+    try:
+        return _uuid.UUID(str(value)), None
+    except (ValueError, AttributeError):
+        return None, f"{field_name} must be a valid UUID"
+
+
+def _authorized_school(request, permission_code):
+    """Resolve canonical tenant context before evaluating tenant-scoped RBAC."""
+    school_id = get_request_school_id(request)
+    from core.models import School
+
+    school = get_object_or_404(School, id=school_id)
+    if not user_has_permission(request.user, permission_code, school=school):
+        raise PermissionDenied("You do not have permission to perform this action.")
+    return school
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_PERM)
+def create_session(request):
+    school = _authorized_school(request, "rosters.edit")
+    session = SectionAssignWizardSession.objects.create(
+        school=school,
+        created_by=request.user,
+    )
+    return Response({"session_id": str(session.id)}, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_PERM)
+def configure_session(request, session_id):
+    school = _authorized_school(request, "rosters.edit")
+    school_id = school.id
+    session = _get_session(session_id, school_id)
+
+    if session.status == SectionAssignWizardSession.STATUS_COMMITTED:
+        return Response({"error": "Session already committed"}, status=status.HTTP_400_BAD_REQUEST)
+
+    section_id_raw = request.data.get("section_id")
+    term = str(request.data.get("term", "")).strip()
+
+    if not section_id_raw:
+        return Response({"error": "section_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    section_uuid, err = _parse_uuid(section_id_raw, "section_id")
+    if err:
+        return Response({"error": err}, status=status.HTTP_400_BAD_REQUEST)
+
+    section = get_object_or_404(Section, id=section_uuid, school_id=school_id)
+
+    if not term:
+        term = section.term
+
+    session.section_id = section_uuid
+    session.term = term
+    session.status = SectionAssignWizardSession.STATUS_CONFIGURED
+    session.save()
+
+    return Response({
+        "session_id": str(session.id),
+        "status": session.status,
+        "section_id": str(section_uuid),
+        "term": term,
+    })
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_PERM)
+def load_students(request, session_id):
+    school = _authorized_school(request, "rosters.edit")
+    school_id = school.id
+    session = _get_session(session_id, school_id)
+
+    if session.status != SectionAssignWizardSession.STATUS_CONFIGURED:
+        return Response(
+            {"error": f"Session must be in 'configured' state (current: {session.status})"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    student_ids_raw = request.data.get("student_ids", [])
+    if not isinstance(student_ids_raw, list) or len(student_ids_raw) == 0:
+        return Response({"error": "student_ids must be a non-empty list"}, status=status.HTTP_400_BAD_REQUEST)
+
+    seen = set()
+    valid_ids = []
+    errors = []
+    for i, sid in enumerate(student_ids_raw):
+        parsed, err = _parse_uuid(sid, f"student_ids[{i}]")
+        if err:
+            errors.append(err)
+        elif str(parsed) not in seen:
+            seen.add(str(parsed))
+            valid_ids.append(str(parsed))
+
+    if errors:
+        return Response({"error": errors[0]}, status=status.HTTP_400_BAD_REQUEST)
+
+    session.student_pool = valid_ids
+    session.status = SectionAssignWizardSession.STATUS_STUDENTS_LOADED
+    session.save()
+
+    return Response({
+        "session_id": str(session.id),
+        "status": session.status,
+        "student_count": len(valid_ids),
+    })
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_PERM)
+def stage_roster(request, session_id):
+    school = _authorized_school(request, "rosters.edit")
+    school_id = school.id
+    session = _get_session(session_id, school_id)
+
+    if session.status != SectionAssignWizardSession.STATUS_STUDENTS_LOADED:
+        return Response(
+            {"error": f"Session must be in 'students_loaded' state (current: {session.status})"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    changes_raw = request.data.get("changes", [])
+    if not isinstance(changes_raw, list) or len(changes_raw) == 0:
+        return Response({"error": "changes must be a non-empty list"}, status=status.HTTP_400_BAD_REQUEST)
+
+    seen = {}
+    errors = []
+    for i, change in enumerate(changes_raw):
+        sid_raw = change.get("student_id")
+        action = change.get("action", "")
+
+        parsed, err = _parse_uuid(sid_raw, f"changes[{i}].student_id")
+        if err:
+            errors.append(err)
+            continue
+
+        if action not in VALID_ACTIONS:
+            errors.append(f"changes[{i}].action must be 'add' or 'remove'")
+            continue
+
+        seen[str(parsed)] = action
+
+    if errors:
+        return Response({"error": errors[0]}, status=status.HTTP_400_BAD_REQUEST)
+
+    staged = [{"student_id": sid, "action": act} for sid, act in seen.items()]
+    session.roster_changes = staged
+    session.status = SectionAssignWizardSession.STATUS_ROSTER_STAGED
+    session.save()
+
+    return Response({
+        "session_id": str(session.id),
+        "status": session.status,
+        "changes_count": len(staged),
+    })
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_PERM)
+def commit_session(request, session_id):
+    school = _authorized_school(request, "rosters.edit")
+    school_id = school.id
+    session = _get_session(session_id, school_id)
+
+    if session.status == SectionAssignWizardSession.STATUS_COMMITTED:
+        return Response({"session_id": str(session.id), "status": session.status, **session.commit_result})
+
+    if session.status != SectionAssignWizardSession.STATUS_ROSTER_STAGED:
+        return Response(
+            {"error": f"Session must be in 'roster_staged' state (current: {session.status})"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not request.data.get("confirm"):
+        return Response({"error": "confirm is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    section = get_object_or_404(Section, id=session.section_id, school_id=school_id)
+
+    enrolled = 0
+    removed = 0
+
+    with transaction.atomic():
+        for change in session.roster_changes:
+            student_id = _uuid.UUID(change["student_id"])
+            action = change["action"]
+            if action == "add":
+                student = get_object_or_404(Student, id=student_id, school_id=school_id)
+                try:
+                    _, created = Enrollment.objects.get_or_create(
+                        section=section,
+                        student=student,
+                        defaults={"school_id": school_id},
+                    )
+                    if created:
+                        enrolled += 1
+                except IntegrityError as exc:
+                    logger.warning(
+                        "Skipping enrollment add for section %s student %s: %s",
+                        section.id,
+                        student_id,
+                        exc,
+                    )
+            elif action == "remove":
+                deleted, _ = Enrollment.objects.filter(
+                    section=section, student_id=student_id, school_id=school_id
+                ).delete()
+                if deleted:
+                    removed += 1
+
+        result = {"enrolled": enrolled, "removed": removed}
+        session.commit_result = result
+        session.status = SectionAssignWizardSession.STATUS_COMMITTED
+        session.save()
+
+    return Response({"session_id": str(session.id), "status": session.status, **result})
+
+
+def _roster_verification_conflict():
+    return Response(
+        {
+            "error": "Staged roster changes do not match persisted section membership.",
+            "code": "roster_verification_mismatch",
+        },
+        status=status.HTTP_409_CONFLICT,
+    )
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["GET"])
+@authentication_classes(_AUTH)
+@permission_classes(_PERM)
+def verify_session(request, session_id):
+    school_id = get_request_school_id(request)
+    from core.models import School
+
+    school = get_object_or_404(School, id=school_id)
+    with transaction.atomic():
+        # Resolve tenant-scoped session existence before checking the user's
+        # role: never disclose a foreign-school session with a 403 response.
+        session = get_object_or_404(
+            SectionAssignWizardSession.objects.select_for_update(),
+            id=session_id,
+            school_id=school_id,
+        )
+        if not user_has_permission(request.user, "academics.view", school=school):
+            raise PermissionDenied("You do not have permission to perform this action.")
+
+        # A whole-section count cannot prove that this session's selected
+        # additions and removals actually persisted.
+        if session.status not in (
+            SectionAssignWizardSession.STATUS_COMMITTED,
+            SectionAssignWizardSession.STATUS_VERIFIED,
+        ):
+            return Response(
+                {"error": f"Session must be committed before verify (current: {session.status})"},
+                status=status.HTTP_400_BAD_REQUEST,
+            )
+
+        changes = session.roster_changes
+        if not isinstance(changes, list) or not changes:
+            return _roster_verification_conflict()
+
+        expected = {}
+        for change in changes:
+            if not isinstance(change, dict) or change.get("action") not in VALID_ACTIONS:
+                return _roster_verification_conflict()
+            student_id, error = _parse_uuid(change.get("student_id"), "student_id")
+            if error or student_id in expected:
+                return _roster_verification_conflict()
+            expected[student_id] = change["action"]
+
+        # Never certify a deleted/foreign section or a foreign-school student,
+        # even when the old commit_result claims that records were written.
+        if not Section.objects.filter(
+            id=session.section_id, school_id=school_id, course__school_id=school_id,
+        ).exists():
+            return _roster_verification_conflict()
+
+        valid_students = set(
+            Student.objects.filter(
+                id__in=expected, school_id=school_id, household__school_id=school_id,
+            ).values_list("id", flat=True)
+        )
+        if valid_students != set(expected):
+            return _roster_verification_conflict()
+
+        persisted = set(
+            Enrollment.objects.select_for_update(of=("self",)).filter(
+                school_id=school_id,
+                section_id=session.section_id,
+                section__school_id=school_id,
+                student__school_id=school_id,
+                student_id__in=expected,
+            ).values_list("student_id", flat=True)
+        )
+        if any(
+            (action == "add") != (student_id in persisted)
+            for student_id, action in expected.items()
+        ):
+            return _roster_verification_conflict()
+
+        # Preserve the documented response contract: enrollment_count is the
+        # entire section count; correctness comes from the per-staged-row proof.
+        enrollment_count = Enrollment.objects.filter(
+            section_id=session.section_id, school_id=school_id,
+        ).count()
+
+        if session.status == SectionAssignWizardSession.STATUS_COMMITTED:
+            session.status = SectionAssignWizardSession.STATUS_VERIFIED
+            session.save(update_fields=["status", "updated_at"])
+
+        return Response({
+            "session_id": str(session.id),
+            "status": session.status,
+            "enrollment_count": enrollment_count,
+            **(session.commit_result or {}),
+        })

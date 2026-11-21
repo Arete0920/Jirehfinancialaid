@@ -1,0 +1,203 @@
+import { useState } from "react";
+import { Link } from "react-router";
+import CrownLogo from "../components/brand/CrownLogo";
+import CrownIcon from "../components/icons/CrownIcon.jsx";
+import {
+  getSandboxPersona,
+  getSandboxSchool,
+  getSandboxTrack,
+} from "./sandboxExperience";
+import { recordSandboxEvent, submitSandboxFeedback } from "./sandboxApi";
+
+function getStoredCommandCenter() {
+  try {
+    return JSON.parse(sessionStorage.getItem("crown.sandbox.command_center") || "{}");
+  } catch {
+    return {};
+  }
+}
+
+function getQueryContext() {
+  const params = new URLSearchParams(globalThis.location?.search || "");
+  const stored = getStoredCommandCenter();
+
+  const track = getSandboxTrack(params.get("experience") || stored?.track || "school");
+  const persona = getSandboxPersona(params.get("role") || stored?.persona?.key || localStorage.getItem("crown.demo.role") || "school_admin");
+  const school = getSandboxSchool(params.get("school") || stored?.school?.key || stored?.school?.id || persona.defaultSchoolId);
+  const guidance = params.get("guidance") || stored?.guidance || localStorage.getItem("crown.demo.guidance") || "guided";
+  const tour = params.get("tour") || stored?.tour || persona.tourTitle;
+  return { track, persona, school, guidance, tour };
+}
+
+function normalizeStep(step) {
+  if (typeof step === "string") return { label: step, route: null };
+  return { label: step?.label || "Open workflow", route: step?.route || null };
+}
+
+export default function SandboxCommandCenter({ compact = false }) {
+  const { track, persona, school, guidance, tour } = getQueryContext();
+  const guided = guidance !== "self-guided";
+  const steps = Array.isArray(persona.steps) ? persona.steps.map(normalizeStep) : [];
+  const [showFeedback, setShowFeedback] = useState(false);
+  const [feedbackStatus, setFeedbackStatus] = useState("");
+  const Container = compact ? "section" : "main";
+  const Heading = compact ? "h2" : "h1";
+
+  async function handleFeedbackSubmit(event) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    setFeedbackStatus("");
+
+    try {
+      await submitSandboxFeedback({
+        track: track.key,
+        guidance,
+        persona: persona.value,
+        school: school.key,
+        scenario: tour,
+        rating: form.get("rating") || "clear",
+        note: form.get("note") || "",
+        follow_up_requested: form.get("follow_up_requested") === "on",
+      });
+      setFeedbackStatus("Feedback submitted.");
+      setShowFeedback(false);
+    } catch (error) {
+      setFeedbackStatus(error.message || "Feedback failed.");
+    }
+  }
+
+  function handleFeedbackClick() {
+    recordSandboxEvent({ event: "feedback_requested", track: track.key, guidance, persona: persona.value, school: school.key, tour });
+    setShowFeedback((value) => !value);
+  }
+
+  function handleWorkflowClick(step, index) {
+    recordSandboxEvent({
+      event: "sandbox_guided_workflow_opened",
+      track: track.key,
+      guidance,
+      persona: persona.value,
+      school: school.key,
+      tour,
+      step: index + 1,
+      route: step.route,
+      label: step.label,
+    });
+  }
+
+  const proofContent = (
+    <>
+      <section className="sandbox-section">
+        <div className="sandbox-section-heading">
+          <span><CrownIcon name="dashboard" size={18} /></span>
+          <div><h2>Current proof context</h2><p>Heritage Christian Academy remains fixed while you perform permitted role workflows.</p></div>
+        </div>
+        <div className="sandbox-scenario-grid">
+          <article className="sandbox-scenario-card"><strong>Track</strong><p>{track.label}</p></article>
+          <article className="sandbox-scenario-card"><strong>Scenario</strong><p>{school.archetype}</p></article>
+          <article className="sandbox-scenario-card"><strong>Role</strong><p>{persona.label}</p></article>
+          <article className="sandbox-scenario-card"><strong>Organization</strong><p>{school.name}</p></article>
+        </div>
+      </section>
+
+      <section className="sandbox-section">
+        <div className="sandbox-section-heading">
+          <span><CrownIcon name={guided ? "reports" : "control"} size={18} /></span>
+          <div>
+            <h2>{guided ? "Transactional proof path" : "Self-guided exploration"}</h2>
+            <p>{guided ? "Open each workflow and perform the representative role task. Dashboard viewing alone does not complete a step." : "Explore freely while preserving the current Heritage role context."}</p>
+          </div>
+        </div>
+        <div className="sandbox-workspace-preview">
+          <CrownIcon name={guided ? "reports" : "control"} size={24} />
+          <div>
+            <strong>{tour}</strong>
+            {guided ? (
+              <ol>
+                {steps.map((step, index) => (
+                  <li key={`${step.label}-${index}`}>
+                    {step.route ? (
+                      <Link to={step.route} onClick={() => handleWorkflowClick(step, index)}>
+                        {step.label} <span aria-hidden="true">→</span>
+                      </Link>
+                    ) : step.label}
+                  </li>
+                ))}
+              </ol>
+            ) : (
+              <p>Explore freely. Every page should retain clear role, track, organization, and demo-data context.</p>
+            )}
+          </div>
+        </div>
+      </section>
+
+      <section className="sandbox-section">
+        <div className="sandbox-section-heading">
+          <span><CrownIcon name="user" size={18} /></span>
+          <div><h2>Change proof-path role</h2><p>Return to the sandbox launcher to create a new authenticated session for the next permitted role. A URL change alone never changes authorization.</p></div>
+        </div>
+        <div className="sandbox-persona-grid">
+          <Link className="sandbox-choice-card launch-hero-action-btn" to="/sandbox">
+            <CrownIcon name="user" size={22} />
+            <strong>Choose another authorized role</strong>
+            <span>Return to the launcher; create a new verified role session before opening protected workflows.</span>
+          </Link>
+        </div>
+      </section>
+
+      <section className="sandbox-section">
+        <div className="sandbox-section-heading">
+          <span><CrownIcon name="control" size={18} /></span>
+          <div><h2>Evaluator controls</h2><p>Return to the evaluator or send feedback about this proof path.</p></div>
+        </div>
+        <div className="sandbox-choice-grid sandbox-mode-grid">
+          <Link className="sandbox-choice-card launch-hero-action-btn is-selected" to="/sandbox">
+            <CrownIcon name="dashboard" size={22} /><strong>Return to evaluator</strong><span>Choose guidance or another permitted role.</span>
+          </Link>
+          <button type="button" className="sandbox-choice-card" onClick={handleFeedbackClick}>
+            <CrownIcon name="chat" size={22} /><strong>Send feedback</strong><span>Rate this proof path or request follow-up.</span>
+          </button>
+        </div>
+        {showFeedback && (
+          <form className="sandbox-scenario-card" onSubmit={handleFeedbackSubmit} aria-label="Sandbox feedback">
+            <label><strong>Rating</strong>{" "}<select name="rating" defaultValue="clear"><option value="clear">Clear</option><option value="unclear">Unclear</option><option value="not_relevant">Not relevant</option><option value="blocked">Blocked</option></select></label>
+            <label><strong>Note</strong>{" "}<textarea name="note" rows="3" placeholder="Do not enter real student, family, financial, health, safety, or disciplinary data." /></label>
+            <label><input type="checkbox" name="follow_up_requested" /> Follow-up requested</label>
+            <button type="submit" className="sandbox-launch-button">Submit feedback</button>
+          </form>
+        )}
+        {feedbackStatus && <div className="sandbox-message is-info">{feedbackStatus}</div>}
+      </section>
+
+      <div className="sandbox-message is-warning">Demo data only. Do not enter real student, child, camper, family, staff, financial, health, safety, or disciplinary records.</div>
+    </>
+  );
+
+  if (compact) {
+    return (
+      <Container className="sandbox-command-center sandbox-experience-panel" aria-label="Sandbox command center">
+        <div className="sandbox-section-heading"><span><CrownIcon name="control" size={18} /></span><div><Heading>{guided ? "Guided proof path" : "Self-guided sandbox"}</Heading><p>{tour}</p></div></div>
+        {proofContent}
+      </Container>
+    );
+  }
+
+  return (
+    <Container className="sandbox-command-center sandbox-experience" aria-label="Sandbox command center">
+      <header className="sandbox-experience-header">
+        <CrownLogo placement="loginBrand" className="sandbox-experience-logo" />
+        <div className="sandbox-experience-header-copy"><span className="sandbox-experience-kicker">Heritage Sandbox Command Center</span><Heading>{guided ? "Guided proof path" : "Self-guided sandbox"}</Heading><p>{tour}</p></div>
+        <div className="sandbox-experience-trust" aria-label="Sandbox command center safeguards"><span><CrownIcon name="shield" size={18} /> Demo data only</span><span><CrownIcon name="school" size={18} /> Heritage Christian Academy</span><span><CrownIcon name="user" size={18} /> {persona.label}</span></div>
+      </header>
+      <div className="sandbox-experience-layout">
+        <aside className="sandbox-experience-steps" aria-label="Current demonstration context">
+          <div className="sandbox-step is-active"><span>1</span><div><strong>{persona.label}</strong><small>{track.label}</small></div></div>
+          <div className="sandbox-step"><span>2</span><div><strong>{guided ? "Transactional guided path" : "Self-guided"}</strong><small>{tour}</small></div></div>
+          <div className="sandbox-step"><span>3</span><div><strong>Heritage only</strong><small>School context stays fixed throughout the demonstration.</small></div></div>
+          <div className="sandbox-workspace-preview"><CrownIcon name="dashboard" size={24} /><div><strong>Protected demo workspace</strong><p>Use only fictional demonstration records and complete real role actions.</p></div></div>
+        </aside>
+        <section className="sandbox-experience-panel" aria-label="Current sandbox proof path">{proofContent}</section>
+      </div>
+    </Container>
+  );
+}

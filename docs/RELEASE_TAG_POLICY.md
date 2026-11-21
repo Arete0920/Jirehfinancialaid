@@ -1,0 +1,62 @@
+# CROWN Release Tag Policy
+
+**Last reconciled:** 2026-10-12
+
+## Immutability
+
+Every published release tag is immutable. Do not move, delete/recreate, or force-update a release tag. A follow-on release receives a new tag at a new exact commit.
+
+## Current Crown-CSMS authority
+
+No historical Crown2026 or predecessor tag is current Crown-CSMS turnover authority. The selected current source/release identity must be resolved directly from Git/GitHub, governed by `docs/CURRENT_RELEASE_STATUS.md`, and recorded in the immutable authorized release/transfer evidence for the decision being made. Crown-CSMS issue #14 is a completed historical engineering-program record, not current release authority.
+
+Before any identity is represented as production deployed, independently prove the selected exact source through build, deployment, runtime identity, health, monitoring, and required recovery evidence, with the applicable authorized release/transfer decision.
+
+## Historical predecessor production tag
+
+| Tag | Commit | Status |
+|---|---|---|
+| `prod-deploy-20260808-ce12c95` | `ce12c9536ec85346b2446018fa8bfe27edb3ffa0` | Historical predecessor/bounded production evidence |
+
+Historical deployment run: `31287503791`.
+
+## Naming
+
+Current semantic product-release naming is governed by `docs/engineering/VERSIONING_AND_RELEASE_POLICY.md`.
+
+- Product release: `crown-vX.Y.Z`
+- Release candidate: `crown-vX.Y.Z-rc.N`
+- Hotfix release: `crown-vX.Y.Z-hotfix.N`
+- Environment deployment identity, where still required by deployment tooling: `prod-deploy-YYYYMMDD-<short-sha>`
+
+Historical tag names remain immutable and are not renamed simply to match the current convention.
+
+A historical `crown-*` or `prod-deploy-*` tag does not become current Crown-CSMS production identity unless a current authorized release record explicitly selects, deploys, verifies, and accepts that exact identity.
+
+## Creation and verification
+
+1. Resolve and record the full selected release SHA directly from Git/GitHub.
+2. Require terminal exact-SHA validation and applicable authorization.
+3. Create the annotated immutable tag once.
+4. Push without force.
+5. Resolve the remote tag and verify it matches the approved full SHA.
+6. Deploy only through the approved protected workflow.
+7. Verify repository SHA, artifact/image identity, runtime build identity, database health, application health, and monitoring.
+8. Execute or explicitly disposition required rollback/restore evidence for the same release identity.
+9. Record the tag, SHA, deployment run, runtime evidence, recovery evidence, and decision in the authorized current release/transfer record.
+
+## Historical tags
+
+| Tag | Commit | Classification |
+|---|---|---|
+| `crown-0.3.0-spine-complete` | `340c7e3fbb882eb4886fbfbbe8e648f3866e5178` | Historical foundation |
+| `crown-0.3.1-prod-pipeline-fix` | `a1c4c42a381e03587c784bd995ec8fd6c33aeee9` | Historical pipeline milestone |
+| `prod-deploy-heritage-demo-20261012-61e7281` | `61e728150b4ac728de29a80239e10c355d3fcaf9` | Failed preflight candidate; lightweight tag, not accepted for production promotion |
+
+The initial candidate is preserved without moving or recreating its tag. A follow-on deployment attempt must use a new annotated tag under the creation controls above.
+
+Predecessor mappings are retained in `docs/archive/release-authority/PREDECESSOR_RELEASE_TAGS.json`. Tags published in the successor repository are mapped in `docs/RELEASE_TAGS.json`; these identities and the corresponding historical entries must remain internally consistent. A registry entry does not confer deployment certification.
+
+## Enforcement
+
+Reject any change that moves or recreates an existing tag, represents a historical milestone as current production, deploys an unapproved identity, or allows documentation to contradict the controlling exact release identity and authorized current release/transfer evidence.

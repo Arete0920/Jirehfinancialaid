@@ -1,0 +1,71 @@
+from django.urls import path
+
+from spiritual_life.api.permissions import SpiritualLifePermission
+from spiritual_life.api.formation_views import (
+    BiblicalIntegrationRecordListCreate,
+    BiblicalWorldviewPriorityDetail,
+    BiblicalWorldviewPriorityListCreate,
+    CallingPathwayEventListCreate,
+    ChristianEducationSundayCampaignListCreate,
+    ChurchEngagementEventDetail,
+    ChurchEngagementEventListCreate,
+    ChurchPartnerDetail,
+    ChurchPartnerListCreate,
+    CommunityOrganizationPartnerListCreate,
+    DevotionalContentDetail,
+    DevotionalContentListCreate,
+    FamilyFormationEventListCreate,
+    FormationArtifactDetail,
+    FormationArtifactListCreate,
+    FormationCampaignDetail,
+    FormationCampaignListCreate,
+    FormationMissionControlSummary,
+    PastorContactDetail,
+    PastorContactListCreate,
+    PortraitDomainDetail,
+    PortraitDomainListCreate,
+    SpeakerVettingRecordListCreate,
+    SpiritualCareCaseDetail,
+    SpiritualCareCaseListCreate,
+    SpiritualDomainRatingListCreate,
+    StaffFormationEventListCreate,
+    StudentLeadershipEventListCreate,
+    StudentSpiritualLeadershipRoleListCreate,
+)
+
+
+def secured(view_class):
+    return view_class.as_view(permission_classes=[SpiritualLifePermission])
+
+
+urlpatterns = [
+    path("summary/", secured(FormationMissionControlSummary), name="formation_summary"),
+    path("portrait-domains/", secured(PortraitDomainListCreate), name="formation_portrait_domains"),
+    path("portrait-domains/<uuid:pk>/", secured(PortraitDomainDetail), name="formation_portrait_domain_detail"),
+    path("worldview-priorities/", secured(BiblicalWorldviewPriorityListCreate), name="formation_worldview_priorities"),
+    path("worldview-priorities/<uuid:pk>/", secured(BiblicalWorldviewPriorityDetail), name="formation_worldview_priority_detail"),
+    path("campaigns/", secured(FormationCampaignListCreate), name="formation_campaigns"),
+    path("campaigns/<uuid:pk>/", secured(FormationCampaignDetail), name="formation_campaign_detail"),
+    path("artifacts/", secured(FormationArtifactListCreate), name="formation_artifacts"),
+    path("artifacts/<uuid:pk>/", secured(FormationArtifactDetail), name="formation_artifact_detail"),
+    path("devotions/", secured(DevotionalContentListCreate), name="formation_devotions"),
+    path("devotions/<uuid:pk>/", secured(DevotionalContentDetail), name="formation_devotion_detail"),
+    path("biblical-integration/", secured(BiblicalIntegrationRecordListCreate), name="formation_biblical_integration"),
+    path("domain-ratings/", secured(SpiritualDomainRatingListCreate), name="formation_domain_ratings"),
+    path("care-cases/", secured(SpiritualCareCaseListCreate), name="formation_care_cases"),
+    path("care-cases/<uuid:pk>/", secured(SpiritualCareCaseDetail), name="formation_care_case_detail"),
+    path("church-partners/", secured(ChurchPartnerListCreate), name="formation_church_partners"),
+    path("church-partners/<uuid:pk>/", secured(ChurchPartnerDetail), name="formation_church_partner_detail"),
+    path("pastor-contacts/", secured(PastorContactListCreate), name="formation_pastor_contacts"),
+    path("pastor-contacts/<uuid:pk>/", secured(PastorContactDetail), name="formation_pastor_contact_detail"),
+    path("church-engagements/", secured(ChurchEngagementEventListCreate), name="formation_church_engagements"),
+    path("church-engagements/<uuid:pk>/", secured(ChurchEngagementEventDetail), name="formation_church_engagement_detail"),
+    path("christian-education-sundays/", secured(ChristianEducationSundayCampaignListCreate), name="formation_christian_education_sundays"),
+    path("community-partners/", secured(CommunityOrganizationPartnerListCreate), name="formation_community_partners"),
+    path("student-leaders/", secured(StudentSpiritualLeadershipRoleListCreate), name="formation_student_leaders"),
+    path("student-leadership-events/", secured(StudentLeadershipEventListCreate), name="formation_student_leadership_events"),
+    path("calling-pathways/", secured(CallingPathwayEventListCreate), name="formation_calling_pathways"),
+    path("family-formation-events/", secured(FamilyFormationEventListCreate), name="formation_family_events"),
+    path("staff-formation-events/", secured(StaffFormationEventListCreate), name="formation_staff_events"),
+    path("speaker-vetting/", secured(SpeakerVettingRecordListCreate), name="formation_speaker_vetting"),
+]

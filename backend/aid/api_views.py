@@ -1,0 +1,628 @@
+"""
+Persona-specific API views for Aid Director
+
+Each director persona gets isolated APIs that return ONLY their data.
+Contract must be identical across all director personas.
+"""
+
+import logging
+from uuid import UUID
+
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+from rest_framework import status
+from django.utils import timezone
+from django.db.models import Sum
+from django.db import transaction
+
+from aid.models import AidApplication, AidAward, AidPolicy, AidBudgetTracker, AidFinancialProfile
+from aid.serializers import (
+    AidApplicationSerializer,
+    AidAwardSerializer,
+    AidAwardWithExplanationSerializer,
+    AidBudgetTrackerSerializer,
+    AidFinancialProfileSerializer,
+    FamilyAidApplicationSerializer,
+    FamilyAidAwardSerializer,
+)
+from aid.services.award_engine import recommend_award
+from aid.services.profile_service import build_engine_application, build_review_signals, carry_forward_profile
+from aid.services.ledger_bridge import AidApprovalConflictError, AidBudgetError, approve_award
+from core.models import AcademicYear, LedgerEntry, Student
+from core.permissions import CrownModulePermission, user_has_permission
+from households.scoping import MissingSchoolContext, get_request_school_id
+from drf_spectacular.utils import extend_schema
+from drf_spectacular.types import OpenApiTypes
+
+
+logger = logging.getLogger(__name__)
+
+
+def days_waiting(dt):
+    """Calculate days since timestamp"""
+    if not dt:
+        return 0
+    now = timezone.now()
+    delta = now - dt
+    return max(0, int(delta.total_seconds() // 86400))
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, CrownModulePermission("financial_aid.view")])
+def aid_priority_queue(request):
+    """
+    Priority queue for Aid Director - returns ONLY aid-related items.
+
+    Contract: All director priority-queue APIs must return:
+    {
+        "rows": [{"type", "score", "id", "summary", "timestamp", ...}],
+        "meta": {"persona", "count"}
+    }
+    """
+    # Get context (in production, from session/auth)
+    school_id = get_request_school_id(request, required=True)
+    requested_school_id = request.query_params.get('school_id')
+    year_id = request.query_params.get('year_id')
+    if requested_school_id and requested_school_id != str(school_id):
+        return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if not year_id:
+        return Response(
+            {"detail": "year_id is required"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Query aid applications
+    needs_info_apps = (
+        AidApplication.objects
+        .filter(school_id=school_id, academic_year_id=year_id,
+                status=AidApplication.STATUS_NEEDS_INFO)
+        .select_related("family")
+        .order_by("-submitted_at")[:20]
+    )
+
+    under_review_apps = (
+        AidApplication.objects
+        .filter(school_id=school_id, academic_year_id=year_id,
+                status=AidApplication.STATUS_UNDER_REVIEW)
+        .select_related("family")
+        .order_by("-submitted_at")[:20]
+    )
+
+    accepted_awards = (
+        AidAward.objects
+        .filter(school_id=school_id, academic_year_id=year_id,
+                decision_status=AidAward.DECISION_ACCEPTED,
+                ledger_entry__isnull=True)
+        .select_related("student", "student__family")
+        .order_by("-decided_at", "-created_at")[:20]
+    )
+
+    # Build scored rows
+    rows = []
+
+    for app in needs_info_apps:
+        score = 100 + (days_waiting(app.submitted_at) * 3)
+        rows.append({
+            "type": "AID_APPLICATION_NEEDS_INFO",
+            "score": score,
+            "id": str(app.id),
+            "family": getattr(app.family, "family_name", None),
+            "timestamp": app.submitted_at.isoformat() if app.submitted_at else None,
+            "summary": "Application needs info (missing documents).",
+        })
+
+    for app in under_review_apps:
+        score = 60 + (days_waiting(app.submitted_at) * 2)
+        rows.append({
+            "type": "AID_APPLICATION_UNDER_REVIEW",
+            "score": score,
+            "id": str(app.id),
+            "family": getattr(app.family, "family_name", None),
+            "timestamp": app.submitted_at.isoformat() if app.submitted_at else None,
+            "summary": "Application under review.",
+        })
+
+    for award in accepted_awards:
+        award_dollars = (award.awarded_cents or 0) / 100
+        score = 90 + min(40, int(award_dollars // 500))
+        rows.append({
+            "type": "AID_AWARD_ACCEPTED_NOT_POSTED",
+            "score": score,
+            "id": str(award.id),
+            "student": f"{award.student.first_name} {award.student.last_name}" if award.student else None,
+            "family": getattr(getattr(award.student, "family", None), "family_name", None),
+            "timestamp": award.decided_at.isoformat() if award.decided_at else None,
+            "summary": "Accepted award not posted to ledger.",
+            "awarded_cents": award.awarded_cents,
+        })
+
+    # Sort by score descending
+    rows.sort(key=lambda x: x["score"], reverse=True)
+
+    return Response({
+        "rows": rows,
+        "meta": {
+            "persona": "aid",
+            "count": len(rows),
+        }
+    })
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, CrownModulePermission("financial_aid.view")])
+def aid_metrics(request):
+    """
+    Metrics for Aid Director - returns ONLY aid metrics.
+
+    Contract: All director metrics APIs must return:
+    {
+        "metrics": {"key": value, ...},
+        "meta": {"persona"}
+    }
+    """
+    school_id = get_request_school_id(request, required=True)
+    requested_school_id = request.query_params.get('school_id')
+    year_id = request.query_params.get('year_id')
+    if requested_school_id and requested_school_id != str(school_id):
+        return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if not year_id:
+        return Response(
+            {"detail": "year_id is required"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Count applications by status
+    total_applications = AidApplication.objects.filter(
+        school_id=school_id, academic_year_id=year_id
+    ).count()
+
+    needs_info_count = AidApplication.objects.filter(
+        school_id=school_id, academic_year_id=year_id,
+        status=AidApplication.STATUS_NEEDS_INFO
+    ).count()
+
+    under_review_count = AidApplication.objects.filter(
+        school_id=school_id, academic_year_id=year_id,
+        status=AidApplication.STATUS_UNDER_REVIEW
+    ).count()
+
+    accepted_count = AidApplication.objects.filter(
+        school_id=school_id, academic_year_id=year_id,
+        status=AidApplication.STATUS_APPROVED
+    ).count()
+
+    # Sum total awarded
+    total_awarded = AidAward.objects.filter(
+        school_id=school_id, academic_year_id=year_id,
+        decision_status=AidAward.DECISION_ACCEPTED
+    ).aggregate(total=Sum('awarded_cents'))['total'] or 0
+
+    return Response({
+        "metrics": {
+            "applications_count": total_applications,
+            "needs_info_count": needs_info_count,
+            "under_review_count": under_review_count,
+            "accepted_count": accepted_count,
+            "total_awarded_cents": total_awarded,
+        },
+        "meta": {
+            "persona": "aid",
+        }
+    })
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, CrownModulePermission("financial_aid.view")])
+def aid_timeline(request):
+    """
+    Timeline for Aid Director - returns ONLY aid events.
+
+    Contract: All director timeline APIs must return:
+    {
+        "events": [{"timestamp", "type", "actor", "summary", "id"}],
+        "meta": {"persona", "count"}
+    }
+    """
+    school_id = get_request_school_id(request, required=True)
+    requested_school_id = request.query_params.get('school_id')
+    year_id = request.query_params.get('year_id')
+    if requested_school_id and requested_school_id != str(school_id):
+        return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    if not year_id:
+        return Response(
+            {"detail": "year_id is required"},
+            status=status.HTTP_400_BAD_REQUEST
+        )
+
+    # Get recent aid applications
+    recent_apps = (
+        AidApplication.objects
+        .filter(school_id=school_id, academic_year_id=year_id)
+        .select_related("family")
+        .order_by("-submitted_at")[:50]
+    )
+
+    events = []
+    for app in recent_apps:
+        events.append({
+            "timestamp": app.submitted_at.isoformat() if app.submitted_at else None,
+            "type": "AID_APPLICATION_SUBMITTED",
+            "actor": None,  # AidApplication doesn't have submitted_by field
+            "summary": f"Application submitted by {getattr(app.family, 'family_name', 'Unknown')} family",
+            "id": str(app.id),
+        })
+
+    # Sort by timestamp descending
+    events.sort(key=lambda x: x["timestamp"], reverse=True)
+
+    return Response({
+        "events": events[:50],  # Limit to 50
+        "meta": {
+            "persona": "aid",
+            "count": len(events[:50]),
+        }
+    })
+
+
+# ---------------------------------------------------------------------------
+# Phase 7.5: Admin + Family endpoints
+# ---------------------------------------------------------------------------
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, CrownModulePermission("financial_aid.view")])
+def admin_aid_overview(request):
+    """
+    Admin overview: applications + awards + budgets for a school/year.
+
+    Required query params: academic_year_id (integer PK of AcademicYear)
+    Required header:       X-School-Id (tenant UUID)
+    """
+    school_id = get_request_school_id(request)
+    academic_year_id = request.query_params.get("academic_year_id")
+    if not academic_year_id:
+        return Response({"detail": "academic_year_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    applications = (
+        AidApplication.objects.filter(school_id=school_id, academic_year_id=academic_year_id)
+        .order_by("-submitted_at")
+    )
+    awards = (
+        AidAward.objects.filter(school_id=school_id, academic_year_id=academic_year_id)
+        .order_by("-created_at")
+    )
+    budgets = (
+        AidBudgetTracker.objects.filter(school_id=school_id, academic_year_id=academic_year_id)
+        .order_by("bucket")
+    )
+
+    return Response({
+        "applications": AidApplicationSerializer(applications, many=True).data,
+        "awards": AidAwardSerializer(awards, many=True).data,
+        "budgets": AidBudgetTrackerSerializer(budgets, many=True).data,
+    })
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CrownModulePermission("financial_aid.view", write_code="financial_aid.edit")])
+@transaction.atomic
+def admin_recommend_award(request):
+    """
+    Generate a new award recommendation via the award engine.
+
+    Required body fields:
+      application_id      (int PK of AidApplication to evaluate)
+      student_id          (UUID PK of the student receiving the award)
+      bucket              (award_type: NEED|MISSION|MERIT|HARDSHIP|MARKETING)
+      gross_tuition_cents (int, gross tuition for this student/year)
+
+    Required header: X-School-Id
+
+    Creates and returns an AidAward in status OFFERED with engine outputs stored.
+    """
+    school_id = get_request_school_id(request)
+
+    application_id = request.data.get("application_id")
+    student_id = request.data.get("student_id")
+    bucket = request.data.get("bucket")
+    gross_tuition_cents_raw = request.data.get("gross_tuition_cents")
+
+    if not application_id or not student_id or not bucket or gross_tuition_cents_raw is None:
+        return Response(
+            {"detail": "application_id, student_id, bucket, and gross_tuition_cents are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    if not isinstance(bucket, str) or bucket not in dict(AidAward.TYPE_CHOICES):
+        return Response({"detail": "Invalid award bucket"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        student_pk = UUID(str(student_id))
+    except (TypeError, ValueError, AttributeError):
+        return Response({"detail": "student_id must be a valid UUID"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        gross_tuition_cents = int(gross_tuition_cents_raw)
+    except (TypeError, ValueError):
+        return Response({"detail": "gross_tuition_cents must be an integer"}, status=status.HTTP_400_BAD_REQUEST)
+
+    if gross_tuition_cents <= 0:
+        return Response({"detail": "gross_tuition_cents must be > 0"}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        app = AidApplication.objects.select_for_update(of=("self",)).get(
+            pk=application_id,
+            school_id=school_id,
+            family__school_id=school_id,
+            academic_year__school_id=school_id,
+        )
+    except (AidApplication.DoesNotExist, ValueError, TypeError):
+        return Response({"detail": "AidApplication not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    # Application is already locked; also lock student before relying on
+    # its family membership, so concurrent reassignment cannot race the offer.
+    student = Student.objects.select_for_update(of=("self",)).filter(
+        pk=student_pk,
+        school_id=school_id,
+        family_id=app.family_id,
+    ).first()
+    if student is None:
+        # Do not disclose whether an unrelated student exists in this or another tenant.
+        return Response({"detail": "Student not found for application"}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        policy = AidPolicy.objects.get(school_id=school_id, academic_year=app.academic_year)
+    except AidPolicy.DoesNotExist:
+        return Response(
+            {"detail": "No AidPolicy found for this school and academic year"},
+            status=status.HTTP_404_NOT_FOUND,
+        )
+
+    # Serialize offer creation through the parent application: PostgreSQL
+    # must not create two non-declined offers for the same decision key.
+    if AidAward.objects.filter(
+        school_id=school_id, academic_year_id=app.academic_year_id,
+        aid_application_id=app.pk, student_id=student.pk, award_type=bucket,
+    ).exclude(decision_status=AidAward.DECISION_DECLINED).exists():
+        return Response(
+            {"detail": "An active award already exists for this application, student and category."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    engine_app = build_engine_application(app)
+    rec = recommend_award(policy, engine_app, gross_tuition_cents, award_type=bucket)
+
+    award = AidAward.objects.create(
+        school=app.school,
+        academic_year=app.academic_year,
+        student=student,
+        aid_application=app,
+        award_type=bucket,
+        awarded_cents=rec.recommended_award_cents,
+        recommended_award_cents=rec.recommended_award_cents,
+        mas_score=rec.mas_score,
+        mas_modifier_bps=rec.mas_modifier_bps,
+        explanation_json=rec.explanation,
+        decision_status=AidAward.DECISION_OFFERED,
+    )
+
+    return Response(
+        {
+            "award": AidAwardWithExplanationSerializer(award).data,
+            "explanation": rec.explanation,
+        },
+        status=status.HTTP_201_CREATED,
+    )
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CrownModulePermission("financial_aid.view", write_code="financial_aid.edit")])
+def admin_approve_award(request, award_id):
+    """
+    Approve an AidAward: budget check → ledger posting → audit log.
+
+    URL param: award_id (int PK)
+    Optional body: {"reason": "..."}
+    Required header: X-School-Id
+
+    Idempotent: approving an already-accepted award is a no-op (returns 200).
+    409 if bucket budget would be exceeded.
+    """
+    school_id = get_request_school_id(request)
+    if not isinstance(request.data, dict):
+        return Response({"detail": "Request body must be an object."}, status=status.HTTP_400_BAD_REQUEST)
+    reason = request.data.get("reason", "")
+    if not isinstance(reason, str):
+        return Response({"detail": "reason must be a string."}, status=status.HTTP_400_BAD_REQUEST)
+
+    try:
+        award = AidAward.objects.get(pk=award_id, school_id=school_id)
+    except AidAward.DoesNotExist:
+        return Response({"detail": "Award not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        approved = approve_award(
+            award=award,
+            actor_user=request.user if request.user.is_authenticated else None,
+            reason=reason,
+        )
+    except AidBudgetError:
+        logger.warning("admin_approve_award: budget conflict while approving award", extra={"award_id": award_id})
+        return Response({"error": "Unable to approve award due to budget constraints."}, status=status.HTTP_409_CONFLICT)
+    except AidBudgetTracker.DoesNotExist:
+        return Response(
+            {"error": "No budget tracker found for this bucket. Create one before approving."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    except AidApprovalConflictError:
+        logger.warning(
+            "admin_approve_award: posting conflict requiring controlled reconciliation",
+            extra={"award_id": award_id},
+        )
+        return Response(
+            {"error": "Award posting requires controlled reconciliation."},
+            status=status.HTTP_409_CONFLICT,
+        )
+
+    return Response(AidAwardSerializer(approved).data)
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def family_aid_status(request):
+    """
+    Family-portal view: application status + awards for a student/year.
+
+    Required query params:
+      student_id       (UUID PK of Student)
+      academic_year_id (UUID PK of AcademicYear)
+    Required header: X-School-Id
+    """
+    school_id = get_request_school_id(request)
+    student_id = request.query_params.get("student_id")
+    academic_year_id = request.query_params.get("academic_year_id")
+
+    if not student_id or not academic_year_id:
+        return Response(
+            {"detail": "student_id and academic_year_id are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate untrusted identifiers and deny inconsistent related-school records
+    # before disclosing any financial-aid information.
+    try:
+        student_id = UUID(str(student_id))
+        academic_year_id = UUID(str(academic_year_id))
+    except (ValueError, TypeError, AttributeError):
+        return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    from core.models import Guardian, Student  # local imports avoid startup cycles
+    try:
+        student = Student.objects.get(
+            pk=student_id, school_id=school_id, family__school_id=school_id,
+        )
+    except Student.DoesNotExist:
+        return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    user = request.user
+    aid_officer_allowed = user_has_permission(user, "financial_aid.view", school=student.school)
+    linked_parent = bool(
+        getattr(user, "is_active", False)
+        and getattr(user, "guardian_id", None)
+        and user.roles.filter(school_id=school_id, role_code="PARENT").exists()
+        and Guardian.objects.filter(
+            pk=user.guardian_id,
+            school_id=school_id,
+            family_id=student.family_id,
+            family__school_id=school_id,
+        ).exists()
+    )
+    if not aid_officer_allowed and not linked_parent:
+        # Deny without disclosing whether another family has aid records.
+        return Response({"detail": "Not found."}, status=status.HTTP_404_NOT_FOUND)
+
+    application = AidApplication.objects.filter(
+        school_id=school_id,
+        family_id=student.family_id,
+        academic_year_id=academic_year_id,
+    ).first()
+
+    awards = AidAward.objects.filter(
+        school_id=school_id,
+        student=student,
+        academic_year_id=academic_year_id,
+    ).order_by("-created_at")
+
+    return Response({
+        "application": FamilyAidApplicationSerializer(application).data if application else None,
+        "awards": FamilyAidAwardSerializer(awards, many=True).data,
+    })
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated, CrownModulePermission("financial_aid.view")])
+def admin_application_review(request, application_id):
+    """Return deterministic review signals and canonical profile data."""
+    school_id = get_request_school_id(request)
+    try:
+        app = (
+            AidApplication.objects
+            .select_related("financial_profile")
+            .get(
+                pk=application_id, school_id=school_id,
+                family__school_id=school_id,
+                academic_year__school_id=school_id,
+            )
+        )
+    except AidApplication.DoesNotExist:
+        return Response({"detail": "AidApplication not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    profile = app.financial_profile
+    if profile is not None and (
+        profile.school_id != school_id
+        or profile.family_id != app.family_id
+        or profile.academic_year_id != app.academic_year_id
+    ):
+        return Response({"detail": "AidApplication not found"}, status=status.HTTP_404_NOT_FOUND)
+    students = list(
+        Student.objects.filter(
+            school_id=school_id, family_id=app.family_id,
+            family__school_id=school_id,
+        ).order_by("last_name", "first_name", "pk").values(
+            "id", "first_name", "last_name", "student_number"
+        )
+    )
+    return Response({
+        "application_id": app.id,
+        "review_signals": build_review_signals(app),
+        "financial_profile": AidFinancialProfileSerializer(profile).data if profile else None,
+        "students": [{**student, "id": str(student["id"])} for student in students],
+    })
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@permission_classes([IsAuthenticated, CrownModulePermission("financial_aid.view", write_code="financial_aid.edit")])
+def admin_carry_forward_profile(request):
+    """
+    Create a new annual profile from a prior profile with explicit reuse consent.
+
+    Required body: source_profile_id, academic_year_id
+    """
+    school_id = get_request_school_id(request)
+    source_profile_id = request.data.get("source_profile_id")
+    academic_year_id = request.data.get("academic_year_id")
+    if not source_profile_id or not academic_year_id:
+        return Response(
+            {"detail": "source_profile_id and academic_year_id are required"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    try:
+        source = AidFinancialProfile.objects.get(pk=source_profile_id, school_id=school_id)
+        academic_year = AcademicYear.objects.get(pk=academic_year_id, school_id=school_id)
+    except (AidFinancialProfile.DoesNotExist, AcademicYear.DoesNotExist):
+        return Response({"detail": "Profile or academic year not found"}, status=status.HTTP_404_NOT_FOUND)
+
+    try:
+        profile = carry_forward_profile(
+            source_profile=source,
+            academic_year=academic_year,
+            actor_user=request.user if request.user.is_authenticated else None,
+        )
+    except ValueError as exc:
+        return Response({"detail": str(exc)}, status=status.HTTP_409_CONFLICT)
+
+    return Response(AidFinancialProfileSerializer(profile).data, status=status.HTTP_201_CREATED)

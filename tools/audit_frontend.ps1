@@ -1,0 +1,125 @@
+# tools/audit_frontend.ps1
+# Crown2026 Frontend Hygiene Audit
+# Checks for hard-coded API URLs, missing env config, and verifies build works.
+#
+# Usage (standalone):
+#   pwsh -File tools/audit_frontend.ps1
+#
+# Called automatically by audit_all.ps1 unless -NoUI is passed.
+
+$ErrorActionPreference = "Stop"
+
+function Step($name, [scriptblock]$fn) {
+  Write-Host ""
+  Write-Host "=== $name ===" -ForegroundColor Cyan
+  & $fn
+  Write-Host "OK: $name" -ForegroundColor Green
+}
+
+$repoRoot = Resolve-Path (Join-Path $PSScriptRoot "..")
+Set-Location $repoRoot
+
+# Prefer globally installed Node, but support a portable fallback on locked-down Windows hosts.
+$portableNodeHome = "C:\Temp\node-portable\node-v24.14.0-win-x64"
+if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+  if (Test-Path (Join-Path $portableNodeHome "node.exe")) {
+    $env:PATH = "$portableNodeHome;$env:PATH"
+  }
+}
+
+$fe = "frontend/dashboards"
+if (-not (Test-Path $fe)) {
+  throw "frontend/dashboards not found; frontend audit cannot pass until the frontend source of truth is present."
+}
+
+Step "Node / npm version" {
+  if (-not (Get-Command node -ErrorAction SilentlyContinue)) {
+    throw "Node.js not found on PATH. Install Node LTS or provide portable Node at $portableNodeHome"
+  }
+  if (-not (Get-Command npm -ErrorAction SilentlyContinue)) {
+    throw "npm not found on PATH. Ensure Node.js installation includes npm."
+  }
+  node --version
+  npm --version
+}
+
+Step "No hard-coded API base URLs in source" {
+  $srcGlobs = @(
+    "$fe/src/**/*.js",
+    "$fe/src/**/*.jsx",
+    "$fe/src/**/*.ts",
+    "$fe/src/**/*.tsx"
+  )
+  $dangerousPatterns = "https?://(localhost|127\.0\.0\.1)(:\d+)?|crown-api\.azurewebsites|REACT_APP_API_URL\s*="
+  $hits = @()
+  foreach ($glob in $srcGlobs) {
+    $files = Get-ChildItem -Path $glob -ErrorAction SilentlyContinue
+    if ($files) {
+      $found = Select-String -Path $files -Pattern $dangerousPatterns -ErrorAction SilentlyContinue
+      if ($found) { $hits += $found }
+    }
+  }
+  if ($hits) {
+    Write-Host "Hard-coded API refs detected:" -ForegroundColor Yellow
+    $hits | Select-Object Path, LineNumber, Line | Format-Table -AutoSize
+    throw "Hard-coded API refs found. Ensure API base URL comes from environment variables (VITE_API_BASE or REACT_APP_API_URL)."
+  }
+}
+
+Step "package.json has required scripts" {
+  $pkg = Get-Content "$fe/package.json" -Raw | ConvertFrom-Json
+  $scripts = $pkg.scripts.PSObject.Properties.Name
+  $required = @("build", "dev", "test")
+  $missing = $required | Where-Object { $_ -notin $scripts }
+  if ($missing) {
+    Write-Host "WARN: Missing scripts in package.json: $($missing -join ', ')" -ForegroundColor Yellow
+  }
+  if ("build" -notin $scripts) {
+    throw "package.json is missing required 'build' script."
+  }
+}
+
+Step "No .env files committed (secrets hygiene)" {
+  $envFiles = @(".env", ".env.local", ".env.production", ".env.staging") |
+  ForEach-Object { Join-Path $fe $_ } |
+  Where-Object { Test-Path $_ }
+  if ($envFiles) {
+    # Verify they are .gitignored - fail if tracked by git
+    foreach ($ef in $envFiles) {
+      $tracked = git ls-files -- $ef
+      if ($tracked) {
+        throw "Committed .env file detected: $ef - remove from git tracking and add to .gitignore"
+      }
+    }
+    Write-Host "  .env file(s) exist but are not tracked by git (OK)" -ForegroundColor DarkGray
+  }
+}
+
+Step "npm install (ci)" {
+  Push-Location $fe
+  try {
+    cmd /c "npm ci --silent"
+    if ($LASTEXITCODE -ne 0) {
+      throw "npm ci failed with exit code $LASTEXITCODE"
+    }
+  }
+  finally {
+    Pop-Location
+  }
+}
+
+Step "Frontend build" {
+  Push-Location $fe
+  try {
+    cmd /c "npm run build --silent"
+    if ($LASTEXITCODE -ne 0) {
+      throw "frontend build failed with exit code $LASTEXITCODE"
+    }
+  }
+  finally {
+    Pop-Location
+  }
+}
+
+Write-Host ""
+Write-Host "Frontend audit complete." -ForegroundColor Green

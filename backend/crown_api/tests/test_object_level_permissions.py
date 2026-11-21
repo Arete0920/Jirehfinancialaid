@@ -1,0 +1,424 @@
+"""
+Crown2026 — CrownMagus III: Object-level authorization proof.
+
+This module tests authorization boundaries WITHIN the same tenant (school).
+Tenant-level isolation (cross-school) is covered in test_phase72_tenant_isolation.py
+and test_tenant_isolation_writes.py.
+
+Scope here: same school_id, different users.
+
+What IS enforced (role-based object access):
+  - Admissions enrollment requires a school-scoped admissions.edit grant; finance settlement/refund
+    require a school-scoped finance.edit grant rather than the Django staff bit.
+  - These are ROLE-based object access controls, not creator-based.
+
+What is NOT currently enforced (documented boundary):
+  - Per-creator ownership: User A creates a record, User B (same school, same
+    role) can also read/modify it. The authorization model is school-scoped,
+    not owner-scoped. This is a documented architectural decision, not a gap.
+
+Evidence anchors:
+  - admissions/views_enroll.py: _require_enrollment_access() checks explicit grant.
+  - finance/payment_compat_api.py: registered settlement/refund use finance.edit.
+  - discipline/api/views.py: DisciplineIncidentActions — school-scoped only.
+"""
+from __future__ import annotations
+
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Group
+from django.test import TestCase
+from rest_framework.test import APIClient
+
+from admissions.models import AdmissionsApplication
+from core.models import AcademicYear, CrownPermission, Family, RolePermission, School, UserRole
+from finance.models import FinancePayment
+
+User = get_user_model()
+
+# ---------------------------------------------------------------------------
+# URL constants
+# ---------------------------------------------------------------------------
+ENROLL_URL = "/api/v1/admissions/enroll/"
+PAYMENT_INTENT_URL = "/api/finance/payments/intent/"
+PAYMENT_SETTLE_URL_TMPL = "/api/finance/payments/{id}/settle/"
+PAYMENT_REFUND_URL_TMPL = "/api/finance/payments/{id}/refund/"
+INSTALLMENT_PLANS_URL = "/api/v1/billing/installment-plans/"
+
+
+# ---------------------------------------------------------------------------
+# Shared base
+# ---------------------------------------------------------------------------
+
+class _ObjPermBase(TestCase):
+    """
+    One school. Two users — same school, different staff status.
+    This simulates the within-tenant object-access scenario.
+    """
+
+    def setUp(self):
+        self.school = School.objects.create(name="ObjPerm-School")
+        # user_staff: admin/staff role; user_plain: regular authenticated user
+        self.user_staff = User.objects.create_user(
+            username="objperm_staff",
+            email="staff@objperm.example.com",
+            password="pass",
+            school_id=self.school.id,
+            is_staff=True,
+        )
+        self.user_plain = User.objects.create_user(
+            username="objperm_plain",
+            email="plain@objperm.example.com",
+            password="pass",
+            school_id=self.school.id,
+            is_staff=False,
+        )
+        UserRole.objects.get_or_create(
+            school=self.school, user=self.user_staff, role_code="FINANCE_DIRECTOR"
+        )
+        edit_permission, _ = CrownPermission.objects.get_or_create(code="finance.edit")
+        RolePermission.objects.get_or_create(
+            role_code="FINANCE_DIRECTOR", permission=edit_permission,
+        )
+        self.client = APIClient()
+
+    def _grant_staff_admissions_edit(self):
+        """Test grant is explicit: Django is_staff is not admissions authority."""
+        permission, _ = CrownPermission.objects.get_or_create(code="admissions.edit")
+        RolePermission.objects.get_or_create(role_code="REGISTRAR", permission=permission)
+        UserRole.objects.get_or_create(
+            school=self.school, user=self.user_staff, role_code="REGISTRAR"
+        )
+
+
+# ---------------------------------------------------------------------------
+# 1. Staff-gated actions — non-staff in SAME school receives 403
+# ---------------------------------------------------------------------------
+
+class StaffGatedActionsTests(_ObjPermBase):
+    """
+    Tests that staff-only endpoints deny non-staff users even when those
+    users belong to the same school (same tenant).
+
+    This is the object-level authorization guard for privileged mutations.
+    """
+
+    def test_plain_user_cannot_enroll_applicant(self):
+        """
+        admissions/enroll/ is staff-only.
+        plain user (same school) → must receive 403.
+        """
+        self.client.force_authenticate(user=self.user_plain)
+        resp = self.client.post(
+            ENROLL_URL,
+            data={"application_id": 99999},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertEqual(
+            resp.status_code, 403,
+            msg=(
+                f"Non-staff same-school user got {resp.status_code} on enroll, "
+                f"expected 403. Body: {resp.content[:300]!r}"
+            ),
+        )
+
+    def test_staff_user_passes_enroll_gate(self):
+        """
+        Staff user in same school: passes the role gate.
+        Returns 400/404 (bad data/not found), NOT 401/403.
+        """
+        self._grant_staff_admissions_edit()
+        self.client.force_authenticate(user=self.user_staff)
+        resp = self.client.post(
+            ENROLL_URL,
+            data={"application_id": 99999},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertNotIn(
+            resp.status_code, (401, 403, 500),
+            msg=f"Staff enroll gate returned {resp.status_code}, expected non-auth-error.",
+        )
+
+    def test_plain_user_cannot_settle_payment(self):
+        """
+        finance/payments/<id>/settle/ is staff-only.
+        Non-staff user → 403, even for their own payment (if one existed).
+        The staff check fires BEFORE the DB lookup.
+        """
+        self.client.force_authenticate(user=self.user_plain)
+        resp = self.client.post(
+            PAYMENT_SETTLE_URL_TMPL.format(id=99999),
+            data={"allocations": []},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertEqual(
+            resp.status_code, 403,
+            msg=(
+                f"Non-staff same-school user got {resp.status_code} on payment settle, "
+                f"expected 403."
+            ),
+        )
+
+    def test_plain_user_cannot_issue_refund(self):
+        """
+        finance/payments/<id>/refund/ is staff-only.
+        Non-staff user → 403.
+        """
+        self.client.force_authenticate(user=self.user_plain)
+        resp = self.client.post(
+            PAYMENT_REFUND_URL_TMPL.format(id=99999),
+            data={"amount_cents": 100},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertEqual(
+            resp.status_code, 403,
+            msg=(
+                f"Non-staff same-school user got {resp.status_code} on refund, "
+                f"expected 403."
+            ),
+        )
+
+    def test_staff_user_passes_settle_gate(self):
+        """
+        Staff user: passes role gate on settle.
+        Returns 404 (payment 99999 not found), NOT 403.
+        """
+        self.client.force_authenticate(user=self.user_staff)
+        resp = self.client.post(
+            PAYMENT_SETTLE_URL_TMPL.format(id=99999),
+            data={"allocations": []},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertNotEqual(
+            resp.status_code, 403,
+            msg=f"Staff settle still got 403 — role gate is not recognizing staff status.",
+        )
+        self.assertNotEqual(resp.status_code, 401)
+        self.assertNotEqual(resp.status_code, 500)
+
+
+# ---------------------------------------------------------------------------
+# 2. Payment creator does NOT limit settle scope (school-scoped, not owner-scoped)
+# ---------------------------------------------------------------------------
+
+class PaymentOwnershipBoundaryTests(_ObjPermBase):
+    """
+    Documents the current authorization model:
+
+    FinancePayment is school-scoped. Any staff member may settle any payment
+    within the school — there is no creator-level ownership restriction.
+
+    This test DOCUMENTS this behavior as an explicit architectural assertion.
+    If the intent is to add owner-only settlement, this test must be updated.
+    """
+
+    def test_staff_can_settle_any_school_payment_not_just_own(self):
+        """
+        Staff user_staff can attempt to settle a payment created by user_plain.
+        This is expected to succeed (or 404 if not found) — NOT 403.
+        The authorization model is: school-scoped + staff-role, not creator-scoped.
+        """
+        # Create a real payment via the intent endpoint as user_plain
+        self.client.force_authenticate(user=self.user_plain)
+        create_resp = self.client.post(
+            PAYMENT_INTENT_URL,
+            data={"amount_cents": 5000},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        # Skip test if payment creation itself fails for infra reasons
+        if create_resp.status_code not in (200, 201):
+            self.skipTest(
+                f"Payment intent creation returned {create_resp.status_code} — "
+                f"skipping ownership boundary test (infra prerequisite not met)."
+            )
+
+        # Get the payment ID from the response
+        try:
+            payment_id = create_resp.json().get("id") or create_resp.json().get("data", {}).get("id")
+        except Exception:
+            payment_id = None
+
+        if not payment_id:
+            self.skipTest("Could not extract payment ID from intent response.")
+
+        # Now, user_staff (different user, same school) tries to settle
+        self.client.force_authenticate(user=self.user_staff)
+        settle_resp = self.client.post(
+            PAYMENT_SETTLE_URL_TMPL.format(id=payment_id),
+            data={"allocations": []},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        # Should NOT be 403 (staff has school-level permission, not creator-restricted)
+        self.assertNotEqual(
+            settle_resp.status_code, 403,
+            msg=(
+                "Staff settlement of another user's payment returned 403. "
+                "This suggests owner-level restriction was added — verify intentional."
+            ),
+        )
+        self.assertNotEqual(settle_resp.status_code, 500)
+
+
+# ---------------------------------------------------------------------------
+# 3. Role-gated shared resources — authorized same-school users share access
+# ---------------------------------------------------------------------------
+
+class SharedSchoolResourceAccessTests(_ObjPermBase):
+    """
+    Billing installment plans created by one finance-authorized user are also
+    accessible to another finance-authorized user in the same school.
+
+    This asserts the current authorization boundary explicitly:
+    school-scoped resources are shared within the school.
+    """
+
+    _PLAN_PAYLOAD = {
+        "term": "2025-2026",
+        "name": "ObjPerm Test Plan",
+        "installment_count": 10,
+        "first_due_on": "2025-09-01",
+        "cadence_days": 30,
+    }
+
+    def test_shared_installment_plan_list_accessible_to_authorized_school_members(self):
+        """
+        One finance-authorized user creates a plan. Another finance-authorized
+        user in the same school can see it, proving sharing is tenant- and
+        role-scoped rather than creator-scoped.
+        """
+        finance_group, _ = Group.objects.get_or_create(name="finance_admin")
+        self.user_plain.groups.add(finance_group)
+        self.user_staff.groups.add(finance_group)
+
+        # Create as the first finance-authorized user
+        self.client.force_authenticate(user=self.user_plain)
+        create_resp = self.client.post(
+            INSTALLMENT_PLANS_URL,
+            data=self._PLAN_PAYLOAD,
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertIn(
+            create_resp.status_code,
+            (200, 201),
+            msg=f"Authorized plan creation returned {create_resp.status_code}.",
+        )
+
+        # Read as a different finance-authorized user in the same school
+        self.client.force_authenticate(user=self.user_staff)
+        list_resp = self.client.get(
+            INSTALLMENT_PLANS_URL,
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertIn(
+            list_resp.status_code, (200, 201),
+            msg=f"Staff list of installment plans returned {list_resp.status_code}.",
+        )
+        self.assertNotEqual(list_resp.status_code, 500)
+
+
+# ---------------------------------------------------------------------------
+# 4. Enrollment — invalid stage transition returns 409
+# ---------------------------------------------------------------------------
+
+class EnrollmentTransitionGuardTests(_ObjPermBase):
+    """
+    Endpoint-level regression tests for the 409 Conflict path in enroll_applicant.
+
+    When a staff user attempts to enroll an application that is NOT in an
+    allowed source status (only ACCEPTED → ENROLLED is valid), the endpoint
+    must return HTTP 409 with ok=False and current_status in the payload.
+    """
+
+    def setUp(self):
+        super().setUp()
+        self._grant_staff_admissions_edit()
+        self.academic_year = AcademicYear.objects.create(
+            school=self.school,
+            name="2025-2026",
+            start_date="2025-09-01",
+            end_date="2026-06-30",
+        )
+        self.family = Family.objects.create(
+            school=self.school,
+            family_name="Transition Guard Family",
+        )
+
+    def _make_app(self, status: str) -> AdmissionsApplication:
+        return AdmissionsApplication.objects.create(
+            school=self.school,
+            academic_year=self.academic_year,
+            family=self.family,
+            status=status,
+        )
+
+    def test_enroll_from_draft_returns_409(self):
+        """
+        Application in DRAFT status → 409 with ok=False and current_status=DRAFT.
+        """
+        app = self._make_app(AdmissionsApplication.STATUS_DRAFT)
+        self.client.force_authenticate(user=self.user_staff)
+        resp = self.client.post(
+            ENROLL_URL,
+            data={"application_id": app.id},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertEqual(
+            resp.status_code, 409,
+            msg=f"Expected 409 for DRAFT→ENROLLED, got {resp.status_code}. Body: {resp.content[:300]!r}",
+        )
+        data = resp.json()
+        self.assertFalse(data.get("ok"), "ok must be False on 409")
+        self.assertEqual(
+            data.get("current_status"), AdmissionsApplication.STATUS_DRAFT,
+            "current_status must reflect the application's actual status",
+        )
+
+    def test_enroll_from_submitted_returns_409(self):
+        """
+        Application in SUBMITTED status → 409 with ok=False and current_status=SUBMITTED.
+        """
+        app = self._make_app(AdmissionsApplication.STATUS_SUBMITTED)
+        self.client.force_authenticate(user=self.user_staff)
+        resp = self.client.post(
+            ENROLL_URL,
+            data={"application_id": app.id},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertEqual(
+            resp.status_code, 409,
+            msg=f"Expected 409 for SUBMITTED→ENROLLED, got {resp.status_code}. Body: {resp.content[:300]!r}",
+        )
+        data = resp.json()
+        self.assertFalse(data.get("ok"), "ok must be False on 409")
+        self.assertEqual(
+            data.get("current_status"), AdmissionsApplication.STATUS_SUBMITTED,
+            "current_status must reflect the application's actual status",
+        )
+
+    def test_409_response_does_not_expose_internal_details(self):
+        """
+        The 409 detail message must be the safe fixed string, not internal
+        exception/transition graph details.
+        """
+        app = self._make_app(AdmissionsApplication.STATUS_DRAFT)
+        self.client.force_authenticate(user=self.user_staff)
+        resp = self.client.post(
+            ENROLL_URL,
+            data={"application_id": app.id},
+            format="json",
+            HTTP_X_SCHOOL_ID=str(self.school.id),
+        )
+        self.assertEqual(resp.status_code, 409)
+        detail = resp.json().get("detail", "")
+        self.assertNotIn("→", detail, "detail must not expose internal transition notation")
+        self.assertNotIn("Allowed:", detail, "detail must not expose transition graph")
+

@@ -1,0 +1,52 @@
+# CROWN Release Notes
+
+## Current Crown-CSMS turnover source — 2026-08-18
+
+- **Repository:** `Arete0920/Crown-CSMS`
+- **Current source authority:** `docs/CURRENT_RELEASE_STATUS.md` and exact current `main`
+- **Owner-handoff authority reconciliation:** PR #103 merged and exact-head certified
+- **Migration/gap-closure issue #14:** completed historical engineering-program record
+
+Current source identity must be taken from the canonical release-status record and exact current repository history rather than duplicated here as a mutable SHA. This source identity is repository authority for the turnover sequence. It is **not automatically a deployed production identity**. Deployment/runtime, immutable rollback, operational restore, monitoring, successor account control, and final acceptance remain separate evidence gates.
+
+### Current security/repository progress
+
+- persistent RBAC and tenant-integrity hardening merged across Transportation, Athletics, Spiritual Life, Student Records, Student Care, and Communications;
+- duplicate unsafe Communications mutation routes retired from production routing;
+- open P0 security issues reconciled where merged evidence supported closure;
+- remaining roadmap/architecture/process issues reclassified so they are not presented as unresolved production P0 defects;
+- external payment processing remains disabled and fail closed.
+
+## Historical predecessor/bounded production evidence — 2026-08-08
+
+The following records are preserved as historical predecessor/provenance evidence and must not be represented as current Crown-CSMS turnover authority:
+
+- source `ce12c9536ec85346b2446018fa8bfe27edb3ffa0`;
+- immutable tag `prod-deploy-20260808-ce12c95`;
+- production deployment run `31287503791`;
+- dashboard deployment/certification run `31289219093`;
+- dashboard source `a3f89db677857a220b322b3f1bf094b3fdef3fa2`;
+- prior bounded Heritage/persona and runtime evidence recorded in predecessor release material.
+
+That historical evidence remains useful provenance. It does not establish current Crown-CSMS deployment, recovery readiness, universal persona coverage, or completed owner turnover.
+
+## Release identity rule
+
+Later `main` commits never inherit a prior deployment or certification automatically. A production release requires one exact selected source identity and corresponding build, deployment, runtime-health, monitoring, rollback/recovery, and authorization evidence appropriate to the release.
+
+## Historical releases
+
+### `crown-0.3.1-prod-pipeline-fix` — 2026-01-27
+Historical pipeline milestone at `a1c4c42a381e03587c784bd995ec8fd6c33aeee9`.
+
+### `crown-0.3.0-spine-complete` — 2026-01-27
+Historical tenant-isolation and CI foundation at `340c7e3fbb882eb4886fbfbbe8e648f3866e5178`.
+
+### `prod-deploy-heritage-demo-20261012-61e7281` — 2026-10-12
+Candidate identity at `61e728150b4ac728de29a80239e10c355d3fcaf9`; production workflow `38285139916` failed its temporary-key preflight before migration or deployment. The initial release-form tag is lightweight and is retained as a nonconforming attempted-candidate identity. It must not be reused for production promotion; a follow-on attempt requires a new annotated tag and fresh validation.
+
+Predecessor mappings are preserved in `docs/archive/release-authority/PREDECESSOR_RELEASE_TAGS.json`. The active mapping for tags published in this successor repository is `docs/RELEASE_TAGS.json`; recording a tag identity does not certify a successful deployment.
+
+## Authority rule
+
+If a historical release note conflicts with `docs/CURRENT_RELEASE_STATUS.md`, exact current repository identity, or verified runtime evidence, the current Crown-CSMS authority wins.

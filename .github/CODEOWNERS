@@ -1,0 +1,17 @@
+# CROWN repository owner: Arete0920
+# Product ownership, technical direction, acceptance, and release authorization remain with the repository owner.
+# Solo-maintainer governance relies on required automated checks rather than an impossible second-human approval.
+
+* @Arete0920
+
+.github/** @Arete0920
+SECURITY.md @Arete0920
+README.md @Arete0920
+.env.example @Arete0920
+docs/security/** @Arete0920
+docs/governance/** @Arete0920
+docs/release/** @Arete0920
+docs/dashboard/** @Arete0920
+docs/engineering/** @Arete0920
+scripts/** @Arete0920
+contracts/** @Arete0920

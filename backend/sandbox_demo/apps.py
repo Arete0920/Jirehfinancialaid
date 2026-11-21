@@ -1,0 +1,11 @@
+from django.apps import AppConfig
+
+
+class SandboxDemoConfig(AppConfig):
+    default_auto_field = "django.db.models.BigAutoField"
+    name = "sandbox_demo"
+    verbose_name = "CROWN Sandbox Demo"
+
+    def ready(self):
+        # Register the narrowly scoped synthetic student identity reconciliation.
+        from . import signals  # noqa: F401

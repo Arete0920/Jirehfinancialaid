@@ -1,0 +1,312 @@
+/* Crown UI System (Phase 4 Step 4)
+   Token-first design system
+   Dark-on-light default
+   Works with plain CSS + utility-ish classes
+
+   SCOPE: Legacy component styles and structural shell classes (crown-app, crown-sidebar,
+   crown-main, crown-btn, etc). Do NOT add layout grid, spacing utilities, or dashboard
+   section classes here — those belong in launch-shell.css. Do NOT duplicate :root tokens
+   defined in crown-theme.css.
+*/
+
+:root {
+  /* Brand */
+    /* deep royal blue */
+    /* warm gold */
+    /* near-black */
+
+
+  /* Surfaces */
+
+
+
+
+  /* Borders + shadows */
+
+
+
+  /* Radius */
+
+
+
+  /* Typography */
+
+
+  /* Status / health colors (light-mode calibrated) */
+   /* green text on light bg */
+   /* amber text on light bg */
+   /* red text on light bg */
+   /* warm gold (= accent) */
+   /* info blue */
+
+  /* Status surface fills */
+
+
+
+
+}
+
+html,
+body {
+  height: 100%;
+}
+
+body {
+  margin: 0;
+  font-family: var(--crown-font);
+  color: var(--crown-ink);
+  background: var(--crown-compat-scope-0d67ec4e07);
+}
+
+/* ── Layout ─────────────────────────────────────────────── */
+
+.crown-app {
+  min-height: 100vh;
+  display: flex;
+}
+
+.crown-sidebar-toggle, .crown-sidebar-close, .crown-sidebar-backdrop { display: none; }
+
+.crown-sidebar {
+  width: 260px;
+  flex-shrink: 0;
+  background: linear-gradient(180deg, var(--crown-brand), var(--crown-compat-color-ede086cb4d));
+  color: var(--crown-compat-color-e08de71387);
+  padding: 18px;
+  box-sizing: border-box;
+}
+
+.crown-sidebar h1 {
+  margin: 0 0 10px 0;
+  font-size: 16px;
+  font-weight: 700;
+  letter-spacing: 0.2px;
+}
+
+.crown-sidebar .crown-badge {
+  display: inline-block;
+  margin-top: 6px;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--crown-compat-color-9dd30a3408);
+  border: 1px solid var(--crown-compat-color-ff34edd940);
+}
+
+.crown-main {
+  flex: 1;
+  min-width: 0;
+  padding: 22px;
+  box-sizing: border-box;
+  color: var(--crown-ink) !important;
+  background-color: var(--crown-compat-scope-0d67ec4e07) !important;
+}
+
+/* ── Page header ─────────────────────────────────────────── */
+
+.crown-pagehead {
+  display: flex;
+  align-items: flex-end;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+.crown-title {
+  margin: 0;
+  font-size: 22px;
+  font-weight: 800;
+}
+
+.crown-subtitle {
+  margin: 6px 0 0 0;
+  color: var(--crown-compat-scope-a141731ea8);
+  font-size: 13px;
+}
+
+/* ── Card ────────────────────────────────────────────────── */
+
+.crown-card {
+  background: var(--crown-surface);
+  border: 1px solid var(--crown-compat-scope-cb1768c9bf);
+  border-radius: var(--crown-radius);
+  box-shadow: var(--crown-shadow);
+  padding: 16px;
+}
+
+.crown-card + .crown-card {
+  margin-top: 14px;
+}
+
+/* ── 12-col grid ─────────────────────────────────────────── */
+
+.crown-grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 14px;
+}
+
+.crown-col-12 { grid-column: span 12; }
+.crown-col-8  { grid-column: span 8; }
+.crown-col-6  { grid-column: span 6; }
+.crown-col-4  { grid-column: span 4; }
+.crown-col-3  { grid-column: span 3; }
+
+@media (max-width: 1100px) {
+  .crown-sidebar { display: none; }
+  .crown-sidebar-toggle { display: block; position: fixed; top: 12px; left: 12px; z-index: 101; }
+  .crown-sidebar.is-open { display: block; position: fixed; inset: 0 auto 0 0; z-index: 103; overflow-y: auto; }
+  .crown-sidebar-close { display: block; }
+  .crown-sidebar-backdrop { display: block; position: fixed; inset: 0; z-index: 102; background: color-mix(in srgb, var(--crown-primary-deep) 40%, transparent); }
+  .crown-main    { padding: 16px; }
+  .crown-app:has(.crown-sidebar-toggle) .crown-main { padding-top: 56px; }
+  .crown-col-8,
+  .crown-col-6,
+  .crown-col-4,
+  .crown-col-3  { grid-column: span 12; }
+}
+
+/* ── Buttons ─────────────────────────────────────────────── */
+
+.crown-btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  border-radius: 12px;
+  padding: 10px 12px;
+  font-weight: 700;
+  font-size: 13px;
+  border: 1px solid var(--crown-compat-scope-cb1768c9bf);
+  background: var(--crown-surface);
+  color: var(--crown-ink);
+  cursor: pointer;
+  text-decoration: none;
+}
+
+.crown-btn-primary:hover {
+  filter: brightness(1.05);
+}
+
+.crown-pill {
+  display: inline-block;
+  font-size: 12px;
+  padding: 6px 10px;
+  border-radius: 999px;
+  background: var(--crown-surface-2);
+  border: 1px solid var(--crown-compat-scope-cb1768c9bf);
+  color: var(--crown-compat-scope-a141731ea8);
+}
+
+/* ── Tables ──────────────────────────────────────────────── */
+
+table {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+thead th {
+  text-align: left;
+  font-size: 12px;
+  color: var(--crown-compat-scope-a141731ea8);
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--crown-compat-scope-cb1768c9bf);
+}
+
+tbody td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--crown-compat-color-e19a38f714);
+}
+
+tbody tr:hover {
+  background: var(--crown-compat-color-9724074c83);
+}
+
+/* ── Micro-interactions ───────────────────────────────────────────────────── */
+
+*,
+*::before,
+*::after {
+  transition:
+    background-color 150ms ease-in-out,
+    box-shadow      150ms ease-in-out,
+    border-color    150ms ease-in-out,
+    transform       150ms ease-in-out;
+}
+
+button:active,
+.crown-btn:active {
+  transform: scale(0.98);
+}
+
+/* Eliminate heavy box-shadows — replaced by subtle border + small elevation */
+.crown-card,
+.crown-section {
+  box-shadow: 0 2px 8px var(--crown-compat-color-16cf596261) !important;
+}
+
+/* Consistent button shape */
+button, .MuiButton-root {
+  border-radius: 8px;
+}
+
+/* Label-above-input pattern helper */
+.crown-field {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+.crown-field label {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--crown-compat-scope-a141731ea8);
+  text-transform: uppercase;
+  letter-spacing: 0.5px;
+}
+
+/* ── Light-mode override (wins over crown-theme.css !important rules) ───── */
+
+body,
+.crown-app {
+  color: var(--crown-ink) !important;
+  background-color: var(--crown-compat-scope-0d67ec4e07) !important;
+}
+
+/* Restore readable buttons on light pages */
+button,
+.crown-btn,
+a.crown-btn {
+  color: var(--crown-ink) !important;
+  background-color: var(--crown-surface) !important;
+  border-color: var(--crown-compat-scope-cb1768c9bf) !important;
+  -webkit-text-fill-color: var(--crown-ink) !important;
+}
+
+.crown-btn-primary {
+  background-color: var(--crown-brand) !important;
+  color: var(--crown-compat-color-f2074b6cef) !important;
+  border-color: transparent !important;
+  -webkit-text-fill-color: var(--crown-compat-color-f2074b6cef) !important;
+}
+
+/* Light-mode inputs */
+.crown-main input,
+.crown-main select,
+.crown-main textarea,
+.crown-section input,
+.crown-section select,
+.crown-section textarea {
+  color: var(--crown-ink) !important;
+  background-color: var(--crown-surface) !important;
+  border: 1px solid var(--crown-compat-scope-cb1768c9bf) !important;
+  -webkit-text-fill-color: var(--crown-ink) !important;
+  caret-color: var(--crown-ink) !important;
+}
+
+.crown-main input::placeholder,
+.crown-main textarea::placeholder {
+  color: var(--crown-compat-scope-a141731ea8) !important;
+  -webkit-text-fill-color: var(--crown-compat-scope-a141731ea8) !important;
+  opacity: 1 !important;
+}

@@ -1,0 +1,21 @@
+export const ROLE_GROUPS = {
+  ALL_AUTHENTICATED: [
+    'super_admin',
+    'school_admin',
+    'registrar',
+    'teacher',
+    'parent',
+    'student',
+    'staff',
+    'finance_admin',
+    'admissions_manager',
+    'academic_admin',
+  ],
+  ADMIN_ONLY: ['super_admin', 'school_admin', 'head_of_school'],
+  ADMIN_REGISTRAR: ['super_admin', 'school_admin', 'head_of_school', 'registrar'],
+  ADMIN_FINANCE: ['super_admin', 'school_admin', 'head_of_school', 'finance_admin', 'finance'],
+  ACADEMIC_TEAM: ['super_admin', 'school_admin', 'head_of_school', 'academic_admin', 'teacher', 'registrar', 'admin'],
+  FAMILY_VIEW: ['parent', 'student'],
+  AFTERCARE_STAFF: ['super_admin', 'school_admin', 'head_of_school', 'aftercare_staff', 'extended_care_manager', 'admin'],
+  SUMMER_CAMP_TEAM: ['super_admin', 'school_admin', 'head_of_school', 'extended_care_manager', 'summer_camp_coordinator', 'admin'],
+};

@@ -1,0 +1,100 @@
+# CROWN PR Hygiene Gate
+
+Status: Governance control document  
+Scope: Pull requests, generated evidence, dashboard certification evidence, release-readiness evidence, and solo-developer control-path language
+
+## 1. Purpose
+
+CROWN pull requests must remain clean, reviewable, reproducible, and evidence-first.
+
+Generated audit noise, stale evidence dumps, oversized diffs, and invalid review-wait language are not acceptable merge conditions.
+
+This policy makes PR hygiene a required control before release, sandbox, pilot, production, dashboard certification, wizard certification, or module-certification decisions.
+
+## 2. Mandatory Rule
+
+A PR is NO-GO when any of these are true:
+
+- changed-file count exceeds the defined hygiene threshold without an explicit architectural exception,
+- added lines exceed the defined hygiene threshold,
+- bulky generated JSON, Markdown, logs, traces, screenshots, or local audit dumps are committed instead of uploaded as workflow artifacts,
+- timestamped stale evidence folders are committed as durable source truth,
+- PR body waits for an unavailable independent human reviewer instead of using the approved solo-developer workaround,
+- PR body makes release, sandbox, pilot, production, or certification claims without current evidence tied to the PR head SHA.
+
+## 3. Commit vs Artifact Rule
+
+Commit to the repository:
+
+- source scripts,
+- schemas,
+- compact human-readable summaries,
+- canonical product/configuration state,
+- durable governance documents.
+
+Do not commit to the repository by default:
+
+- bulky generated JSON,
+- bulky generated Markdown,
+- raw inventory dumps,
+- local browser traces,
+- screenshots,
+- transient audit outputs,
+- timestamped stale evidence folders,
+- logs.
+
+Store bulky generated proof as GitHub Actions artifacts with retention instead of committing it to the PR branch.
+
+## 4. Default Thresholds
+
+| Gate | Default limit |
+| --- | ---: |
+| Normal PR additions | 1,500 |
+| Documentation/audit PR additions | 3,000 |
+| Changed files | 20 |
+| Generated audit JSON in `audit-artifacts/` | blocked by default |
+| Timestamped evidence folders | blocked by default |
+
+Exceptions must be explicit in the PR body and must be supported by a current evidence packet.
+
+## 5. Solo-Developer Review Language
+
+CROWN does not wait for a nonexistent independent human reviewer.
+
+When the product owner is the solo developer, use the approved solo-developer workaround:
+
+```text
+Segregation of duties:
+The product owner is the solo developer and cannot self-review or self-approve this work.
+
+Independent human reviewer:
+Unavailable for this solo-developer operating model.
+
+Control path used:
+Solo-developer approved workaround using GitHub connector evidence, GitHub required checks, CI/release gates, PR diff review, and explicit PASS / NO-GO evidence packet.
+
+Development-support role:
+Engineering support, architecture, review, and evidence audit are advisory. Approval authority remains with the repository owner under the documented control path.
+```
+
+## 6. Required Enforcement
+
+The `Repository Policy` workflow (`.github/workflows/repository-policy.yml`) runs on pull-request events. Its `repository-policy` job invokes `python scripts/ci/pr_hygiene_gate.py` in the **Run pull-request hygiene** step. The check evaluates the pull request's exact source-head SHA, maintained title/body, source diff, default 20-file threshold, and applicable evidence restrictions. `PR Hygiene Gate` describes this embedded control; it is not the name of a separate Actions workflow.
+
+The same `repository-policy` job runs on selected protected-`main` pushes, but its pull-request-specific step is skipped on push. A green post-merge repository-policy job cannot, by itself, prove that a pull request's metadata and source-diff checks ran. Approved, narrowly scoped exception paths remain subject to their documented conditions; this explanation grants no new waiver.
+
+An exact-head pull-request hygiene failure, missing result, or stale result is **NO-GO**, regardless of whether GitHub administration currently marks the context as required. The repository owner must verify the actual required-check configuration in the authorized branch-protection or ruleset view; a branch's `protected` flag does not prove which checks are required. Do not self-approve or bypass required protections. Use the approved solo-developer review procedure and retain the decision evidence.
+
+## 7. Dashboard-Specific Rule
+
+Dashboard certification PRs must not commit generated certification truth dumps as durable source truth.
+
+Dashboard certification work should remain in one coherent, independently reversible pull request containing the implementation, evidence-generation scripts, compact evidence summary, denominator/state reconciliation, and certification promotion required for the same outcome. A separate pull request requires an independent risk, authority, or rollback boundary under `docs/governance/CHANGE_MANAGEMENT.md`.
+
+A dashboard is not certified until route, permission, tenant, runtime/browser, evidence packet, state/matrix, and solo-developer workaround record all agree.
+
+## 8. Current PR narrative language
+
+The title and description of a newly opened or edited pull request must satisfy the same reference-language control as tracked first-party source. Repository Policy evaluates both fields in the pull-request event and blocks prohibited provider or method branding, including references split across lines. Descriptions must state implemented behavior and verified evidence, not tool-generated promotional copy, unearned contributor credit, or unsupported completion claims.
+
+This check is prospective. It does not remove historical third-party attribution, dependency release notes, signed provenance, commit authors, or past discussion events. Required factual disclosure belongs in controlled technical records; exceptions need an owner-reviewed, evidence-backed decision rather than a silent bypass. See `docs/governance/PUBLIC_LANGUAGE_POLICY.md`.

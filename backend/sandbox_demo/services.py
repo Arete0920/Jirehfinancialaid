@@ -1,0 +1,774 @@
+from __future__ import annotations
+
+import re
+import uuid
+from dataclasses import asdict
+from datetime import date
+
+from django.conf import settings
+from django.db import transaction
+
+from core.models import (
+    AcademicYear,
+    Enrollment,
+    Family,
+    GradeLevel,
+    Guardian,
+    School,
+    Staff,
+    Student,
+    StudentTuition,
+    TuitionPlan,
+    UserAccount,
+    UserRole,
+)
+from crown_api.jwt_utils import build_access_token, build_refresh_token
+from finance.models import (
+    FinanceInvoice,
+    FinanceInvoiceLine,
+    FinanceObligation,
+    MoneyStatus,
+    ObligationType,
+)
+
+from .catalog import (
+    DEFAULT_SANDBOX_INVITE_ROLES,
+    HOSTED_ONLY_PERSONA_KEYS,
+    SANDBOX_PERSONAS,
+    SANDBOX_SCHOOLS,
+    SandboxPersona,
+    SandboxSchool,
+    get_persona,
+    get_school,
+)
+from .fictional_identities import FAMILY_RECORD_COUNT, family_identity, student_given_name
+
+
+PROHIBITED_FEEDBACK_PATTERNS = [
+    re.compile(r"\b\d{3}-\d{2}-\d{4}\b"),
+    re.compile(r"\b(?:\d[ -]*?){13,16}\b"),
+    re.compile(r"\b\d{3}[-.) ]?\d{3}[-. ]?\d{4}\b"),
+]
+
+
+def note_has_prohibited_data(note: str) -> bool:
+    if not note:
+        return False
+    return any(pattern.search(note) for pattern in PROHIBITED_FEEDBACK_PATTERNS)
+
+
+@transaction.atomic
+def ensure_demo_school(school_spec: SandboxSchool) -> School:
+    school_id = uuid.UUID(school_spec.id)
+    existing_school = School.objects.filter(pk=school_id).first()
+    if existing_school is not None and existing_school.name != school_spec.name:
+        raise RuntimeError("Sandbox school identity belongs to a different institution.")
+    school, _ = School.objects.update_or_create(
+        id=school_id,
+        defaults={
+            "name": school_spec.name,
+            "timezone": "America/New_York",
+            "is_active": True,
+        },
+    )
+    return school
+
+
+def _role_type_for_persona(persona: SandboxPersona) -> str:
+    if persona.key in {"school_admin", "admissions_director", "finance_director"}:
+        return "ADMIN"
+    if persona.key == "teacher":
+        return "TEACHER"
+    return "SUPPORT"
+
+
+@transaction.atomic
+def ensure_persona_user(school: School, persona: SandboxPersona) -> UserAccount:
+    family = None
+    guardian = None
+    staff = None
+
+    if persona.key in {"parent", "student"}:
+        family, _ = Family.objects.get_or_create(
+            school=school,
+            family_name="Reed Family",
+            defaults={
+                "address_line1": "100 Demo Lane",
+                "city": "Fairview",
+                "state": "PA",
+                "zip_code": "19000",
+                "status": "ACTIVE",
+            },
+        )
+        guardian, _ = Guardian.objects.update_or_create(
+            school=school,
+            email="parent.reed@heritage.example.org",
+            defaults={
+                "family": family,
+                "first_name": "Miriam",
+                "last_name": "Reed",
+                "phone": "555-0100",
+                "relationship": "MOTHER",
+                "portal_access": True,
+                "custody_flag": False,
+            },
+        )
+    # Board membership uses UserRole and must not acquire staff support authority.
+    elif persona.key != "board":
+        staff, _ = Staff.objects.update_or_create(
+            school=school,
+            email=persona.email,
+            defaults={
+                "first_name": persona.first_name,
+                "last_name": persona.last_name,
+                "role_type": _role_type_for_persona(persona),
+                "status": "ACTIVE",
+            },
+        )
+
+    existing_user = UserAccount.objects.filter(username=persona.email).first()
+    if existing_user is not None and (
+        existing_user.school_id != school.pk or existing_user.email != persona.email
+    ):
+        raise RuntimeError("Sandbox persona username belongs to another identity.")
+
+    user, _ = UserAccount.objects.update_or_create(
+        username=persona.email,
+        defaults={
+            "email": persona.email,
+            "first_name": persona.first_name,
+            "last_name": persona.last_name,
+            "school": school,
+            "staff": staff,
+            "guardian": guardian if persona.key == "parent" else None,
+            "is_active": True,
+            "is_staff": False,
+            "is_superuser": False,
+        },
+    )
+
+    # Sandbox sessions authenticate by scoped one-click credentials, not
+    # password login. Never reuse global or shared demo password settings.
+    user.set_unusable_password()
+    user.save(update_fields=["password"])
+
+    # Persistent application roles authorize sensitive writes even after Django
+    # staff privileges are lowered. Retain only the explicit sandbox roles.
+    # The fictional Heritage head demonstrates Aid Setup using AID_DIRECTOR;
+    # real-school HEAD_OF_SCHOOL grants are not broadened.
+    allowed_roles = {persona.role_code}
+    if (
+        persona.key == "school_admin"
+        and str(school.pk) == SANDBOX_SCHOOLS["heritage-core"].id
+    ):
+        allowed_roles.add("AID_DIRECTOR")
+    UserRole.objects.filter(school=school, user=user).exclude(
+        role_code__in=allowed_roles
+    ).delete()
+    for code in sorted(allowed_roles):
+        UserRole.objects.get_or_create(
+            school=school,
+            user=user,
+            role_code=code,
+        )
+
+    return user
+
+
+@transaction.atomic
+def create_sandbox_session(
+    *, persona_key: str, school_key_or_id: str, guidance: str, tour: str | None = None
+) -> dict:
+    # The local Heritage helper must never mint a buyer-only role, even if
+    # called outside the normal SandboxSessionView (e.g. by a rehearsal script).
+    if persona_key in HOSTED_ONLY_PERSONA_KEYS:
+        raise ValueError("Hosted-only buyer persona requires an invite-owned workspace.")
+    persona = get_persona(persona_key)
+    school_spec = get_school(school_key_or_id)
+    school = ensure_demo_school(school_spec)
+    user = ensure_persona_user(school, persona)
+    tour_title = tour or persona.tour_title
+
+    access = build_access_token(
+        user_id=str(user.id),
+        email=user.email,
+        role=persona.key,
+        school_id=str(school.id),
+        ttl_seconds=int(
+            getattr(settings, "CROWN_SANDBOX_ACCESS_TTL_SECONDS", 60 * 60 * 2)
+        ),
+    )
+    refresh = build_refresh_token(
+        user_id=str(user.id),
+        ttl_seconds=int(
+            getattr(settings, "CROWN_SANDBOX_REFRESH_TTL_SECONDS", 60 * 60 * 12)
+        ),
+    )
+
+    return {
+        "access": access,
+        "refresh": refresh,
+        "school_id": str(school.id),
+        "school_name": school.name,
+        "role": persona.key,
+        "role_code": persona.role_code,
+        "route": persona.route,
+        "guidance": guidance,
+        "tour": tour_title,
+        "command_center": {
+            "track": school_spec.track,
+            "school": asdict(school_spec),
+            "persona": asdict(persona),
+            "guidance": guidance,
+            "tour": tour_title,
+        },
+    }
+
+
+def _clear_flagship_data(school: School) -> None:
+    from admissions.models import (
+        AdmissionsAuditEvent,
+        AdmissionsDecision,
+        AdmissionsReview,
+    )
+    from aid.models import (
+        AidApplication,
+        AidAuditEvent,
+        AidAward,
+        AidDocument,
+        AidReview,
+    )
+    from finance.models import FinanceAllocation, FinancePayment
+
+    user_ids = list(
+        UserAccount.objects.filter(school=school).values_list("id", flat=True)
+    )
+
+    # Never delete another school's admissions or aid evidence merely because
+    # its actor points to one of the fictional sandbox accounts. Those FKs
+    # are PROTECT references; abort before destructive writes if cross-school
+    # relationships exist, rather than erasing records to unblock a reset.
+    if user_ids:
+        actor_references = (
+            (AidReview, "reviewer_user_id"),
+            (AidAward, "decided_by_id"),
+            (AidAuditEvent, "actor_user_id"),
+            (AdmissionsReview, "reviewer_user_id"),
+            (AdmissionsDecision, "decided_by_id"),
+            (AdmissionsAuditEvent, "actor_user_id"),
+        )
+        for model, field in actor_references:
+            if model.objects.filter(**{f"{field}__in": user_ids}).exclude(
+                school_id=school.id
+            ).exists():
+                raise RuntimeError(
+                    "Sandbox reset refused: actor is referenced by another school's records."
+                )
+
+    AidDocument.objects.filter(school=school).delete()
+    AidReview.objects.filter(school=school).delete()
+    AidAward.objects.filter(school=school).delete()
+    AidAuditEvent.objects.filter(school=school).delete()
+    AidApplication.objects.filter(school=school).delete()
+    AdmissionsReview.objects.filter(school=school).delete()
+    AdmissionsDecision.objects.filter(school=school).delete()
+    AdmissionsAuditEvent.objects.filter(school=school).delete()
+    FinanceAllocation.objects.filter(school=school).delete()
+    FinanceInvoiceLine.objects.filter(invoice__school=school).delete()
+    FinanceInvoice.objects.filter(school=school).delete()
+    FinancePayment.objects.filter(school=school).delete()
+    FinanceObligation.objects.filter(school=school).delete()
+    UserRole.objects.filter(school=school).delete()
+    # Release only this school's explicit demo account bindings before reset.
+    from households.models import Guardian as HouseholdGuardian, Student as HouseholdStudent
+    HouseholdGuardian.objects.filter(school_id=school.id, account_id__in=user_ids).update(account=None)
+    HouseholdStudent.objects.filter(school_id=school.id, account_id__in=user_ids).update(account=None)
+    UserAccount.objects.filter(school=school).delete()
+    StudentTuition.objects.filter(school=school).delete()
+    Enrollment.objects.filter(school=school).delete()
+    Student.objects.filter(school=school).delete()
+    Guardian.objects.filter(school=school).delete()
+    Staff.objects.filter(school=school).delete()
+    Family.objects.filter(school=school).delete()
+    TuitionPlan.objects.filter(school=school).delete()
+    GradeLevel.objects.filter(school=school).delete()
+    AcademicYear.objects.filter(school=school).delete()
+
+
+@transaction.atomic
+def seed_heritage_flagship(*, reset: bool = False) -> dict:
+    return seed_fictional_school(
+        school_spec=SANDBOX_SCHOOLS["heritage-core"],
+        personas={key: SANDBOX_PERSONAS[key] for key in DEFAULT_SANDBOX_INVITE_ROLES},
+        reset=reset,
+    )
+
+
+_PRESENTER_BOOTSTRAP_CAPABILITY = object()
+
+
+@transaction.atomic
+def seed_fictional_school(*, school_spec: SandboxSchool,
+                         personas: dict[str, SandboxPersona], reset: bool = False,
+                         _presenter_bootstrap_capability=None,
+                         _presenter_rebuild=False) -> dict:
+    """Shared synthetic generator; callers own environment/provenance guards.
+
+    Tenant identity and principal names are explicit inputs. Never replace the
+    global Heritage catalog to seed another school.
+    """
+    from .universal_identity import UNIVERSAL_SCHOOL, generation_school, generation_number
+
+    try:
+        presenter_spec = school_spec == generation_school(generation_number(school_spec.id))
+    except ValueError:
+        presenter_spec = False
+    if school_spec != SANDBOX_SCHOOLS["heritage-core"] and not presenter_spec:
+        raise RuntimeError("Fictional generator refuses an unregistered school identity.")
+    if presenter_spec:
+        # The generic helper is importable. It cannot bypass the presenter's
+        # environment/provenance checks or its separately reviewed reset path.
+        from .universal_demo import _owned_school
+        from .universal_runtime import require_presenter_runtime
+        require_presenter_runtime()
+        if reset:
+            raise RuntimeError("Use the controlled presenter reset command.")
+        if _presenter_bootstrap_capability is not _PRESENTER_BOOTSTRAP_CAPABILITY:
+            raise RuntimeError("Presenter initialization requires the guarded presenter command.")
+        owned = _owned_school()
+        if (owned is None and school_spec != UNIVERSAL_SCHOOL) or (owned is not None and str(owned.pk) != school_spec.id):
+            raise RuntimeError("Fictional generator requires the current owned presenter generation.")
+        if owned is not None and not _presenter_rebuild:
+            raise RuntimeError("Presenter already exists; direct reseed would invalidate credentials or audit history.")
+        if owned is not None and _presenter_rebuild and UserAccount.objects.filter(school=owned).exists():
+            raise RuntimeError("Presenter rebuild requires a cleared principal inventory; existing logins are preserved.")
+    school = ensure_demo_school(school_spec)
+
+    if reset:
+        _clear_flagship_data(school)
+
+    academic_year, _ = AcademicYear.objects.update_or_create(
+        school=school,
+        name="2026-2027",
+        defaults={
+            "start_date": date(2026, 8, 15),
+            "end_date": date(2027, 6, 5),
+            "is_current": True,
+        },
+    )
+
+    grade_data = [
+        ("PK", "Early Education / Preschool", 0, 180),
+        ("K", "Kindergarten", 1, 40),
+        ("1", "Grade 1", 2, 38),
+        ("2", "Grade 2", 3, 37),
+        ("3", "Grade 3", 4, 36),
+        ("4", "Grade 4", 5, 35),
+        ("5", "Grade 5", 6, 34),
+        ("6", "Grade 6", 7, 48),
+        ("7", "Grade 7", 8, 45),
+        ("8", "Grade 8", 9, 42),
+        ("9", "Grade 9", 10, 48),
+        ("10", "Grade 10", 11, 42),
+        ("11", "Grade 11", 12, 38),
+        ("12", "Grade 12", 13, 37),
+    ]
+
+    grade_levels = {}
+    tuition_plans = {}
+    for code, label, sort_order, _target in grade_data:
+        grade, _ = GradeLevel.objects.update_or_create(
+            school=school,
+            code=code,
+            defaults={"label": label, "sort_order": sort_order},
+        )
+        grade_levels[code] = grade
+
+        if code == "PK":
+            amount = 1140000
+        elif code in {"K", "1", "2", "3", "4", "5"}:
+            amount = 875000
+        elif code in {"6", "7", "8"}:
+            amount = 995000
+        else:
+            amount = 1125000
+
+        plan, _ = TuitionPlan.objects.update_or_create(
+            school=school,
+            academic_year=academic_year,
+            name=f"{label} Published Tuition",
+            defaults={"annual_amount_cents": amount, "is_active": True},
+        )
+        tuition_plans[code] = plan
+
+    families = []
+    for idx in range(1, FAMILY_RECORD_COUNT + 1):
+        fixture = family_identity(idx)
+        # Preserve primary keys when refreshing an older Heritage sandbox.
+        # This is a sandbox-only rename; no production family records are read.
+        legacy_family_name = f"Demo Family {idx:03d}"
+        existing = Family.objects.filter(
+            school=school, family_name=legacy_family_name
+        ).first()
+        if existing is not None:
+            if Family.objects.filter(
+                school=school, family_name=fixture.family_name
+            ).exclude(pk=existing.pk).exists():
+                raise RuntimeError(
+                    "Conflicting Heritage fictional family records; reset the sandbox"
+                )
+            existing.family_name = fixture.family_name
+            existing.save(update_fields=["family_name"])
+        family, _ = Family.objects.update_or_create(
+            school=school,
+            family_name=fixture.family_name,
+            defaults={
+                "address_line1": fixture.address_line1,
+                "city": fixture.city,
+                "state": fixture.state,
+                "zip_code": fixture.zip_code,
+                "status": "ACTIVE",
+            },
+        )
+        families.append(family)
+        # Preserve the original guardian association across a non-reset reseed.
+        Guardian.objects.filter(
+            school=school,
+            email=f"guardian{idx:03d}@heritage.example.org",
+        ).update(email=fixture.guardian_email)
+        Guardian.objects.update_or_create(
+            school=school,
+            email=fixture.guardian_email,
+            defaults={
+                "family": family,
+                "first_name": fixture.guardian_first_name,
+                "last_name": fixture.surname,
+                "phone": fixture.phone,
+                "relationship": "GUARDIAN",
+                "portal_access": True,
+                "custody_flag": False,
+            },
+        )
+
+    student_index = 1
+    for code, _label, _sort, target in grade_data:
+        grade = grade_levels[code]
+        plan = tuition_plans[code]
+        for _ in range(target):
+            family = families[(student_index - 1) % len(families)]
+            fixture = family_identity((student_index - 1) % len(families) + 1)
+            student_number = f"HCA-{student_index:04d}"
+            student, _ = Student.objects.update_or_create(
+                school=school,
+                student_number=student_number,
+                defaults={
+                    "family": family,
+                    "first_name": student_given_name(student_index),
+                    "last_name": fixture.surname,
+                    "dob": date(
+                        academic_year.start_date.year - (4 if code == "PK" else 5 if code == "K" else int(code) + 5),
+                        3 + student_index % 4,
+                        1 + student_index % 27,
+                    ),
+                    "status": "ACTIVE",
+                    "current_grade_level": grade,
+                },
+            )
+            Enrollment.objects.update_or_create(
+                school=school,
+                student=student,
+                academic_year=academic_year,
+                defaults={
+                    "grade_level": grade,
+                    "start_date": academic_year.start_date,
+                    "end_date": None,
+                    "status": "ENROLLED",
+                },
+            )
+            StudentTuition.objects.update_or_create(
+                school=school,
+                student=student,
+                academic_year=academic_year,
+                defaults={
+                    "tuition_plan": plan,
+                    "annual_amount_cents": plan.annual_amount_cents,
+                    "discounts_cents": 0,
+                    "net_annual_cents": plan.annual_amount_cents,
+                },
+            )
+            student_index += 1
+
+    for persona in personas.values():
+        ensure_persona_user(school, persona)
+
+    parent_user = UserAccount.objects.filter(
+        username=personas["parent"].email, school=school
+    ).first()
+    if parent_user:
+        for n in range(1, 13):
+            month_index = academic_year.start_date.month - 1 + n - 1
+            due_date = date(academic_year.start_date.year + month_index // 12, month_index % 12 + 1, 15)
+            obligation, _ = FinanceObligation.objects.update_or_create(
+                school=school,
+                payer_user=parent_user,
+                reference=f"HCA-DEMO-TUITION-{n:02d}",
+                defaults={
+                    "obligation_type": ObligationType.TUITION,
+                    "status": MoneyStatus.OPEN,
+                    "description": f"Monthly tuition installment {n}",
+                    "due_date": due_date,
+                    "amount_cents": 87500,
+                    "currency": "USD",
+                    "academic_year_label": "2026-2027",
+                },
+            )
+            invoice, _ = FinanceInvoice.objects.update_or_create(
+                school=school,
+                payer_user=parent_user,
+                due_date=obligation.due_date,
+                defaults={
+                    "status": MoneyStatus.OPEN,
+                    "period_start": obligation.due_date.replace(day=1),
+                    "period_end": obligation.due_date,
+                    "subtotal_cents": obligation.amount_cents,
+                    "total_cents": obligation.amount_cents,
+                    "currency": "USD",
+                    "note": "Demo-only family invoice.",
+                },
+            )
+            FinanceInvoiceLine.objects.update_or_create(
+                invoice=invoice,
+                obligation=obligation,
+                defaults={
+                    "amount_cents": obligation.amount_cents,
+                    "description": obligation.description,
+                },
+            )
+
+    return proof_metrics(school)
+
+
+def proof_metrics(school: School) -> dict:
+    return {
+        "school_id": str(school.id),
+        "school_name": school.name,
+        "families": Family.objects.filter(school=school).count(),
+        "guardians": Guardian.objects.filter(school=school).count(),
+        "students": Student.objects.filter(school=school).count(),
+        "staff": Staff.objects.filter(school=school).count(),
+        "users": UserAccount.objects.filter(school=school).count(),
+        "roles": UserRole.objects.filter(school=school).count(),
+        "enrollments": Enrollment.objects.filter(school=school).count(),
+        "student_tuitions": StudentTuition.objects.filter(school=school).count(),
+        "finance_obligations": FinanceObligation.objects.filter(school=school).count(),
+        "finance_invoices": FinanceInvoice.objects.filter(school=school).count(),
+    }
+
+
+@transaction.atomic
+def seed_local_heritage_relationships() -> None:
+    """Provision explicit family relationships only in the isolated local demo."""
+    from django.conf import settings
+    from households.models import Guardian as HouseholdGuardian
+    from core.models import StudentIdentityLink
+    from .parent_daily import _ensure_daily_records
+    from .student_self_service import _ensure_student_records
+
+    if not settings.DEBUG or settings.CROWN_ENV != "local" or not settings.DATABASES["default"]["ENGINE"].endswith("sqlite3"):
+        raise RuntimeError("Local Heritage relationship seed requires the local SQLite demo.")
+    school_id = uuid.UUID(str(SANDBOX_SCHOOLS["heritage-core"].id))
+    parent = UserAccount.objects.get(school_id=school_id, username=SANDBOX_PERSONAS["parent"].email)
+    student_user = UserAccount.objects.get(school_id=school_id, username=SANDBOX_PERSONAS["student"].email)
+    jordan = _ensure_daily_records(parent)
+    jordan_link = StudentIdentityLink.objects.select_related("compatibility_student__household").get(core_student=jordan, school_id=school_id)
+    _ensure_student_records(student_user)
+    HouseholdGuardian.objects.update_or_create(
+        account=parent, school_id=parent.school_id,
+        # Account binding supplies classroom authority. Keep the existing Reed
+        # finance contact as the sole email-to-ledger mapping.
+        defaults={"household": jordan_link.compatibility_student.household, "first_name": parent.first_name, "last_name": parent.last_name, "email": "", "is_primary": True},
+    )
+
+
+
+@transaction.atomic
+def seed_local_heritage_camp() -> dict[str, int]:
+    """Create the current Camp scenario only in the isolated fictional Heritage SQLite demo.
+
+    Never provision any customer tenant, modify an unrelated session, or mark a child
+    ready for custody release. Existing demonstration edits to configuration are left intact.
+    """
+    from datetime import time, timedelta
+
+    from django.utils import timezone
+
+    from core.models import StudentIdentityLink
+    from subscriptions.models import SchoolModule
+    from summer_camp.models import SummerCampEnrollment, SummerCampProgram, SummerCampSession
+    from summer_camp.services import camp_school_local_date
+    from sandbox_demo.management.commands.five_module_demo_preflight import _require_isolated_local_database
+
+    _require_isolated_local_database()
+    if not getattr(settings, "CROWN_SANDBOX_ALLOW_OPEN_SESSION", False):
+        raise RuntimeError("The fictional Heritage Camp seed requires an isolated local sandbox session.")
+
+    spec = SANDBOX_SCHOOLS["heritage-core"]
+    school = School.objects.get(pk=uuid.UUID(spec.id), is_active=True)
+    if school.name != spec.name:
+        raise RuntimeError("The local Heritage school identity does not match the fictional catalog.")
+    link = StudentIdentityLink.objects.select_related("compatibility_student__household").get(
+        school=school,
+        core_student__student_number="HCA-PARENT-JORDAN",
+        verification_status=StudentIdentityLink.STATUS_VERIFIED,
+    )
+    camper = link.compatibility_student
+    if camper.school_id != school.id or camper.household.school_id != school.id:
+        raise RuntimeError("Fictional Camp camper and household have inconsistent school scope.")
+
+    return _seed_fictional_camp(school, camper)
+
+
+@transaction.atomic
+def _seed_fictional_camp(school, camper, *, workspace=None):
+    """Reuse Camp records in authorized local or invite-owned fictional schools."""
+    from datetime import time, timedelta
+    from django.utils import timezone
+    from subscriptions.models import SchoolModule
+    from summer_camp.models import SummerCampEnrollment, SummerCampProgram, SummerCampSession
+    from summer_camp.services import camp_school_local_date
+    if str(school.pk) == str(SANDBOX_SCHOOLS["heritage-core"].id):
+        from sandbox_demo.management.commands.five_module_demo_preflight import _require_isolated_local_database
+        _require_isolated_local_database()
+        if not getattr(settings, "CROWN_SANDBOX_ALLOW_OPEN_SESSION", False) or school.name != SANDBOX_SCHOOLS["heritage-core"].name:
+            raise RuntimeError("Canonical local Heritage Camp authority required.")
+    else:
+        from .fictional_care import require_fictional_care_scope
+        require_fictional_care_scope(school, workspace)
+    if not school.is_active or camper.school_id != school.pk or camper.household.school_id != school.pk:
+        raise RuntimeError("Fictional Camp camper requires an active same-school household.")
+    camp_module, _ = SchoolModule.objects.get_or_create(
+        school=school, module_key="little_lambs",
+        defaults={"status": "active", "expiry_date": timezone.now() + timedelta(days=365)},
+    )
+    # The local launcher may create a missing fictional entitlement, but
+    # must never undo an operator's existing suspension or expiration.
+    if not (camp_module.is_active or camp_module.is_trial):
+        raise RuntimeError(
+            "Fictional Camp entitlement is inactive or expired. "
+            "Reconcile the local module authorization before starting the demo."
+        )
+    program, _ = SummerCampProgram.objects.get_or_create(
+        school=school,
+        name="Heritage Fictional Camp Operations",
+        defaults={
+            "program_type": "DAY_CAMP",
+            "description": "Fictional, local-only Camp operations demonstration. No payments.",
+            "grade_band": "5-8",
+            "location": "Heritage demo room",
+        },
+    )
+    today = camp_school_local_date(school.id, timezone.now())
+    matches = list(SummerCampSession.objects.filter(
+        school=school, program=program, name="Fictional Camp Active Session"
+    ))
+    if len(matches) > 1:
+        raise RuntimeError("Duplicate fictional Camp sessions require manual reconciliation.")
+    if matches:
+        session = matches[0]
+        if session.status != "PUBLISHED":
+            raise RuntimeError(
+                "Existing fictional Camp session is not published. "
+                "Review its status in the local Camp workflow."
+            )
+        if session.start_date > today or session.end_date < today:
+            # Update only our named synthetic session, retaining its PK and
+            # registrations. Never rewrite an unrelated operator session.
+            session.start_date = today
+            session.end_date = today + timedelta(days=30)
+            session.save(update_fields=["start_date", "end_date"])
+    else:
+        session = SummerCampSession.objects.create(
+            school=school, program=program, name="Fictional Camp Active Session",
+            start_date=today, end_date=today + timedelta(days=30),
+            start_time=time(8), end_time=time(15),
+            capacity=20, waitlist_capacity=5, status="PUBLISHED",
+            price_cents=0, deposit_cents=0,
+        )
+
+    registrations = list(SummerCampEnrollment.objects.filter(
+        school=school, session=session, student=camper
+    ))
+    if len(registrations) > 1:
+        raise RuntimeError("Duplicate fictional Camp registrations require manual reconciliation.")
+    if registrations and (
+        registrations[0].status != "REGISTERED"
+        or registrations[0].household_id != camper.household_id
+    ):
+        raise RuntimeError(
+            "Existing fictional Camp registration is not active or has changed household. "
+            "Review it in the local Camp workflow before demonstrating custody."
+        )
+    if not registrations:
+        SummerCampEnrollment.objects.create(
+            school=school, session=session, student=camper, household=camper.household,
+            status="REGISTERED", registration_source="EXISTING",
+            form_status="MISSING", payment_status="NOT_BILLED",
+            health_status="NEEDS_REVIEW", pickup_status="MISSING",
+            readiness_status="BLOCKED", readiness_blockers=["MISSING_FORMS", "HEALTH_REVIEW_REQUIRED", "PICKUP_CONTACT_MISSING", "STAFF_REVIEW_REQUIRED"],
+            payment_required_before_attendance=False, balance_due_cents=0,
+        )
+    # Report actual database state, not an optimistic constant.
+    return {
+        "fictional_camp_sessions": SummerCampSession.objects.filter(
+            pk=session.pk, school=school, status="PUBLISHED",
+            start_date__lte=today, end_date__gte=today,
+        ).count(),
+        "fictional_camp_registrations": SummerCampEnrollment.objects.filter(
+            school=school, session=session, student=camper, household=camper.household,
+            status="REGISTERED",
+        ).count(),
+    }
+
+
+def assert_flagship_proof() -> list[dict]:
+    school = ensure_demo_school(SANDBOX_SCHOOLS["heritage-core"])
+    metrics = proof_metrics(school)
+    findings = []
+
+    minimums = {
+        "families": 286,
+        "students": 700,
+        "users": 6,
+        "roles": 6,
+        "enrollments": 700,
+        "student_tuitions": 700,
+        "finance_obligations": 12,
+        "finance_invoices": 12,
+    }
+
+    for key, expected in minimums.items():
+        actual = metrics.get(key, 0)
+        findings.append(
+            {
+                "level": "PASS" if actual >= expected else "FAIL",
+                "message": f"{key}: actual={actual} expected_min={expected}",
+            }
+        )
+
+    for persona_key in DEFAULT_SANDBOX_INVITE_ROLES:
+        persona = SANDBOX_PERSONAS[persona_key]
+        session = create_sandbox_session(
+            persona_key=persona.key,
+            school_key_or_id=str(school.id),
+            guidance="guided",
+            tour=persona.tour_title,
+        )
+        ok = bool(session.get("access") and session.get("route") == persona.route)
+        findings.append(
+            {
+                "level": "PASS" if ok else "FAIL",
+                "message": f"one-click session for {persona.key}",
+            }
+        )
+
+    return findings

@@ -1,0 +1,71 @@
+# CROWN Engineering Setup
+
+**Status:** Canonical  
+**Purpose:** Tool-neutral setup and controlled execution
+
+## Repository
+
+```bash
+git clone https://github.com/Arete0920/Crown-CSMS.git
+cd Crown-CSMS
+```
+
+Work from one isolated branch for one coherent outcome. Do not commit directly to `main`.
+
+## Supported toolchain
+
+- Python: 3.12
+- Node.js: 22.23.3 (see `.nvmrc`); dashboards also support `^24.15.0 || >=26.0.0`
+- npm: use the version bundled with the supported Node runtime unless the lockfile requires otherwise
+
+Version marker files at the repository root are the local-development defaults. CI workflow configuration remains the execution authority for each job.
+
+## Backend
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+python -m pip install --upgrade pip
+pip install -r backend/requirements.txt
+python backend/manage.py check
+pytest backend -m "not integration and not slow"
+```
+
+Windows PowerShell may activate `.venv\Scripts\Activate.ps1`.
+
+## Frontend
+
+```bash
+cd frontend/dashboards
+npm ci
+npm run lint
+npm run test:unit
+npm run test:contracts
+npm run test:release:a11y
+npm run build
+```
+
+## Local runtime
+
+```bash
+python backend/manage.py runserver 127.0.0.1:8000 --noreload
+cd frontend/dashboards
+npm run dev -- --host 127.0.0.1 --port 3000
+```
+
+Use placeholders or approved development values only. Never commit secrets, production data, private certificates, tenant credentials, or payment credentials.
+
+## Change workflow
+
+1. Read current GitHub state and controlling authority.
+2. Record base SHA, objective, allowed files, validation, and rollback.
+3. Use one branch and one pull request for the coherent outcome.
+4. Keep related fixes found during validation in that pull request only when they are inseparable from the same invariant and remain within repository hygiene limits.
+5. Run focused validation, then applicable broad checks.
+6. Inspect the final diff line by line against current repository truth.
+7. Resolve actionable findings and re-run the affected checks.
+8. Merge only after the exact head satisfies policy and the applicable owner-governed evidence controls.
+9. Deploy only through approved workflows.
+10. Capture exact deployed identity and runtime evidence when applicable.
+
+Payment processing remains disabled and fail closed. CompuWerx is the owner-designated intended gateway, but contracting, merchant credentials, verified provider terms, integration acceptance, and payment certification remain outstanding. No external money movement is authorized.

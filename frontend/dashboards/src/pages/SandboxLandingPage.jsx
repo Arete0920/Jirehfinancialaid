@@ -1,0 +1,317 @@
+import { useEffect, useMemo, useState } from "react";
+import CrownLogo from "../components/brand/CrownLogo";
+import CrownIcon from "../components/icons/CrownIcon.jsx";
+import {
+  SANDBOX_TRACKS,
+  getSandboxSchool,
+  getTrackPersonas,
+  getTrackSchools,
+  getSandboxLoginHref,
+} from "../sandbox/sandboxExperience";
+import {
+  createSandboxSession,
+  createWebsitePresenterSession,
+  getWebsitePresenterState,
+  recordSandboxEvent,
+  resolveSandboxInvite,
+  storeSandboxSession,
+} from "../sandbox/sandboxApi";
+import { clearBrowserAuthState } from "../utils/authClient.js";
+
+const WEBSITE_DEMO_HOST = "yellow-forest-0eecc8b0f-devcertification.eastus2.7.azurestaticapps.net";
+
+const ACCESSIBLE_ACCENT_STYLE = { color: "var(--crown-primary-deep)" };
+const ACCESSIBLE_SUPPORT_STYLE = { color: "var(--crown-muted)" };
+const ACCESSIBLE_WARNING_STYLE = { color: "var(--crown-text)" };
+const SANDBOX_TITLE_STYLE = {
+  margin: "8px 0 10px",
+  color: "var(--crown-primary-deep)",
+  fontFamily: "var(--crown-font-family)",
+  fontSize: "clamp(2rem, 3.5vw, 3.4rem)",
+  fontWeight: 700,
+  lineHeight: 1.08,
+};
+
+function getInitialInvite() {
+  const params = new URLSearchParams(globalThis.location?.search || "");
+  return params.get("invite") || "";
+}
+
+export default function SandboxLandingPage() {
+  const [selectedTrackKey, setSelectedTrackKey] = useState("school");
+  const [selectedMode, setSelectedMode] = useState("guided");
+  const [inviteId] = useState(getInitialInvite);
+  const [invite, setInvite] = useState(null);
+  const [inviteError, setInviteError] = useState("");
+  const [launchingRole, setLaunchingRole] = useState("");
+  const [launchError, setLaunchError] = useState("");
+  const host = String(globalThis.location?.hostname || "").toLowerCase();
+  const onWebsiteDemo = host === WEBSITE_DEMO_HOST;
+  const [websitePresenter, setWebsitePresenter] = useState(null);
+  useEffect(() => {
+    if (!onWebsiteDemo) return;
+    let active = true;
+    getWebsitePresenterState()
+      .then((state) => { if (active) setWebsitePresenter(state); })
+      .catch(() => { if (active) setWebsitePresenter({ available: false }); });
+    return () => { active = false; };
+  }, [onWebsiteDemo]);
+
+  const selectedTrack = useMemo(
+    () => SANDBOX_TRACKS.find((track) => track.key === selectedTrackKey) || SANDBOX_TRACKS[0],
+    [selectedTrackKey]
+  );
+  const trackSchools = useMemo(() => getTrackSchools(selectedTrack.key), [selectedTrack.key]);
+  const personas = useMemo(
+    () => getTrackPersonas(selectedTrack.key, { includeHosted: invite?.usable === true || (onWebsiteDemo && websitePresenter?.available === true) }),
+    [selectedTrack.key, invite?.usable, onWebsiteDemo, websitePresenter?.available]
+  );
+  const defaultSchool = getSandboxSchool(selectedTrack.primarySchoolKey);
+
+  useEffect(() => {
+    const host = String(globalThis.location?.hostname || "").toLowerCase();
+    if (host && !["localhost", "127.0.0.1", "::1"].includes(host)) return;
+    if (!inviteId) return;
+    resolveSandboxInvite(inviteId)
+      .then((resolved) => {
+        setInvite(resolved);
+        if (resolved?.track) setSelectedTrackKey(resolved.track);
+        if (resolved?.default_guidance) setSelectedMode(resolved.default_guidance);
+      })
+      .catch((error) => setInviteError(error.message || "Invite could not be resolved."));
+  }, [inviteId]);
+
+  async function launchPersona(persona) {
+    setLaunchError("");
+    setLaunchingRole(persona.value);
+
+    try {
+      const session = onWebsiteDemo
+        ? await createWebsitePresenterSession(persona.value)
+        : await createSandboxSession({
+        inviteId,
+        role: persona.value,
+        school: defaultSchool.key || defaultSchool.id,
+        track: selectedTrack.key,
+        guidance: selectedMode,
+        tour: persona.tourTitle,
+      });
+
+      if (onWebsiteDemo) clearBrowserAuthState();
+      storeSandboxSession(session);
+
+      if (!onWebsiteDemo) await recordSandboxEvent({
+        event: "sandbox_persona_launched",
+        invite_id: inviteId || null,
+        track: selectedTrack.key,
+        guidance: selectedMode,
+        persona: persona.value,
+        school: defaultSchool.key || defaultSchool.id,
+        tour: persona.tourTitle,
+        route: session.route,
+      });
+
+      // Keep hosted invitations and self-guided sessions on their server-issued
+      // route. Only the owner's loopback-guided presentation starts at the
+      // existing transactional command center after authentication succeeds.
+      const loopbackPresenter = !inviteId
+        && selectedMode === "guided"
+        && ["127.0.0.1", "localhost"].includes(globalThis.location?.hostname);
+      const targetRoute = onWebsiteDemo && persona.value === "parent"
+        ? "/sandbox/jireh-financial-aid"
+        : loopbackPresenter
+          ? getSandboxLoginHref(persona.value, selectedTrack.key, selectedMode)
+          : (session.route || persona.route || "/school-admin-dashboard");
+      if (typeof globalThis.location?.assign === "function") {
+        globalThis.location.assign(targetRoute);
+      }
+    } catch (error) {
+      setLaunchError(error.message || "Sandbox launch failed.");
+      setLaunchingRole("");
+    }
+  }
+
+  // A supplied invite is never a fallback to the unrestricted local selector.
+  // Only a usable invitation with an explicit role list may display its roles.
+  const visiblePersonas = inviteId && !onWebsiteDemo
+    ? (invite?.usable === true && Array.isArray(invite.allowed_roles)
+      ? personas.filter((persona) => invite.allowed_roles.includes(persona.value))
+      : [])
+    : personas;
+
+  // Hosted evaluation links have been retired. Local loopback rehearsals keep
+  // their existing guarded selector; this UI is not an authentication boundary.
+  if (host && !["localhost", "127.0.0.1", "::1"].includes(host) && !onWebsiteDemo) {
+    return (
+      <main className="sandbox-crown-layout">
+        <div className="sandbox-experience">
+          <section className="sandbox-experience-panel" aria-label="Salesperson-operated demonstration">
+            <h1>CROWN demonstration access</h1>
+            <p>CROWN demonstrations are conducted by authorized Arete sales personnel.</p>
+            <p>Prospective schools participate through a guided presentation; independent visitor access is not available.</p>
+            <a href="/login">Authorized staff sign in</a>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (onWebsiteDemo && websitePresenter?.available !== true) {
+    return (
+      <main className="sandbox-crown-layout">
+        <div className="sandbox-experience">
+          <section className="sandbox-experience-panel" aria-label="Fictional demonstration readiness">
+            <h1>CROWN demonstration school</h1>
+            <p>{websitePresenter === null ? "Checking demonstration availability..." : "The fictional demonstration school is not yet activated."}</p>
+            <p>An authorized Arete presenter must sign in before launching this fictional walkthrough. Prospects never need an account or password.</p>
+            <a href="/login?role=arete_presenter">Authorized staff sign in</a>
+            <p>No school accounts, student records or credentials are available through this page.</p>
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  if (onWebsiteDemo) {
+    const financialAidParentReady = websitePresenter?.financial_aid_ready === true
+      && Array.isArray(websitePresenter?.roles)
+      && websitePresenter.roles.some((role) => role.key === "parent");
+    return (
+      <main className="sandbox-crown-layout">
+        <div className="sandbox-experience">
+          <section className="sandbox-experience-panel" aria-label="Jireh Financial Aid sales demonstration">
+            <CrownLogo placement="loginBrand" className="sandbox-experience-logo" />
+            <h1>Jireh Financial Aid — guided family demonstration</h1>
+            <p>Walk through Miriam Reed's fictional school aid application for Avery and Jordan Reed, then inspect the recorded decisions for each child.</p>
+            <p><strong>Salesperson-guided and read-only.</strong> No prospect account or password is required. This presentation does not submit applications, approve awards, or move money.</p>
+            {launchError && <p role="alert">{launchError}</p>}
+            {financialAidParentReady ? (
+              <button type="button" onClick={() => launchPersona({ value: "parent", route: "/sandbox/jireh-financial-aid" })}
+                disabled={Boolean(launchingRole)}>
+                {launchingRole === "parent" ? "Opening financial aid…" : "Start Financial Aid walkthrough"}
+              </button>
+            ) : (
+              <p role="status">The saved Financial Aid case is not verified and ready; no demonstration session will be issued.</p>
+            )}
+          </section>
+        </div>
+      </main>
+    );
+  }
+
+  return (
+    <main className="sandbox-crown-layout">
+      <div className="sandbox-experience">
+        <header className="sandbox-experience-header">
+          <CrownLogo placement="loginBrand" className="sandbox-experience-logo" />
+          <div className="sandbox-experience-header-copy">
+            <span className="sandbox-experience-kicker" role="heading" aria-level="2" style={ACCESSIBLE_ACCENT_STYLE}>Guided Proof Sandbox</span>
+            <div role="heading" aria-level="1" style={SANDBOX_TITLE_STYLE}>See the real CROWN workspace with safe fictional data.</div>
+            <p>
+              Choose a school scenario and role. CROWN will create a protected demo session and open the same
+              sidebar, dashboard blocks, workflows, and module surfaces used by client schools.
+            </p>
+          </div>
+          <div className="sandbox-experience-trust" aria-label="Sandbox safeguards">
+            <span><CrownIcon name="shield" size={18} /> Demo data only</span>
+            <span><CrownIcon name="user" size={18} /> No buyer password</span>
+            <span><CrownIcon name="dashboard" size={18} /> Real role workspace</span>
+          </div>
+        </header>
+
+        <div className="sandbox-experience-layout">
+          <aside className="sandbox-experience-steps" aria-label="Demonstration steps">
+            <div className="sandbox-step is-active"><span>1</span><div><strong>Choose the track</strong><small style={ACCESSIBLE_SUPPORT_STYLE}>Select the client scenario.</small></div></div>
+            {!onWebsiteDemo ? <div className="sandbox-step"><span>2</span><div><strong>Choose guidance</strong><small style={ACCESSIBLE_SUPPORT_STYLE}>Use a guided or independent path.</small></div></div> : null}
+            <div className="sandbox-step"><span>{onWebsiteDemo ? "2" : "3"}</span><div><strong>Launch a role</strong><small style={ACCESSIBLE_SUPPORT_STYLE}>Choose a role to open its fictional school workflows.</small></div></div>
+            <div className="sandbox-workspace-preview">
+              <CrownIcon name="dashboard" size={24} />
+              <div>
+                <strong>What opens next</strong>
+                <p>{onWebsiteDemo ? "Role-aware dashboards, read-only records, queues, reports, and module previews. Transactional actions require staff sign-in." : "Role-aware sidebar, operational cards, queues, alerts, reports, and connected module actions."}</p>
+              </div>
+            </div>
+          </aside>
+
+          <section className="sandbox-experience-panel" aria-label="Sandbox launcher">
+            {invite ? <div className="sandbox-message is-info">Invite loaded for {invite.organization_label}. Access is limited to approved roles and demo scenarios.</div> : null}
+            {inviteError ? <div className="sandbox-message is-error">{inviteError}</div> : null}
+            {launchError ? <div className="sandbox-message is-error">{launchError}</div> : null}
+
+            <section className="sandbox-section">
+              <div className="sandbox-section-heading"><span>1</span><div><h2>Confirm the demo track</h2><p>{onWebsiteDemo ? websitePresenter.school.name : "Heritage Christian Academy"} is the protected CROWN demonstration environment.</p></div></div>
+              <div className="sandbox-choice-grid sandbox-track-grid">
+                {SANDBOX_TRACKS.map((track) => (
+                  <button
+                    type="button"
+                    key={track.key}
+                    className={`sandbox-choice-card ${track.key === selectedTrack.key ? "is-selected" : ""}`}
+                    onClick={() => setSelectedTrackKey(track.key)}
+                    disabled={Boolean(invite?.track && invite.track !== track.key)}
+                  >
+                    <CrownIcon name="school" size={22} />
+                    <strong>{track.label}</strong>
+                    <span>{track.summary}</span>
+                  </button>
+                ))}
+              </div>
+            </section>
+
+            {!onWebsiteDemo ? <section className="sandbox-section">
+              <div className="sandbox-section-heading"><span>2</span><div><h2>Choose the demonstration style</h2><p>Guided is recommended for a first owner walkthrough.</p></div></div>
+              <div className="sandbox-choice-grid sandbox-mode-grid">
+                <button type="button" className={`sandbox-choice-card ${selectedMode === "guided" ? "is-selected" : ""}`} onClick={() => setSelectedMode("guided")}>
+                  <CrownIcon name="reports" size={22} />
+                  <strong>Guided path</strong>
+                  <span>CROWN explains the story and presents the next recommended action.</span>
+                </button>
+                <button type="button" className={`sandbox-choice-card ${selectedMode === "self-guided" ? "is-selected" : ""}`} onClick={() => setSelectedMode("self-guided")}>
+                  <CrownIcon name="control" size={22} />
+                  <strong>Self-guided exploration</strong>
+                  <span>Move independently through the available role workspace and modules.</span>
+                </button>
+              </div>
+            </section> : null}
+
+            <section className="sandbox-section">
+              <div className="sandbox-section-heading"><span>{onWebsiteDemo ? "2" : "3"}</span><div><h2>Start as a role</h2><p>{onWebsiteDemo ? "Explore fictional school information in read-only mode. Saving or changing records requires an authorized staff account." : "The role launch creates a protected demo session first. Local guided mode opens the transactional proof path; self-guided mode opens the role dashboard."}</p></div></div>
+              <div className="sandbox-persona-grid">
+                {visiblePersonas.map((persona) => (
+                  <article className="sandbox-persona-card persona-card" key={persona.value}>
+                    <div className="sandbox-persona-icon"><CrownIcon name="user" size={22} /></div>
+                    <div><strong>{persona.label}</strong><p>{onWebsiteDemo ? `View the ${persona.label.toLowerCase()} workspace and available fictional records. Changes are disabled.` : persona.promise}</p></div>
+                    <button
+                      type="button"
+                      className="sandbox-launch-button"
+                      disabled={Boolean(launchingRole)}
+                      onClick={() => launchPersona(persona)}
+                    >
+                      {launchingRole === persona.value ? "Launching..." : (onWebsiteDemo ? "Explore this role" : `Start ${selectedMode === "guided" ? "guided" : "self-guided"}`)}
+                    </button>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <section className="sandbox-section sandbox-scenarios">
+              <div className="sandbox-section-heading"><span><CrownIcon name="school" size={18} /></span><div><h2>Included {selectedTrack.label.toLowerCase()} scenarios</h2><p>All records are fictional and isolated from client data.</p></div></div>
+              <div className="sandbox-scenario-grid">
+                {trackSchools.map((school) => (
+                  <article className="sandbox-scenario-card" key={school.key}>
+                    <strong>{onWebsiteDemo ? websitePresenter.school.name : school.name}</strong>
+                    <p>{school.archetype}. Best for {school.bestFor}.</p>
+                    <span>{onWebsiteDemo ? "Fictional data only" : `${school.enrollment} demo records`}</span>
+                  </article>
+                ))}
+              </div>
+            </section>
+
+            <div className="sandbox-message is-warning" style={ACCESSIBLE_WARNING_STYLE}>
+              Demo data only. Do not enter real student, camper, child, family, staff, financial, health, safety, or disciplinary records.
+            </div>
+          </section>
+        </div>
+      </div>
+    </main>
+  );
+}

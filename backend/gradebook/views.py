@@ -1,0 +1,628 @@
+import math
+
+from django.db.models import Count, F, Max, Q, Sum
+from django.db import transaction
+from django.db.models.functions import Coalesce
+from django.http import Http404
+from django.shortcuts import get_object_or_404
+from rest_framework import status, viewsets
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.exceptions import PermissionDenied
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
+
+from core.models import UserRole
+from households.models import Student
+from households.scoping import get_request_school_id
+from crown_api.tenant_decorators import require_tenant
+
+from academics.models import Assignment, Enrollment, Section, TeacherAssignment
+from academics.experience_access import is_leader, taught_sections
+from academics.serializers import SectionSerializer, StudentSerializer
+from academics.views import PaginatedReadOnlyViewSet
+
+from .models import GradeEntry
+from .serializers import GradebookAssignmentSerializer, GradebookStudentSerializer
+
+
+
+def _assignment_rows_for_section(school_id, section):
+    """Return assignment rows including published assignments and legacy grade-only names."""
+    published_assignments = list(
+        Assignment.objects.filter(
+            school_id=school_id,
+            section=section,
+            is_published=True,
+        )
+        .values("id", "name", "points_possible")
+        .order_by("name")
+    )
+
+    rows = []
+    published_names = set()
+    for assignment in published_assignments:
+        assignment_name = (assignment["name"] or "").strip()
+        if assignment_name:
+            published_names.add(assignment_name.lower())
+        rows.append(
+            {
+                "assignment_id": assignment["id"],
+                "assignment_name": assignment["name"],
+                "points_possible": assignment["points_possible"],
+            }
+        )
+
+    legacy_assignments = (
+        GradeEntry.objects.filter(
+            school_id=school_id,
+            section=section,
+            assignment_id__isnull=True,
+        )
+        .exclude(assignment_name="")
+        .values("assignment_name")
+        .annotate(_points_possible=Max("points_possible"))
+        .order_by("assignment_name")
+    )
+    for legacy in legacy_assignments:
+        legacy_name = (legacy["assignment_name"] or "").strip()
+        if not legacy_name or legacy_name.lower() in published_names:
+            continue
+        rows.append(
+            {
+                "assignment_id": None,
+                "assignment_name": legacy_name,
+                "points_possible": legacy["_points_possible"],
+            }
+        )
+
+    rows.sort(key=lambda item: (item["assignment_name"] or "").lower())
+    return rows
+
+def _role_codes(user, school_id) -> set[str]:
+    if not user or not getattr(user, "is_authenticated", False):
+        return set()
+    user_id = getattr(user, "id", None)
+    if not user_id:
+        return set()
+    return set(
+        UserRole.objects.filter(user_id=user_id, school_id=school_id).values_list("role_code", flat=True)
+    )
+
+
+def _sections_for_gradebook(request, school_id):
+    user = getattr(request, "user", None)
+    roles = _role_codes(user, school_id)
+
+    qs = (
+        Section.objects.filter(school_id=school_id)
+        .select_related("course", "term_ref")
+        .annotate(roster_count=Count("enrollments", distinct=True))
+    )
+
+    if is_leader(user, school_id):
+        return qs
+
+    if roles & {"TEACHER", "teacher"}:
+        staff = getattr(user, "staff", None)
+        if not staff or staff.school_id != school_id or staff.status != "ACTIVE" or staff.role_type != "TEACHER":
+            return qs.none()
+        return qs.filter(id__in=taught_sections(user, school_id)).distinct()
+
+    raise PermissionDenied("Role not permitted for gradebook endpoints.")
+
+
+def _get_section_or_404(request, school_id, section_id):
+    qs = _sections_for_gradebook(request, school_id)
+    if not qs.filter(id=section_id).exists():
+        raise Http404()
+    return get_object_or_404(Section, id=section_id, school_id=school_id)
+
+
+class GradebookSectionViewSet(PaginatedReadOnlyViewSet):
+    permission_classes = [IsAuthenticated]
+    serializer_class = SectionSerializer
+
+    def get_queryset(self):
+        school_id = get_request_school_id(self.request, required=True)
+        return _sections_for_gradebook(self.request, school_id).order_by("term", "course__code")
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+@require_tenant
+def section_roster(request, section_id):
+    school_id = get_request_school_id(request, required=True)
+    section = _get_section_or_404(request, school_id, section_id)
+
+    enrollments = (
+        Enrollment.objects.filter(section=section)
+        .select_related("student")
+        .order_by("student__last_name", "student__first_name")
+    )
+    students = [e.student for e in enrollments]
+    serializer = StudentSerializer(students, many=True)
+
+    return Response(
+        {
+            "section_id": str(section.id),
+            "students": serializer.data,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+@require_tenant
+def section_assignments(request, section_id):
+    school_id = get_request_school_id(request, required=True)
+    section = _get_section_or_404(request, school_id, section_id)
+
+    assignments = _assignment_rows_for_section(school_id, section)
+
+    return Response(
+        {
+            "section_id": str(section.id),
+            "assignments": assignments,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def section_summary(request, section_id):
+    school_id = get_request_school_id(request, required=True)
+    section = _get_section_or_404(request, school_id, section_id)
+
+    # students (roster size)
+    student_count = Enrollment.objects.filter(section=section).count()
+
+    # grade entries scoped to tenant + section
+    qs = GradeEntry.objects.filter(section=section, school_id=school_id)
+
+    # Count distinct assignments - use assignment_id if available, otherwise fall back to assignment_name
+    assignment_count = len(_assignment_rows_for_section(school_id, section))
+    missing_count = qs.filter(points_earned__isnull=True).count()
+
+    # class average percent (only non-missing)
+    scored = qs.filter(points_earned__isnull=False)
+    sums = scored.aggregate(
+        earned=Sum("points_earned"),
+        possible=Sum("points_possible"),
+        updated=Max("updated_at"),
+        created=Max("created_at"),
+    )
+
+    earned = sums["earned"] or 0
+    possible = sums["possible"] or 0
+    avg_pct = round((earned / possible) * 100, 2) if possible else None
+
+    last_updated = sums["updated"] or sums["created"]
+
+    return Response(
+        {
+            "section_id": str(section.id),
+            "student_count": student_count,
+            "assignment_count": assignment_count,
+            "missing_count": missing_count,
+            "class_average_pct": avg_pct,
+            "last_updated": last_updated.isoformat() if last_updated else None,
+        }
+    )
+
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+@require_tenant
+def section_grades(request, section_id):
+    school_id = get_request_school_id(request, required=True)
+    section = _get_section_or_404(request, school_id, section_id)
+
+    entries = GradeEntry.objects.filter(section=section, school_id=school_id).select_related("assignment")
+    assignments = _assignment_rows_for_section(school_id, section)
+
+    roster = (
+        Enrollment.objects.filter(section=section)
+        .select_related("student")
+        .order_by("student__last_name", "student__first_name")
+    )
+
+    entry_map = {}
+    entry_by_name = {}
+    for entry in entries:
+        assignment_name = (
+            getattr(entry.assignment, "name", "")
+            or entry.assignment_name
+            or ""
+        ).strip()
+        payload = {
+            "grade_entry_id": str(entry.id),
+            "points_earned": entry.points_earned,
+            "points_possible": entry.assignment.points_possible if entry.assignment else entry.points_possible,
+        }
+        if entry.assignment_id:
+            entry_map[(str(entry.student_id), str(entry.assignment_id))] = payload
+        if assignment_name:
+            entry_by_name[(str(entry.student_id), assignment_name.lower())] = payload
+
+    rows = []
+    for enrollment in roster:
+        student = enrollment.student
+        scores = {}
+        for assignment in assignments:
+            fallback = {
+                "grade_entry_id": None,
+                "points_earned": None,
+                "points_possible": assignment.get("points_possible"),
+            }
+            score_payload = fallback
+            assignment_id = assignment.get("assignment_id")
+            if assignment_id is not None:
+                key = (str(student.id), str(assignment_id))
+                score_payload = entry_map.get(key, fallback)
+            if score_payload is fallback:
+                name_key = (str(student.id), (assignment.get("assignment_name") or "").lower())
+                score_payload = entry_by_name.get(name_key, fallback)
+            scores[assignment["assignment_name"]] = score_payload
+        rows.append(
+            {
+                "student": {
+                    "student_id": str(student.id),
+                    "first_name": student.first_name,
+                    "last_name": student.last_name,
+                    "grade_level": student.grade_level,
+                },
+                "scores": scores,
+            }
+        )
+
+    return Response(
+        {
+            "section_id": str(section.id),
+            "course_code": section.course.code,
+            "course_name": section.course.name,
+            "term_code": section.term,
+            "assignments": assignments,
+            "rows": rows,
+        }
+    )
+
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def assignments_list(request):
+    """
+    GET /api/v1/gradebook/assignments/?section_id=<uuid>
+    Same auth rules as section_assignments, but query-param based.
+    """
+    school_id = get_request_school_id(request, required=True)
+    section_id = request.query_params.get("section_id")
+    if not section_id:
+        return Response({"detail": "section_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    section = _get_section_or_404(request, school_id, section_id)
+    assignments = _assignment_rows_for_section(school_id, section)
+
+    return Response(GradebookAssignmentSerializer(assignments, many=True).data)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def students_list(request):
+    """
+    GET /api/v1/gradebook/students/?section_id=<uuid>
+    Same auth rules as section_roster, but query-param based.
+    """
+    school_id = get_request_school_id(request, required=True)
+    section_id = request.query_params.get("section_id")
+    if not section_id:
+        return Response({"detail": "section_id is required"}, status=status.HTTP_400_BAD_REQUEST)
+
+    section = _get_section_or_404(request, school_id, section_id)
+
+    # Roster is enrollment-based so students are visible even before grades are entered.
+    students = (
+        Enrollment.objects.filter(school_id=school_id, section_id=section.id)
+        .select_related("student")
+        .values("student_id", "student__first_name", "student__last_name")
+        .distinct()
+        .order_by("student__last_name", "student__first_name")
+    )
+
+    return Response(GradebookStudentSerializer(students, many=True).data)
+@api_view(["GET"])
+@permission_classes([IsAuthenticated])
+def section_drilldown(request, section_id):
+    """
+    GET /api/v1/gradebook/sections/<section_id>/drilldown/
+
+    Paginated drilldown rows for a section, filtered by bucket (missing|below_threshold|all).
+
+    Query params:
+    - bucket: 'missing', 'below_threshold', or 'all' (default: 'all')
+    - threshold: float (default: 70) – used only when bucket='below_threshold'
+    - category_id: UUID (optional, currently not implemented)
+    - limit: int (default: 25, max: 200)
+    - offset: int (default: 0)
+
+    Response shape:
+    {
+      "section_id": "...",
+      "section_name": "...",
+      "total": 150,
+      "limit": 25,
+      "offset": 0,
+      "rows": [
+        {
+          "student_id": "...",
+          "student_name": "Last, First",
+          "grade_level": "9",
+          "category_id": null,
+          "category_name": null,
+          "total_points_earned": 45,
+          "total_points_possible": 50,
+          "pct": 90.0,
+          "status": "below_threshold|missing|normal",
+          "assignments_count": 5,
+          "missing_count": 1,
+          "late_count": 0,
+          "last_submission": "2026-02-09T14:22:00Z"
+        }
+      ]
+    }
+    """
+    school_id = get_request_school_id(request, required=True)
+    section = _get_section_or_404(request, school_id, section_id)
+
+    # Parameters
+    bucket = (request.query_params.get("bucket") or "all").strip().lower()
+    try:
+        threshold = float(request.query_params.get("threshold") or 70)
+    except (TypeError, ValueError):
+        return Response(
+            {"detail": "threshold must be a finite number"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    if not math.isfinite(threshold):
+        return Response(
+            {"detail": "threshold must be a finite number"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+    category_id = request.query_params.get("category_id")  # not used in MVP
+
+    try:
+        limit = int(request.query_params.get("limit") or 25)
+        offset = int(request.query_params.get("offset") or 0)
+    except (ValueError, TypeError):
+        return Response(
+            {"detail": "limit and offset must be integers"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Validate bounds
+    limit = max(1, min(200, limit))
+    offset = max(0, offset)
+
+    # Validate bucket
+    valid_buckets = ["all", "missing", "below_threshold"]
+    if bucket not in valid_buckets:
+        return Response(
+            {"detail": f"Invalid bucket '{bucket}'. Must be one of: {', '.join(valid_buckets)}"},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    # Aggregate all scores in one tenant-scoped query. The previous implementation
+    # executed COUNT/COUNT/SUM for every enrolled student (3N SQL queries).
+    # Preserve the original semantics: possible points and last submission only
+    # include scored entries; missing entries still affect the status bucket.
+    # Restrict roster *and* entries to the authorized school, including malformed
+    # legacy records with mismatched school identifiers.
+    enrollments = (
+        Enrollment.objects.filter(
+            school_id=school_id, section=section, student__school_id=school_id,
+        )
+        .select_related("student")
+        .order_by("student__last_name", "student__first_name", "student__id")
+    )
+    roster_student_ids = Enrollment.objects.filter(
+        school_id=school_id, section=section, student__school_id=school_id,
+    ).values("student_id")
+    scores = {
+        item["student_id"]: item
+        for item in (
+            GradeEntry.objects.filter(
+                school_id=school_id, section=section, student_id__in=roster_student_ids,
+            )
+            .order_by()
+            .values("student_id")
+            .annotate(
+                total_entries=Count("id"),
+                missing_count=Count("id", filter=Q(points_earned__isnull=True)),
+                earned=Sum("points_earned", filter=Q(points_earned__isnull=False)),
+                possible=Sum("points_possible", filter=Q(points_earned__isnull=False)),
+                updated=Max("updated_at", filter=Q(points_earned__isnull=False)),
+            )
+        )
+    }
+
+    rows_data = []
+    for enrollment in enrollments:
+        student = enrollment.student
+        aggregate = scores.get(student.id, {})
+        total_entries = aggregate.get("total_entries") or 0
+        missing_count = aggregate.get("missing_count") or 0
+        earned = float(aggregate.get("earned") or 0)
+        possible = float(aggregate.get("possible") or 0)
+        pct = (earned / possible * 100) if possible > 0 else 0
+        last_submission = aggregate.get("updated")
+
+        status_val = "normal"
+        if missing_count > 0:
+            status_val = "missing"
+        elif pct < threshold:
+            status_val = "below_threshold"
+
+        rows_data.append(
+            {
+                "student_id": str(student.id),
+                "student_name": f"{student.last_name}, {student.first_name}".strip(),
+                "grade_level": student.grade_level,
+                "category_id": None,
+                "category_name": None,
+                "total_points_earned": round(earned, 2),
+                "total_points_possible": round(possible, 2),
+                "pct": round(pct, 1),
+                "status": status_val,
+                "assignments_count": total_entries,
+                "missing_count": missing_count,
+                "late_count": 0,
+                "last_submission": last_submission.isoformat() if last_submission else None,
+            }
+        )
+
+    # Apply bucket filter
+    if bucket == "missing":
+        rows_data = [r for r in rows_data if r["missing_count"] > 0]
+    elif bucket == "below_threshold":
+        rows_data = [r for r in rows_data if r["pct"] < threshold]
+
+    total_count = len(rows_data)
+
+    # Apply pagination
+    paginated_rows = rows_data[offset : offset + limit]
+
+    payload = {
+        "section_id": str(section.id),
+        "section_name": section.course.name if section.course else "",
+        "total": total_count,
+        "limit": limit,
+        "offset": offset,
+        "rows": paginated_rows,
+    }
+
+    return Response(payload)
+
+
+@api_view(["PATCH"])
+@permission_classes([IsAuthenticated])
+def update_grade_entry(request, entry_id):
+    """
+    PATCH /api/v1/gradebook/grade-entries/{entry_id}/
+
+    Update points_earned for a specific grade entry.
+
+    Tenant-scoped: must include X-School-Id header matching entry's school_id.
+
+    Request:
+      {"points_earned": 95}
+
+    Returns updated entry or 400/403/404.
+    """
+    school_id = get_request_school_id(request, required=True)
+
+    entry = get_object_or_404(
+        GradeEntry,
+        id=entry_id,
+        school_id=school_id,
+    )
+
+    from .serializers import GradeEntryUpdateSerializer
+
+    serializer = GradeEntryUpdateSerializer(
+        entry,
+        data=request.data,
+        partial=True,
+    )
+
+    if serializer.is_valid():
+        serializer.save()
+        return Response(serializer.data)
+
+    return Response(serializer.errors, status=status.HTTP_400_BAD_REQUEST)
+
+
+# =========================
+# Lane 4: Teacher grade-entry bulk upsert
+# POST /api/v1/gradebook/sections/<section_id>/assignments/<assignment_id>/grades/upsert/
+# =========================
+@api_view(["POST"])
+@permission_classes([IsAuthenticated])
+def grade_entry_bulk_upsert(request, section_id, assignment_id):
+    """
+    Bulk upsert grade entries for an assignment.
+
+    Requires TEACHER, HEAD_OF_SCHOOL, or ADMIN role.
+
+    Payload:
+      {"grades": [{"student_id": "<uuid>", "points_earned": 9.5}, ...]}
+
+    Returns:
+      {"created": N, "updated": M, "count": T, "rows": [...]}
+    """
+    school_id = get_request_school_id(request, required=True)
+
+    roles = _role_codes(request.user, school_id)
+    if not roles.intersection({"TEACHER", "HEAD_OF_SCHOOL", "ADMIN"}):
+        raise PermissionDenied("Grade write requires TEACHER, HEAD_OF_SCHOOL, or ADMIN role.")
+
+    section = _get_section_or_404(request, school_id, section_id)
+    assignment = get_object_or_404(Assignment, id=assignment_id, section=section, school_id=school_id)
+
+    grades = request.data.get("grades", None)
+    if not isinstance(grades, list) or len(grades) == 0:
+        return Response(
+            {"detail": "Payload must include non-empty 'grades' list."},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    created_count = 0
+    updated_count = 0
+    out = []
+
+    with transaction.atomic():
+        for row in grades:
+            if not isinstance(row, dict):
+                continue
+            student_id = row.get("student_id")
+            if not student_id:
+                continue
+
+            try:
+                student = Student.objects.get(pk=student_id, school_id=school_id)
+            except Student.DoesNotExist:
+                # Skip unknown students (including cross-tenant IDs); do not fail the whole batch
+                continue
+
+            obj, was_created = GradeEntry.objects.update_or_create(
+                section=section,
+                student=student,
+                assignment_name=assignment.name,
+                defaults={
+                    "assignment": assignment,
+                    "school_id": school_id,
+                    "points_earned": row.get("points_earned"),
+                    "points_possible": assignment.points_possible,
+                },
+            )
+
+            if was_created:
+                created_count += 1
+            else:
+                updated_count += 1
+
+            out.append({
+                "id": str(obj.id),
+                "student_id": str(student.id),
+                "assignment_id": str(assignment.id),
+                "points_earned": str(obj.points_earned) if obj.points_earned is not None else None,
+            })
+
+    return Response({
+        "created": created_count,
+        "updated": updated_count,
+        "count": len(out),
+        "rows": out,
+    })
+
+
+
+
+
+
+

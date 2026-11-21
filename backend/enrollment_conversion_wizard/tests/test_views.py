@@ -1,0 +1,767 @@
+import uuid
+from concurrent.futures import ThreadPoolExecutor
+from datetime import date
+
+from django.contrib.auth import get_user_model
+from django.db import (
+    OperationalError, close_old_connections, connection, connections, transaction,
+)
+from django.test import TestCase, TransactionTestCase
+from rest_framework.test import APIClient
+
+from admissions.models import AdmissionsApplication, AdmissionsAuditEvent
+from applications.models import Application, Applicant, ApplicationEvent, ApplicationStatus
+from applications.views_admissions import (
+    CONTRACT_COUNTERSIGNED, DEPOSIT_PAID, ENROLLMENT_STATE_EVENT_TYPE,
+    ENROLLMENT_CONFIRMED_EVENT_TYPE,
+)
+from households.models import Household, Student as CompatibilityStudent
+from core.models import (
+    AcademicYear, CrownPermission, Enrollment as CoreEnrollment, Family,
+    GradeLevel, HouseholdFamilyLink, RolePermission, School,
+    Student as CoreStudent, StudentIdentityLink, UserRole,
+)
+from enrollment_conversion_wizard.identity import verified_cohort
+from enrollment_conversion_wizard.models import EnrollmentConversionWizardSession
+from enrollment_conversion_wizard.permissions import can_manage_enrollment_conversion
+
+
+TEST_AUTH_SECRET = "TestAuthSecret-LocalOnly"
+
+User = get_user_model()
+
+BASE_URL = "/api/v1/enrollment-conversion-wizard/sessions/"
+
+
+def _make_school():
+    return School.objects.create(name=f"ECW {uuid.uuid4().hex[:6]}", timezone="America/Chicago", is_active=True)
+
+
+def _make_user():
+    return User.objects.create_user(username=f"u{uuid.uuid4().hex[:8]}", password=TEST_AUTH_SECRET)
+
+
+def _grant_enrollment_conversion_access(user, school, role_code="REGISTRAR"):
+    UserRole.objects.create(user=user, school=school, role_code=role_code)
+    perm, _ = CrownPermission.objects.get_or_create(
+        code="admissions.edit",
+        defaults={"description": "Edit admissions records"},
+    )
+    RolePermission.objects.get_or_create(role_code=role_code, permission=perm)
+
+
+def _headers(school_id):
+    return {"HTTP_X_SCHOOL_ID": str(school_id)}
+
+
+def _client_for(school, with_access=True):
+    c = APIClient()
+    user = _make_user()
+    if with_access:
+        _grant_enrollment_conversion_access(user, school)
+    c.force_authenticate(user=user)
+    return c
+
+
+def _make_academic_year(school, name="2026-2027"):
+    ay, _ = AcademicYear.objects.get_or_create(
+        school=school,
+        name=name,
+        defaults={"start_date": date(2026, 9, 1), "end_date": date(2027, 6, 15)},
+    )
+    return ay
+
+
+def _make_application(school, ay, status="ACCEPTED"):
+    family = Family.objects.create(school=school, family_name=f"Fam {uuid.uuid4().hex[:6]}")
+    return AdmissionsApplication.objects.create(
+        school=school, academic_year=ay, family=family, status=status
+    )
+
+
+def _link_canonical(legacy, *, ready=True):
+    household = Household.objects.create(
+        school_id=legacy.school_id, name=f"Conversion Test Household {uuid.uuid4().hex[:6]}"
+    )
+    canonical = Application.objects.create(
+        school_id=legacy.school_id, household=household, status=ApplicationStatus.DECIDED
+    )
+    grade, _ = GradeLevel.objects.get_or_create(
+        school_id=legacy.school_id, code="5",
+        defaults={"label": "Grade 5", "sort_order": 5},
+    )
+    core = CoreStudent.objects.create(
+        school_id=legacy.school_id, family=legacy.family,
+        student_number=f"ECW-{uuid.uuid4().hex[:10]}",
+        first_name="Taylor", last_name="Student",
+        dob=date(2014, 4, 9), status="ACTIVE", current_grade_level=grade,
+    )
+    legacy.student = core
+    legacy.save(update_fields=["student", "updated_at"])
+    HouseholdFamilyLink.objects.create(
+        school_id=legacy.school_id, household_id=household.pk,
+        family=legacy.family, source=HouseholdFamilyLink.SOURCE_ADMISSIONS,
+    )
+    compatibility = CompatibilityStudent.objects.create(
+        school_id=legacy.school_id, household=household,
+        first_name="Taylor", last_name="Student", grade_level="5",
+    )
+    applicant = Applicant.objects.create(
+        school_id=legacy.school_id, application=canonical, student=compatibility,
+        first_name="Taylor", last_name="Student", dob=core.dob, grade_applying_for="5",
+    )
+    StudentIdentityLink.objects.create(
+        school_id=legacy.school_id, core_student=core, compatibility_student=compatibility,
+        source=StudentIdentityLink.SOURCE_ADMISSIONS,
+        verification_status=StudentIdentityLink.STATUS_VERIFIED,
+        evidence_reference=f"application:{canonical.id}:applicant:{applicant.id}",
+    )
+    CoreEnrollment.objects.create(
+        school_id=legacy.school_id, student=core, academic_year=legacy.academic_year,
+        grade_level=grade, start_date=legacy.academic_year.start_date, status="ENROLLED",
+    )
+    ApplicationEvent.objects.create(
+        school_id=legacy.school_id, application=canonical,
+        event_type="decision_made", payload={"decision": "accepted"},
+    )
+    if ready:
+        ApplicationEvent.objects.create(
+            school_id=legacy.school_id, application=canonical,
+            event_type=ENROLLMENT_STATE_EVENT_TYPE,
+            payload={"contract_status": CONTRACT_COUNTERSIGNED, "deposit_status": DEPOSIT_PAID},
+        )
+    legacy.notes_internal = f"canonical_application_id={canonical.id}"
+    legacy.save(update_fields=["notes_internal", "updated_at"])
+    return canonical
+
+def _advance_to_configured(client, school_id):
+    r = client.post(BASE_URL, **_headers(school_id))
+    sid = r.data["session_id"]
+    client.post(
+        f"{BASE_URL}{sid}/configure/",
+        {"academic_year_label": "2026-2027", "from_status": "ACCEPTED"},
+        format="json",
+        **_headers(school_id),
+    )
+    return sid
+
+
+def _advance_to_loaded(client, school_id):
+    sid = _advance_to_configured(client, school_id)
+    client.post(f"{BASE_URL}{sid}/load/", {}, format="json", **_headers(school_id))
+    return sid
+
+
+def _advance_to_committed(client, school_id):
+    sid = _advance_to_loaded(client, school_id)
+    client.post(
+        f"{BASE_URL}{sid}/commit/",
+        {"confirm": True},
+        format="json",
+        **_headers(school_id),
+    )
+    return sid
+
+
+# ---------------------------------------------------------------------------
+# Auth
+# ---------------------------------------------------------------------------
+
+class EnrollmentConversionAuthTest(TestCase):
+    def test_create_requires_auth(self):
+        school = _make_school()
+        r = APIClient().post(BASE_URL, **_headers(school.id))
+        self.assertEqual(r.status_code, 401)
+
+
+    def test_staff_bit_does_not_grant_enrollment_conversion(self):
+        school = _make_school()
+        user = _make_user()
+        user.is_staff = True
+        user.save(update_fields=["is_staff"])
+        self.assertFalse(can_manage_enrollment_conversion(user, school))
+
+    def test_superuser_bit_does_not_override_school_scope(self):
+        school = _make_school()
+        user = _make_user()
+        user.is_superuser = True
+        user.save(update_fields=["is_superuser"])
+        self.assertFalse(can_manage_enrollment_conversion(user, school))
+
+    def test_read_only_admin_permission_cannot_commit_enrollment(self):
+        school = _make_school()
+        user = _make_user()
+        role_code = "ENROLLMENT_READ_ONLY_TEST"
+        UserRole.objects.create(user=user, school=school, role_code=role_code)
+        permission, _ = CrownPermission.objects.get_or_create(
+            code="admin.view", defaults={"description": "View administration dashboard"},
+        )
+        RolePermission.objects.get_or_create(role_code=role_code, permission=permission)
+        self.assertFalse(can_manage_enrollment_conversion(user, school))
+
+    def test_explicit_admin_view_is_scoped_to_its_own_school(self):
+        school = _make_school()
+        other_school = _make_school()
+        user = _make_user()
+        UserRole.objects.create(user=user, school=school, role_code="HEAD_OF_SCHOOL")
+        permission, _ = CrownPermission.objects.get_or_create(
+            code="admin.view", defaults={"description": "View administration dashboard"},
+        )
+        RolePermission.objects.get_or_create(
+            role_code="HEAD_OF_SCHOOL", permission=permission,
+        )
+        action, _ = CrownPermission.objects.get_or_create(
+            code="director.actions", defaults={"description": "Execute director-level actions"},
+        )
+        RolePermission.objects.get_or_create(role_code="HEAD_OF_SCHOOL", permission=action)
+        self.assertTrue(can_manage_enrollment_conversion(user, school))
+        self.assertFalse(can_manage_enrollment_conversion(user, other_school))
+        user.is_active = False
+        user.save(update_fields=["is_active"])
+        self.assertFalse(can_manage_enrollment_conversion(user, school))
+
+
+# ---------------------------------------------------------------------------
+# Create
+# ---------------------------------------------------------------------------
+
+class EnrollmentConversionCreateTest(TestCase):
+    def test_create_returns_201(self):
+        school = _make_school()
+        c = _client_for(school)
+        r = c.post(BASE_URL, **_headers(school.id))
+        self.assertEqual(r.status_code, 201)
+        self.assertEqual(r.data["status"], EnrollmentConversionWizardSession.STATUS_DRAFT)
+
+    def test_create_forbidden_without_role_permission(self):
+        school = _make_school()
+        c = _client_for(school, with_access=False)
+        r = c.post(BASE_URL, **_headers(school.id))
+        self.assertEqual(r.status_code, 403)
+
+
+# ---------------------------------------------------------------------------
+# Configure
+# ---------------------------------------------------------------------------
+
+class EnrollmentConversionConfigureTest(TestCase):
+    def test_configure_ok(self):
+        school = _make_school()
+        c = _client_for(school)
+        r = c.post(BASE_URL, **_headers(school.id))
+        sid = r.data["session_id"]
+        r2 = c.post(
+            f"{BASE_URL}{sid}/configure/",
+            {"academic_year_label": "2026-2027", "from_status": "ACCEPTED"},
+            format="json",
+            **_headers(school.id),
+        )
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r2.data["status"], EnrollmentConversionWizardSession.STATUS_CONFIGURED)
+
+    def test_configure_missing_academic_year_label(self):
+        school = _make_school()
+        c = _client_for(school)
+        r = c.post(BASE_URL, **_headers(school.id))
+        sid = r.data["session_id"]
+        r2 = c.post(
+            f"{BASE_URL}{sid}/configure/",
+            {"from_status": "ACCEPTED"},
+            format="json",
+            **_headers(school.id),
+        )
+        self.assertEqual(r2.status_code, 400)
+
+    def test_configure_invalid_from_status(self):
+        school = _make_school()
+        c = _client_for(school)
+        r = c.post(BASE_URL, **_headers(school.id))
+        sid = r.data["session_id"]
+        r2 = c.post(
+            f"{BASE_URL}{sid}/configure/",
+            {"academic_year_label": "2026-2027", "from_status": "REJECTED"},
+            format="json",
+            **_headers(school.id),
+        )
+        self.assertEqual(r2.status_code, 400)
+
+    def test_configure_wrong_school_returns_404(self):
+        school = _make_school()
+        other = _make_school()
+        c = _client_for(school)
+        r = c.post(BASE_URL, **_headers(school.id))
+        sid = r.data["session_id"]
+        r2 = c.post(
+            f"{BASE_URL}{sid}/configure/",
+            {"academic_year_label": "2026-2027", "from_status": "ACCEPTED"},
+            format="json",
+            **_headers(other.id),
+        )
+        self.assertEqual(r2.status_code, 404)
+
+
+# ---------------------------------------------------------------------------
+# Load applicants
+# ---------------------------------------------------------------------------
+
+class EnrollmentConversionLoadTest(TestCase):
+    def test_load_returns_applicant_count(self):
+        school = _make_school()
+        ay = _make_academic_year(school)
+        _make_application(school, ay, status="ACCEPTED")
+        _make_application(school, ay, status="ACCEPTED")
+        _make_application(school, ay, status="WAITLISTED")  # not included
+        c = _client_for(school)
+        sid = _advance_to_configured(c, school.id)
+        r = c.post(f"{BASE_URL}{sid}/load/", {}, format="json", **_headers(school.id))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["status"], EnrollmentConversionWizardSession.STATUS_APPLICANTS_LOADED)
+        self.assertEqual(r.data["applicant_count"], 2)
+
+    def test_load_from_draft_rejected(self):
+        school = _make_school()
+        c = _client_for(school)
+        r = c.post(BASE_URL, **_headers(school.id))
+        sid = r.data["session_id"]
+        r2 = c.post(f"{BASE_URL}{sid}/load/", {}, format="json", **_headers(school.id))
+        self.assertEqual(r2.status_code, 400)
+
+    def test_load_zero_applicants_ok(self):
+        school = _make_school()
+        c = _client_for(school)
+        sid = _advance_to_configured(c, school.id)
+        r = c.post(f"{BASE_URL}{sid}/load/", {}, format="json", **_headers(school.id))
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["applicant_count"], 0)
+
+
+# ---------------------------------------------------------------------------
+# Commit
+# ---------------------------------------------------------------------------
+
+class EnrollmentConversionCommitTest(TestCase):
+    def test_commit_converts_applications(self):
+        school = _make_school()
+        ay = _make_academic_year(school)
+        _link_canonical(_make_application(school, ay, status="ACCEPTED"))
+        _link_canonical(_make_application(school, ay, status="ACCEPTED"))
+        c = _client_for(school)
+        sid = _advance_to_loaded(c, school.id)
+        r = c.post(
+            f"{BASE_URL}{sid}/commit/",
+            {"confirm": True},
+            format="json",
+            **_headers(school.id),
+        )
+        self.assertEqual(r.status_code, 200)
+        self.assertEqual(r.data["status"], EnrollmentConversionWizardSession.STATUS_COMMITTED)
+        self.assertEqual(r.data["converted"], 2)
+        enrolled = AdmissionsApplication.objects.filter(
+            school=school, status=AdmissionsApplication.STATUS_ENROLLED
+        ).count()
+        self.assertEqual(enrolled, 2)
+
+    def test_commit_requires_confirm(self):
+        school = _make_school()
+        c = _client_for(school)
+        sid = _advance_to_loaded(c, school.id)
+        r = c.post(f"{BASE_URL}{sid}/commit/", {}, format="json", **_headers(school.id))
+        self.assertEqual(r.status_code, 400)
+
+    def test_commit_is_idempotent(self):
+        school = _make_school()
+        ay = _make_academic_year(school)
+        _link_canonical(_make_application(school, ay, status="ACCEPTED"))
+        c = _client_for(school)
+        sid = _advance_to_committed(c, school.id)
+        r2 = c.post(
+            f"{BASE_URL}{sid}/commit/",
+            {"confirm": True},
+            format="json",
+            **_headers(school.id),
+        )
+        self.assertEqual(r2.status_code, 200)
+        self.assertEqual(r2.data["status"], EnrollmentConversionWizardSession.STATUS_COMMITTED)
+        self.assertEqual(r2.data["converted"], 1)
+        self.assertEqual(r2.data["selected"], 1)
+
+
+# ---------------------------------------------------------------------------
+# Verify
+# ---------------------------------------------------------------------------
+
+class EnrollmentConversionVerifyTest(TestCase):
+    def test_verify_ok(self):
+        school = _make_school()
+        ay = _make_academic_year(school)
+        _link_canonical(_make_application(school, ay, status="ACCEPTED"))
+        c = _client_for(school)
+        sid = _advance_to_committed(c, school.id)
+        session = EnrollmentConversionWizardSession.objects.get(pk=sid)
+        original_updated_at = session.updated_at
+        verify_url = f"{BASE_URL}{sid}/verify/"
+        read = c.get(verify_url, **_headers(school.id))
+        self.assertEqual(read.status_code, 200)
+        self.assertEqual(read.data["status"], EnrollmentConversionWizardSession.STATUS_COMMITTED)
+        self.assertTrue(read.data["all_enrolled"])
+        session.refresh_from_db()
+        self.assertEqual(session.status, EnrollmentConversionWizardSession.STATUS_COMMITTED)
+        self.assertEqual(session.updated_at, original_updated_at)
+
+        invalid = c.post(verify_url, {"confirm": "true"}, format="json", **_headers(school.id))
+        self.assertEqual(invalid.status_code, 400)
+        written = c.post(verify_url, {"confirm": True}, format="json", **_headers(school.id))
+        self.assertEqual(written.status_code, 200)
+        self.assertEqual(written.data["status"], EnrollmentConversionWizardSession.STATUS_VERIFIED)
+        session.refresh_from_db()
+        persisted_updated_at = session.updated_at
+        repeat = c.post(verify_url, {"confirm": True}, format="json", **_headers(school.id))
+        self.assertEqual(repeat.status_code, 200)
+        session.refresh_from_db()
+        self.assertEqual(session.updated_at, persisted_updated_at)
+        self.assertEqual(c.get(verify_url, **_headers(school.id)).data["status"], EnrollmentConversionWizardSession.STATUS_VERIFIED)
+
+    def test_verify_from_draft_rejected(self):
+        school = _make_school()
+        c = _client_for(school)
+        r = c.post(BASE_URL, **_headers(school.id))
+        sid = r.data["session_id"]
+        r2 = c.get(f"{BASE_URL}{sid}/verify/", **_headers(school.id))
+        self.assertEqual(r2.status_code, 400)
+        denial = c.post(f"{BASE_URL}{sid}/verify/", {"confirm": True}, format="json", **_headers(school.id))
+        self.assertEqual(denial.status_code, 400)
+        self.assertEqual(EnrollmentConversionWizardSession.objects.get(pk=sid).status, EnrollmentConversionWizardSession.STATUS_DRAFT)
+
+
+class EnrollmentConversionCanonicalGateTest(TestCase):
+    def test_unlinked_cohort_is_rejected_without_enrollment(self):
+        school = _make_school()
+        year = _make_academic_year(school)
+        app = _make_application(school, year)
+        client = _client_for(school)
+        sid = _advance_to_loaded(client, school.id)
+        response = client.post(f"{BASE_URL}{sid}/commit/", {"confirm": True}, format="json", **_headers(school.id))
+        self.assertEqual(response.status_code, 409)
+        app.refresh_from_db()
+        self.assertEqual(app.status, AdmissionsApplication.STATUS_ACCEPTED)
+        self.assertFalse(AdmissionsAuditEvent.objects.filter(school=school, action="STATUS_ENROLLED").exists())
+
+    def test_unready_member_blocks_entire_cohort_without_partial_conversion(self):
+        school = _make_school()
+        year = _make_academic_year(school)
+        first = _make_application(school, year)
+        second = _make_application(school, year)
+        ready = _link_canonical(first)
+        unready = _link_canonical(second, ready=False)
+        client = _client_for(school)
+        sid = _advance_to_loaded(client, school.id)
+        response = client.post(f"{BASE_URL}{sid}/commit/", {"confirm": True}, format="json", **_headers(school.id))
+        self.assertEqual(response.status_code, 409)
+        first.refresh_from_db()
+        second.refresh_from_db()
+        self.assertEqual(first.status, AdmissionsApplication.STATUS_ACCEPTED)
+        self.assertEqual(second.status, AdmissionsApplication.STATUS_ACCEPTED)
+        self.assertFalse(AdmissionsAuditEvent.objects.filter(school=school, action="STATUS_ENROLLED").exists())
+        self.assertFalse(ApplicationEvent.objects.filter(application__in=[ready, unready], event_type=ENROLLMENT_CONFIRMED_EVENT_TYPE).exists())
+
+    def test_ready_cohort_creates_canonical_confirmation_and_retries_receipt(self):
+        school = _make_school()
+        year = _make_academic_year(school)
+        app = _make_application(school, year)
+        canonical = _link_canonical(app)
+        client = _client_for(school)
+        sid = _advance_to_loaded(client, school.id)
+        url = f"{BASE_URL}{sid}/commit/"
+        first = client.post(url, {"confirm": True}, format="json", **_headers(school.id))
+        second = client.post(url, {"confirm": True}, format="json", **_headers(school.id))
+        self.assertEqual(first.status_code, 200)
+        self.assertEqual(second.status_code, 200)
+        self.assertEqual(first.data["converted"], 1)
+        self.assertEqual(second.data["converted"], 1)
+        self.assertEqual(ApplicationEvent.objects.filter(application=canonical, event_type=ENROLLMENT_CONFIRMED_EVENT_TYPE).count(), 1)
+        self.assertEqual(AdmissionsAuditEvent.objects.filter(school=school, action="STATUS_ENROLLED").count(), 1)
+
+    def test_zero_cohort_and_string_confirmation_fail_closed(self):
+        school = _make_school()
+        _make_academic_year(school)
+        client = _client_for(school)
+        sid = _advance_to_loaded(client, school.id)
+        url = f"{BASE_URL}{sid}/commit/"
+        self.assertEqual(client.post(url, {"confirm": "false"}, format="json", **_headers(school.id)).status_code, 400)
+        self.assertEqual(client.post(url, {"confirm": True}, format="json", **_headers(school.id)).status_code, 409)
+        session = EnrollmentConversionWizardSession.objects.get(id=sid)
+        self.assertEqual(session.status, EnrollmentConversionWizardSession.STATUS_APPLICANTS_LOADED)
+
+    def test_loaded_cohort_cannot_be_reconfigured(self):
+        school = _make_school()
+        _make_academic_year(school)
+        client = _client_for(school)
+        sid = _advance_to_loaded(client, school.id)
+        response = client.post(
+            f"{BASE_URL}{sid}/configure/",
+            {"academic_year_label": "2099-2100", "from_status": "ACCEPTED"},
+            format="json", **_headers(school.id),
+        )
+        self.assertEqual(response.status_code, 409)
+        session = EnrollmentConversionWizardSession.objects.get(id=sid)
+        self.assertEqual(session.academic_year_label, "2026-2027")
+
+class EnrollmentConversionCoreIdentityProofTests(TestCase):
+    """The wizard may report success only for persisted verified SIS records."""
+
+    def _ready(self, second=False):
+        school = _make_school()
+        year = _make_academic_year(school)
+        first = _make_application(school, year)
+        first_app = _link_canonical(first)
+        second_app = None
+        if second:
+            another = _make_application(school, year)
+            second_app = _link_canonical(another)
+        client = _client_for(school)
+        session_id = _advance_to_loaded(client, school.pk)
+        return school, year, first, first_app, second_app, client, session_id
+
+    def _commit(self, client, session_id, school):
+        return client.post(
+            f"{BASE_URL}{session_id}/commit/",
+            {"confirm": True}, format="json", **_headers(school.pk),
+        )
+
+    def test_verified_canonical_enrollment_survives_commit_and_replay(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        first = self._commit(client, sid, school)
+        self.assertEqual(first.status_code, 200, first.data)
+        enrollment = CoreEnrollment.objects.get(
+            school=school, student=legacy.student, academic_year=year,
+        )
+        self.assertEqual(enrollment.status, "ENROLLED")
+        self.assertEqual(self._commit(client, sid, school).data["converted"], 1)
+        self.assertEqual(CoreEnrollment.objects.filter(school=school).count(), 1)
+
+    def test_malformed_legacy_identifier_fails_closed(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        session = EnrollmentConversionWizardSession.objects.get(pk=sid)
+        session.application_ids = ["not-a-legacy-integer"]
+        session.save(update_fields=["application_ids", "updated_at"])
+        response = self._commit(client, sid, school)
+        self.assertEqual(response.status_code, 409, response.data)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ACCEPTED)
+        self.assertFalse(ApplicationEvent.objects.filter(
+            application=canonical, event_type=ENROLLMENT_CONFIRMED_EVENT_TYPE,
+        ).exists())
+
+    def test_missing_canonical_enrollment_fails_before_any_legacy_write(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        CoreEnrollment.objects.filter(school=school).delete()
+        response = self._commit(client, sid, school)
+        self.assertEqual(response.status_code, 409, response.data)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ACCEPTED)
+        self.assertFalse(ApplicationEvent.objects.filter(
+            application=canonical, event_type=ENROLLMENT_CONFIRMED_EVENT_TYPE,
+        ).exists())
+
+    def test_second_applicant_missing_dob_rolls_back_entire_cohort(self):
+        school, year, legacy, canonical, second, client, sid = self._ready(second=True)
+        applicant = second.applicants.get()
+        applicant.dob = None
+        applicant.save(update_fields=["dob", "updated_at"])
+        response = self._commit(client, sid, school)
+        self.assertEqual(response.status_code, 409, response.data)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ACCEPTED)
+        self.assertFalse(ApplicationEvent.objects.filter(
+            application=canonical, event_type=ENROLLMENT_CONFIRMED_EVENT_TYPE,
+        ).exists())
+
+    def test_wrong_identity_cannot_reuse_same_name_student(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        identity = StudentIdentityLink.objects.get(core_student=legacy.student)
+        identity.delete()
+        response = self._commit(client, sid, school)
+        self.assertEqual(response.status_code, 409)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ACCEPTED)
+
+    def test_identity_associated_with_wrong_family_fails_closed(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        foreign = Family.objects.create(school=school, family_name="Other family")
+        legacy.student.family = foreign
+        legacy.student.save(update_fields=["family", "updated_at"])
+        self.assertEqual(self._commit(client, sid, school).status_code, 409)
+        self.assertEqual(CoreEnrollment.objects.filter(school=school).count(), 1)
+
+    def test_wrong_grade_rejected_without_reassigning_existing_enrollment(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        applicant = canonical.applicants.get()
+        applicant.grade_applying_for = "12"
+        applicant.save(update_fields=["grade_applying_for", "updated_at"])
+        self.assertEqual(self._commit(client, sid, school).status_code, 409)
+        self.assertEqual(CoreEnrollment.objects.get(school=school).grade_level.code, "5")
+
+    def test_verify_and_replay_reject_missing_sis_evidence(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        self.assertEqual(self._commit(client, sid, school).status_code, 200)
+        CoreEnrollment.objects.filter(school=school).delete()
+        check = client.get(f"{BASE_URL}{sid}/verify/", **_headers(school.pk))
+        self.assertEqual(check.status_code, 409, check.data)
+        self.assertFalse(check.data["all_enrolled"])
+        self.assertEqual(self._commit(client, sid, school).status_code, 409)
+
+    def test_ambiguous_historical_provenance_preserves_legacy_record(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        legacy.notes_internal += f"\ncanonical_application_id={uuid.uuid4()}"
+        legacy.save(update_fields=["notes_internal", "updated_at"])
+        self.assertEqual(self._commit(client, sid, school).status_code, 409)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ACCEPTED)
+
+    def test_malformed_second_provenance_reference_fails_closed(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        legacy.notes_internal += "\ncanonical_application_id=not-a-uuid"
+        legacy.save(update_fields=["notes_internal", "updated_at"])
+        response = self._commit(client, sid, school)
+        self.assertEqual(response.status_code, 409, response.data)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ACCEPTED)
+
+    def test_punctuated_duplicate_provenance_rejected(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        original_notes = legacy.notes_internal
+        for suffix in (
+            f" ;canonical_application_id={uuid.uuid4()}",
+            f" (canonical_application_id={uuid.uuid4()})",
+        ):
+            with self.subTest(suffix=suffix):
+                legacy.notes_internal = original_notes + suffix
+                legacy.save(update_fields=["notes_internal", "updated_at"])
+                response = self._commit(client, sid, school)
+                self.assertEqual(response.status_code, 409, response.data)
+                legacy.refresh_from_db()
+                self.assertEqual(
+                    legacy.status, AdmissionsApplication.STATUS_ACCEPTED
+                )
+                self.assertFalse(ApplicationEvent.objects.filter(
+                    application=canonical,
+                    event_type=ENROLLMENT_CONFIRMED_EVENT_TYPE,
+                ).exists())
+
+    def test_embedded_canonical_provenance_fails_closed(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        for notes in (
+            f"historical note canonical_application_id={canonical.id} extra",
+            f"canonical_application_id={canonical.id} trailing text",
+            f"prefix canonical_application_id={canonical.id}",
+            f"(canonical_application_id={canonical.id})",
+            f"canonical_application_id={str(canonical.id).upper()}",
+        ):
+            with self.subTest(notes=notes):
+                legacy.notes_internal = notes
+                legacy.save(update_fields=["notes_internal", "updated_at"])
+                response = self._commit(client, sid, school)
+                self.assertEqual(response.status_code, 409, response.data)
+                legacy.refresh_from_db()
+                self.assertEqual(legacy.notes_internal, notes)
+                self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ACCEPTED)
+                self.assertFalse(ApplicationEvent.objects.filter(
+                    application=canonical,
+                    event_type=ENROLLMENT_CONFIRMED_EVENT_TYPE,
+                ).exists())
+                self.assertEqual(
+                    EnrollmentConversionWizardSession.objects.get(pk=sid).status,
+                    EnrollmentConversionWizardSession.STATUS_APPLICANTS_LOADED,
+                )
+
+    def test_embedded_second_cohort_marker_rolls_back_all_students(self):
+        school, year, legacy, canonical, second, client, sid = self._ready(second=True)
+        other = AdmissionsApplication.objects.filter(school=school).exclude(
+            pk=legacy.pk,
+        ).get()
+        other.notes_internal = f"legacy note canonical_application_id={second.id} extra"
+        other.save(update_fields=["notes_internal", "updated_at"])
+        response = self._commit(client, sid, school)
+        self.assertEqual(response.status_code, 409, response.data)
+        legacy.refresh_from_db()
+        other.refresh_from_db()
+        self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ACCEPTED)
+        self.assertEqual(other.status, AdmissionsApplication.STATUS_ACCEPTED)
+        self.assertFalse(ApplicationEvent.objects.filter(
+            school_id=school.id, event_type=ENROLLMENT_CONFIRMED_EVENT_TYPE,
+        ).exists())
+        self.assertEqual(
+            EnrollmentConversionWizardSession.objects.get(pk=sid).status,
+            EnrollmentConversionWizardSession.STATUS_APPLICANTS_LOADED,
+        )
+
+    def test_unrelated_historical_note_lines_preserve_standalone_marker(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        legacy.notes_internal = (
+            "Reviewed evidence on a fictional record\n"
+            f"  canonical_application_id={canonical.id}  \n"
+            "Original non-provenance notes retained"
+        )
+        legacy.save(update_fields=["notes_internal", "updated_at"])
+        response = self._commit(client, sid, school)
+        self.assertEqual(response.status_code, 200, response.data)
+        legacy.refresh_from_db()
+        self.assertEqual(legacy.status, AdmissionsApplication.STATUS_ENROLLED)
+
+    def test_cross_school_identity_cannot_pass_enrollment_gate(self):
+        school, year, legacy, canonical, _, client, sid = self._ready()
+        other_school = _make_school()
+        identity = StudentIdentityLink.objects.get(core_student=legacy.student)
+        identity.school = other_school
+        # Bypass model validation only to represent a corrupted historical row.
+        StudentIdentityLink.objects.filter(pk=identity.pk).update(school=other_school)
+        self.assertEqual(self._commit(client, sid, school).status_code, 409)
+
+
+class EnrollmentConversionPostgresRowLockTests(TransactionTestCase):
+    """Check each verified identity row against a real second PG connection."""
+
+    def test_held_conversion_proof_blocks_concurrent_identity_rewrites(self):
+        if connection.vendor != "postgresql":
+            self.skipTest("Requires PostgreSQL; SQLite cannot prove row locks")
+        school = _make_school()
+        year = _make_academic_year(school)
+        legacy = _make_application(school, year)
+        canonical = _link_canonical(legacy)
+        session_id = _advance_to_loaded(_client_for(school), school.pk)
+        applicant = canonical.applicants.get()
+        enrollment = CoreEnrollment.objects.get(student=legacy.student)
+
+        def writer(model, pk, values):
+            close_old_connections()
+            try:
+                try:
+                    with transaction.atomic():
+                        with connection.cursor() as cursor:
+                            cursor.execute("SET LOCAL lock_timeout = '500ms'")
+                        model.objects.filter(pk=pk).update(**values)
+                    return "unexpected-write"
+                except OperationalError as exc:
+                    if "lock timeout" in str(exc).lower():
+                        return "blocked"
+                    raise
+            finally:
+                connections.close_all()
+
+        protected = (
+            (Household, canonical.household_id, {"name": "Concurrent change"}),
+            (Family, legacy.family_id, {"family_name": "Concurrent change"}),
+            (CoreStudent, legacy.student_id, {"last_name": "Concurrent"}),
+            (CompatibilityStudent, applicant.student_id, {"last_name": "Concurrent"}),
+            (GradeLevel, enrollment.grade_level_id, {"label": "Concurrent change"}),
+        )
+        for model, pk, changes in protected:
+            with self.subTest(model=model._meta.label):
+                with transaction.atomic():
+                    session = EnrollmentConversionWizardSession.objects.select_for_update().get(
+                        pk=session_id,
+                    )
+                    self.assertEqual(len(verified_cohort(session, school.pk)), 1)
+                    with ThreadPoolExecutor(max_workers=1) as workers:
+                        result = workers.submit(writer, model, pk, changes).result(timeout=15)
+                    self.assertEqual(result, "blocked", model._meta.label)

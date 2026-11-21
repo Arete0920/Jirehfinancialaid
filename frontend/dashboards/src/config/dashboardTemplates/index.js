@@ -1,0 +1,292 @@
+import { DASHBOARD_DATA_REGISTRY } from '../dashboardDataRegistry.js';
+import { BASE_COMMUNICATIONS, BASE_FAITH_COMMUNITY } from './_baseData.js';
+
+import schoolAdministratorDashboard from './schoolAdministratorDashboard.js';
+import teacherDashboard from './teacherDashboard.js';
+import parentDashboard from './parentDashboard.js';
+import studentDashboard from './studentDashboard.js';
+import admissionsDashboard from './admissionsDashboard.js';
+import attendanceDashboard from './attendanceDashboard.js';
+import gradebookDashboard from './gradebookDashboard.js';
+import financeDashboard from './financeDashboard.js';
+import communicationsDashboard from './communicationsDashboard.js';
+import boardDashboard from './boardDashboard.js';
+import itDashboard from './itDashboard.js';
+import marketingDashboard from './marketingDashboard.js';
+import spiritualLifeDashboard from './spiritualLifeDashboard.js';
+import officeDashboard from './officeDashboard.js';
+import healthDashboard from './healthDashboard.js';
+import counselingDashboard from './counselingDashboard.js';
+import foodDashboard from './foodDashboard.js';
+import athleticsDashboard from './athleticsDashboard.js';
+import registrarDashboard from './registrarDashboard.js';
+import billingDashboard from './billingDashboard.js';
+import financialAidDashboard from './financialAidDashboard.js';
+import schedulingDashboard from './schedulingDashboard.js';
+import studentCareDashboard from './studentCareDashboard.js';
+import activitiesAthleticsDashboard from './activitiesAthleticsDashboard.js';
+import masterControlDashboard from './masterControlDashboard.js';
+import advancementDashboard from './advancementDashboard.js';
+import hrDashboard from './hrDashboard.js';
+import facilitiesDashboard from './facilitiesDashboard.js';
+import transportationDashboard from './transportationDashboard.js';
+import fineArtsDashboard from './fineArtsDashboard.js';
+import libraryMediaDashboard from './libraryMediaDashboard.js';
+import extendedCareDashboard from './extendedCareDashboard.js';
+import summerCampDashboard from './summerCampDashboard.js';
+import safetySecurityDashboard from './safetySecurityDashboard.js';
+import curriculumPDDashboard from './curriculumPDDashboard.js';
+import volunteerManagementDashboard from './volunteerManagementDashboard.js';
+import portraitServiceDashboard from './portraitServiceDashboard.js';
+import alumniRelationsDashboard from './alumniRelationsDashboard.js';
+import networkBenchmarkingDashboard from './networkBenchmarkingDashboard.js';
+import implementationSuccessDashboard from './implementationSuccessDashboard.js';
+import dataMigrationDashboard from './dataMigrationDashboard.js';
+import integrationsAutomationDashboard from './integrationsAutomationDashboard.js';
+import complianceAuditDashboard from './complianceAuditDashboard.js';
+import revenueOperationsDashboard from './revenueOperationsDashboard.js';
+import advancementOperationsDashboard from './advancementOperationsDashboard.js';
+import releaseReliabilityDashboard from './releaseReliabilityDashboard.js';
+import dashboardCertificationCenterDashboard from './dashboardCertificationCenterDashboard.js';
+
+export const DASHBOARD_TEMPLATE_MAP = {
+  dashboard: schoolAdministratorDashboard,
+  schoolAdministrator: schoolAdministratorDashboard,
+  teacher: teacherDashboard,
+  parent: parentDashboard,
+  student: studentDashboard,
+  admissions: admissionsDashboard,
+  attendance: attendanceDashboard,
+  gradebook: gradebookDashboard,
+  finance: financeDashboard,
+  communications: communicationsDashboard,
+  board: boardDashboard,
+  it: itDashboard,
+  marketing: marketingDashboard,
+  spiritualLife: spiritualLifeDashboard,
+  office: officeDashboard,
+  health: healthDashboard,
+  counseling: counselingDashboard,
+  food: foodDashboard,
+  athletics: athleticsDashboard,
+  registrar: registrarDashboard,
+  billing: billingDashboard,
+  financialAid: financialAidDashboard,
+  scheduling: schedulingDashboard,
+  studentCare: studentCareDashboard,
+  activitiesAthletics: activitiesAthleticsDashboard,
+  masterControl: masterControlDashboard,
+  advancement: advancementDashboard,
+  hr: hrDashboard,
+  facilities: facilitiesDashboard,
+  transportation: transportationDashboard,
+  fineArts: fineArtsDashboard,
+  libraryMedia: libraryMediaDashboard,
+  extendedCare: extendedCareDashboard,
+  summerCamp: summerCampDashboard,
+  safetySecurity: safetySecurityDashboard,
+  curriculumPD: curriculumPDDashboard,
+  volunteerManagement: volunteerManagementDashboard,
+  portraitService: portraitServiceDashboard,
+  alumniRelations: alumniRelationsDashboard,
+  networkBenchmarking: networkBenchmarkingDashboard,
+  implementationSuccess: implementationSuccessDashboard,
+  dataMigration: dataMigrationDashboard,
+  integrationsAutomation: integrationsAutomationDashboard,
+  complianceAudit: complianceAuditDashboard,
+  revenueOperations: revenueOperationsDashboard,
+  advancementOperations: advancementOperationsDashboard,
+  releaseReliability: releaseReliabilityDashboard,
+  dashboardCertificationCenter: dashboardCertificationCenterDashboard,
+  // Alias keys
+  schoolBoard: boardDashboard,
+  healthOffice: healthDashboard,
+  foodService: foodDashboard,
+  itSupport: itDashboard,
+  athleticsDirector: athleticsDashboard,
+  chaplainSpiritualLife: spiritualLifeDashboard,
+};
+
+export const REQUIRED_DASHBOARD_TEMPLATE_SECTIONS = Object.freeze([
+  'faithCommunity.devotion',
+  'faithCommunity.prayerRequests',
+  'faithCommunity.announcements',
+  'faithCommunity.celebrations',
+  'communications.inboxItems',
+  'communications.announcementItems',
+  'communications.urgentItems',
+  'sourceSyncTruth.dataSource',
+  'sourceSyncTruth.truthLabel',
+  'sourceSyncTruth.lastSyncLabel',
+  'metrics',
+  'priorities',
+  'alerts',
+  'commandModules',
+  'quickActions',
+]);
+
+function asArray(value, fallback = []) {
+  return Array.isArray(value) && value.length > 0 ? value : fallback;
+}
+
+function normalizeFaithCommunity(template) {
+  const existing = template?.faithCommunity && typeof template.faithCommunity === 'object'
+    ? template.faithCommunity
+    : {};
+  const devotion = existing.devotion || template?.devotion || BASE_FAITH_COMMUNITY.devotion;
+  const prayerRequests = asArray(
+    existing.prayerRequests || template?.prayerRequests || template?.prayerList,
+    BASE_FAITH_COMMUNITY.prayerRequests,
+  );
+  const announcements = asArray(
+    existing.announcements || template?.announcements,
+    BASE_FAITH_COMMUNITY.announcements,
+  );
+  const celebrations = asArray(
+    existing.celebrations || template?.celebrations || template?.specialDays,
+    BASE_FAITH_COMMUNITY.celebrations,
+  );
+
+  return {
+    ...BASE_FAITH_COMMUNITY,
+    ...existing,
+    devotion,
+    prayerRequests,
+    prayerList: asArray(existing.prayerList || template?.prayerList, prayerRequests),
+    announcements,
+    celebrations,
+    specialDays: asArray(existing.specialDays || template?.specialDays, celebrations),
+  };
+}
+
+function normalizeCommunications(template) {
+  const existing = template?.communications && typeof template.communications === 'object'
+    ? template.communications
+    : {};
+  const strip = template?.communicationsStrip && typeof template.communicationsStrip === 'object'
+    ? template.communicationsStrip
+    : {};
+
+  return {
+    ...BASE_COMMUNICATIONS,
+    ...existing,
+    ...strip,
+    announcementItems: asArray(
+      existing.announcementItems || strip.announcementItems || template?.announcements,
+      BASE_COMMUNICATIONS.announcementItems,
+    ),
+    inboxItems: asArray(existing.inboxItems || strip.inboxItems, BASE_COMMUNICATIONS.inboxItems),
+    urgentItems: asArray(existing.urgentItems || strip.urgentItems, BASE_COMMUNICATIONS.urgentItems),
+  };
+}
+
+function buildSourceSyncTruth(template, templateKey, dataSource, liveDataKey) {
+  return {
+    dataSource,
+    apiEndpoint: template?.apiEndpoint || null,
+    liveDataKey,
+    truthLabel: template?.truthLabel || 'Dashboard operating snapshot',
+    lastSyncLabel: template?.lastSyncLabel || 'Updated from current dashboard configuration',
+    note: template?.note || null,
+    templateKey,
+  };
+}
+
+function annotateCollectionDataSources(items, templateKey, collectionName) {
+  if (!Array.isArray(items)) {
+    return [];
+  }
+
+  return items.map((item, index) => {
+    if (!item || typeof item !== 'object' || Array.isArray(item)) {
+      return item;
+    }
+
+    return {
+      ...item,
+      dataSource: item.dataSource || `${templateKey}.${collectionName}[${index}]`,
+    };
+  });
+}
+
+export const DASHBOARD_DATA_KEY_ALIASES = Object.freeze({
+  finance: 'billing',
+  board: 'school-board',
+  it: 'it-support',
+  'spiritual-life': 'chaplain-spiritual-life',
+  health: 'health-office',
+  food: 'food-service',
+  athletics: 'athletics-director',
+});
+
+function lookupDashboardDataKey(key) {
+  const normalized = String(key || '')
+    .replace(/([a-z0-9])([A-Z])/g, '$1-$2')
+    .toLowerCase();
+  const canonicalKey = DASHBOARD_DATA_KEY_ALIASES[normalized] || normalized;
+
+  return DASHBOARD_DATA_REGISTRY[canonicalKey] ? canonicalKey : null;
+}
+
+function withTemplateDataSources(template, templateKey) {
+  if (!template || typeof template !== 'object') {
+    return template;
+  }
+
+  const dataSource = template.dataSource || `${templateKey}.template`;
+  const liveDataKey = template.liveDataKey || lookupDashboardDataKey(templateKey);
+  const faithCommunity = normalizeFaithCommunity(template);
+  const communications = normalizeCommunications(template);
+
+  return {
+    ...template,
+    dataSource,
+    liveDataKey,
+    faithCommunity,
+    communications,
+    communicationsStrip: template.communicationsStrip || communications,
+    sourceSyncTruth: buildSourceSyncTruth(template, templateKey, dataSource, liveDataKey),
+    devotion: template.devotion || faithCommunity.devotion,
+    prayerRequests: faithCommunity.prayerRequests,
+    prayerList: faithCommunity.prayerList,
+    specialDays: faithCommunity.specialDays,
+    celebrations: faithCommunity.celebrations,
+    announcements: faithCommunity.announcements,
+    metrics: annotateCollectionDataSources(template.metrics, templateKey, 'metrics'),
+    priorities: annotateCollectionDataSources(template.priorities, templateKey, 'priorities'),
+    alerts: annotateCollectionDataSources(template.alerts, templateKey, 'alerts'),
+    commandModules: annotateCollectionDataSources(template.commandModules, templateKey, 'commandModules'),
+    trendPanels: annotateCollectionDataSources(template.trendPanels, templateKey, 'trendPanels'),
+    activities: annotateCollectionDataSources(template.activities, templateKey, 'activities'),
+    quickActions: annotateCollectionDataSources(template.quickActions, templateKey, 'quickActions'),
+    statuses: annotateCollectionDataSources(template.statuses, templateKey, 'statuses'),
+  };
+}
+
+function isValidDashboardTemplate(template) {
+  return Boolean(
+    template
+    && typeof template === 'object'
+    && typeof template.title === 'string'
+    && Array.isArray(template.metrics)
+  );
+}
+
+export function getDashboardTemplate(key) {
+  const candidate = DASHBOARD_TEMPLATE_MAP[key] || schoolAdministratorDashboard;
+  const templateKey = DASHBOARD_TEMPLATE_MAP[key] ? key : 'dashboard';
+  const validTemplate = isValidDashboardTemplate(candidate) ? candidate : schoolAdministratorDashboard;
+  const enhancedTemplate = withTemplateDataSources(validTemplate, templateKey);
+  const isRegisteredTemplateKey = Boolean(DASHBOARD_TEMPLATE_MAP[key]);
+  const liveDataKey = isRegisteredTemplateKey
+    ? (lookupDashboardDataKey(key) || enhancedTemplate.liveDataKey)
+    : lookupDashboardDataKey(key);
+  return {
+    ...enhancedTemplate,
+    liveDataKey,
+    sourceSyncTruth: {
+      ...enhancedTemplate.sourceSyncTruth,
+      liveDataKey,
+    },
+  };
+}

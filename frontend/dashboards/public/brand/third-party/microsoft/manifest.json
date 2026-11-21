@@ -1,0 +1,24 @@
+{
+  "vendor": "Microsoft",
+  "assetPolicy": "Official Microsoft assets only. No generated, placeholder, recolored, traced, altered, or Microsoft-like replacement logos.",
+  "sourceRegister": "/brand/third-party/microsoft/usage/microsoft-logo-source-register.md",
+  "assets": {
+    "microsoft365": { "path": null, "usage": ["integrations", "m365Readiness", "settings"] },
+    "teams": { "path": null, "usage": ["communications", "teamsIntegration", "classroomCollaboration"] },
+    "outlook": { "path": null, "usage": ["communications", "email", "calendar"] },
+    "word": { "path": null, "usage": ["documents", "templates", "reports"] },
+    "excel": { "path": null, "usage": ["spreadsheets", "exports", "finance"] },
+    "powerpoint": { "path": null, "usage": ["presentations", "boardReports"] },
+    "onenote": { "path": null, "usage": ["notes", "classroom", "staffNotes"] },
+    "onedrive": { "path": null, "usage": ["documents", "uploads", "familyFiles"] },
+    "sharepoint": { "path": null, "usage": ["documents", "policies", "knowledgeBase"] },
+    "forms": { "path": null, "usage": ["forms", "surveys", "parentSubmissions"] },
+    "planner": { "path": null, "usage": ["tasks", "workflows"] },
+    "bookings": { "path": null, "usage": ["tours", "appointments", "conferences"] },
+    "entra": { "path": null, "usage": ["identity", "sso", "security"] },
+    "azure": { "path": null, "usage": ["hosting", "deployment", "infrastructure"] },
+    "intune": { "path": null, "usage": ["devices", "endpointManagement"] },
+    "defender": { "path": null, "usage": ["security", "compliance"] },
+    "microsoftEducation": { "path": null, "usage": ["educationIntegrations", "schoolSetup"] }
+  }
+}

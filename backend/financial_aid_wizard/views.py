@@ -1,0 +1,394 @@
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
+from uuid import UUID
+
+from django.db import transaction
+from django.shortcuts import get_object_or_404
+from rest_framework import status
+from rest_framework.authentication import SessionAuthentication
+from rest_framework.decorators import api_view, authentication_classes, permission_classes
+from rest_framework.response import Response
+from crown_api.tenant_authentication import TenantJWTAuthentication
+
+from aid.models import AidApplication, AidAuditEvent, AidAward
+from core.models import AcademicYear, School, Student
+from core.permissions import CrownModulePermission
+from households.scoping import get_request_school_id
+
+from .models import FinancialAidWizardSession
+from drf_spectacular.utils import extend_schema
+from drf_spectacular.types import OpenApiTypes
+
+_AUTH = [TenantJWTAuthentication, SessionAuthentication]
+_VIEW_PERM = [CrownModulePermission("financial_aid.view")]
+_EDIT_PERM = [CrownModulePermission("financial_aid.view", write_code="financial_aid.edit")]
+BUCKET_MAP = {value.lower(): value for value, _label in AidAward.TYPE_CHOICES}
+VALID_BUCKETS = set(BUCKET_MAP)
+# Canonical AidAward cents fields use a portable signed 32-bit IntegerField.
+MAX_AWARD_AMOUNT = Decimal("21474836.47")
+
+
+def _get_session(session_id, school_id):
+    return get_object_or_404(FinancialAidWizardSession, id=session_id, school__id=school_id)
+
+
+def _parse_decimal(value, field_name, min_val=None):
+    try:
+        parsed = Decimal(str(value))
+    except (InvalidOperation, TypeError, ValueError):
+        return None, f"{field_name} must be a valid number"
+    if not parsed.is_finite():
+        return None, f"{field_name} must be a finite number"
+    if min_val is not None and parsed < Decimal(str(min_val)):
+        return None, f"{field_name} must be >= {min_val}"
+    return parsed, None
+
+
+def _parse_positive_int(value, field_name):
+    try:
+        parsed = int(str(value).strip())
+    except (TypeError, ValueError):
+        return None, f"{field_name} must be a positive integer"
+    if parsed <= 0:
+        return None, f"{field_name} must be a positive integer"
+    return parsed, None
+
+
+def _parse_uuid(value, field_name):
+    try:
+        return str(UUID(str(value).strip())), None
+    except (TypeError, ValueError, AttributeError):
+        return None, f"{field_name} must be a valid UUID"
+
+
+def _currency_to_cents(amount: Decimal) -> int:
+    return int((amount.quantize(Decimal("0.01"), rounding=ROUND_HALF_UP) * 100))
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_EDIT_PERM)
+def create_session(request):
+    school_id = get_request_school_id(request)
+    school = get_object_or_404(School, id=school_id)
+    session = FinancialAidWizardSession.objects.create(
+        school=school,
+        created_by=request.user if request.user.is_authenticated else None,
+    )
+    return Response({"session_id": str(session.id), "status": session.status}, status=status.HTTP_201_CREATED)
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_EDIT_PERM)
+@transaction.atomic
+def configure_session(request, session_id):
+    school_id = get_request_school_id(request)
+    session = get_object_or_404(
+        FinancialAidWizardSession.objects.select_for_update(),
+        id=session_id, school_id=school_id,
+    )
+    if session.status in (FinancialAidWizardSession.STATUS_COMMITTED,
+                          FinancialAidWizardSession.STATUS_VERIFIED):
+        return Response({"error": "Finalized wizard sessions cannot be reconfigured"},
+                        status=status.HTTP_409_CONFLICT)
+    aid_year = (request.data.get("aid_year") or "").strip()
+    if not aid_year:
+        return Response({"error": "aid_year is required"}, status=status.HTTP_400_BAD_REQUEST)
+    if len(aid_year) > 24:
+        return Response({"error": "aid_year must be <= 24 characters"}, status=status.HTTP_400_BAD_REQUEST)
+    session.aid_year = aid_year
+    # A new configuration invalidates previously selected buckets and awards.
+    session.active_buckets = []
+    session.awards_config = []
+    session.commit_result = None
+    session.status = FinancialAidWizardSession.STATUS_CONFIGURED
+    session.save()
+    return Response({"session_id": str(session.id), "status": session.status})
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_EDIT_PERM)
+@transaction.atomic
+def save_buckets(request, session_id):
+    school_id = get_request_school_id(request)
+    session = get_object_or_404(
+        FinancialAidWizardSession.objects.select_for_update(),
+        id=session_id, school_id=school_id,
+    )
+    if session.status not in (
+        FinancialAidWizardSession.STATUS_CONFIGURED,
+        FinancialAidWizardSession.STATUS_BUCKETS_SAVED,
+    ):
+        return Response({"error": f"Cannot save buckets from status '{session.status}'"}, status=status.HTTP_409_CONFLICT)
+    buckets = request.data.get("buckets")
+    if not isinstance(buckets, list):
+        return Response({"error": "buckets must be a list"}, status=status.HTTP_400_BAD_REQUEST)
+    if not buckets:
+        return Response({"error": "At least one bucket is required"}, status=status.HTTP_400_BAD_REQUEST)
+    errors = []
+    normalised = []
+    for index, bucket in enumerate(buckets):
+        value = str(bucket).strip().lower()
+        if value not in VALID_BUCKETS:
+            errors.append(f"buckets[{index}]: '{bucket}' is not a valid bucket (must be one of {sorted(VALID_BUCKETS)})")
+        elif value not in normalised:
+            normalised.append(value)
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+    session.active_buckets = normalised
+    session.status = FinancialAidWizardSession.STATUS_BUCKETS_SAVED
+    session.save()
+    return Response({"session_id": str(session.id), "status": session.status, "active_buckets": normalised})
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_EDIT_PERM)
+@transaction.atomic
+def stage_awards(request, session_id):
+    school_id = get_request_school_id(request)
+    session = get_object_or_404(
+        FinancialAidWizardSession.objects.select_for_update(),
+        id=session_id, school_id=school_id,
+    )
+    if session.status not in (
+        FinancialAidWizardSession.STATUS_BUCKETS_SAVED,
+        FinancialAidWizardSession.STATUS_AWARDS_STAGED,
+    ):
+        return Response({"error": f"Cannot stage awards from status '{session.status}'"}, status=status.HTTP_409_CONFLICT)
+    awards_raw = request.data.get("awards")
+    if not isinstance(awards_raw, list):
+        return Response({"error": "awards must be a list"}, status=status.HTTP_400_BAD_REQUEST)
+
+    errors = []
+    normalised = []
+    for index, award in enumerate(awards_raw):
+        prefix = f"awards[{index}]"
+        if not isinstance(award, dict):
+            errors.append(f"{prefix}: award must be an object")
+            continue
+
+        application_id, app_error = _parse_positive_int(award.get("application_id"), f"{prefix}.application_id")
+        student_id, student_error = _parse_uuid(award.get("student_id"), f"{prefix}.student_id")
+        if app_error:
+            errors.append(app_error)
+        if student_error:
+            errors.append(student_error)
+        if app_error or student_error:
+            continue
+
+        bucket = (award.get("bucket") or "").strip().lower()
+        if bucket not in VALID_BUCKETS:
+            errors.append(f"{prefix}: bucket '{bucket}' is not valid (must be one of {sorted(VALID_BUCKETS)})")
+            continue
+        if bucket not in (session.active_buckets or []):
+            errors.append(f"{prefix}: bucket '{bucket}' is not active for this wizard session")
+            continue
+
+        amount, error = _parse_decimal(award.get("amount", 0), f"{prefix}.amount", min_val=0)
+        if error:
+            errors.append(error)
+            continue
+
+        if amount > MAX_AWARD_AMOUNT:
+            errors.append(f"{prefix}.amount must be <= {MAX_AWARD_AMOUNT}")
+            continue
+
+        normalised.append(
+            {
+                "application_id": application_id,
+                "student_id": student_id,
+                "bucket": bucket,
+                "amount": str(amount),
+                "rationale": (award.get("rationale") or "").strip(),
+            }
+        )
+
+    if errors:
+        return Response({"errors": errors}, status=status.HTTP_400_BAD_REQUEST)
+
+    session.awards_config = normalised
+    session.status = FinancialAidWizardSession.STATUS_AWARDS_STAGED
+    session.save()
+    return Response({"session_id": str(session.id), "status": session.status, "awards_count": len(normalised)})
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_EDIT_PERM)
+def commit_session(request, session_id):
+    school_id = get_request_school_id(request)
+    session = _get_session(session_id, school_id)
+    if session.status == FinancialAidWizardSession.STATUS_COMMITTED:
+        return Response({"session_id": str(session.id), "status": session.status, **(session.commit_result or {})})
+    if session.status != FinancialAidWizardSession.STATUS_AWARDS_STAGED:
+        return Response({"error": f"Cannot commit from status '{session.status}'"}, status=status.HTTP_409_CONFLICT)
+    if not request.data.get("confirm"):
+        return Response({"error": "confirm must be true"}, status=status.HTTP_400_BAD_REQUEST)
+
+    configured_awards = session.awards_config or []
+    academic_year = None
+    if configured_awards:
+        academic_year = AcademicYear.objects.filter(school_id=school_id, name=session.aid_year).first()
+        if academic_year is None:
+            return Response(
+                {"error": "Configured academic year must exist before awards can be committed"},
+                status=status.HTTP_409_CONFLICT,
+            )
+
+    resolved_awards = []
+    errors = []
+    for award_data in configured_awards:
+        application = AidApplication.objects.filter(
+            pk=award_data["application_id"],
+            school_id=school_id,
+            academic_year=academic_year,
+        ).first()
+        if application is None:
+            errors.append(f"Application {award_data['application_id']} not found for configured aid year")
+            continue
+
+        student = Student.objects.filter(
+            pk=award_data["student_id"],
+            school_id=school_id,
+            family_id=application.family_id,
+        ).first()
+        if student is None:
+            errors.append(
+                f"Student {award_data['student_id']} does not belong to application family {application.family_id}"
+            )
+            continue
+
+        resolved_awards.append((award_data, application, student, BUCKET_MAP[award_data["bucket"]]))
+
+    if errors:
+        return Response(
+            {"error": "Award validation failed", "errors": errors},
+            status=status.HTTP_400_BAD_REQUEST,
+        )
+
+    created_count = 0
+    skipped_count = 0
+    with transaction.atomic():
+        # A second POST must recheck session state under lock; a previous
+        # transaction may have committed after the initial read above.
+        session = FinancialAidWizardSession.objects.select_for_update().get(
+            pk=session.pk, school_id=school_id,
+        )
+        if session.status == FinancialAidWizardSession.STATUS_COMMITTED:
+            return Response({"session_id": str(session.id), "status": session.status, **(session.commit_result or {})})
+        if session.status != FinancialAidWizardSession.STATUS_AWARDS_STAGED or session.awards_config != configured_awards:
+            return Response({"error": "Wizard session changed before commit"}, status=status.HTTP_409_CONFLICT)
+
+        # All award writers lock the same AidApplication row before querying
+        # for an existing award. Lock application IDs in a stable order to
+        # avoid deadlocks when sessions contain multiple children/applications.
+        app_ids = sorted({application.pk for _, application, _, _ in resolved_awards})
+        locked_apps = {
+            app.pk: app for app in AidApplication.objects.select_for_update(of=("self",))
+            .filter(pk__in=app_ids, school_id=school_id, academic_year=academic_year)
+            .order_by("pk")
+        }
+        if set(locked_apps) != set(app_ids):
+            return Response({"error": "Application eligibility changed before commit"}, status=status.HTTP_409_CONFLICT)
+        # Acquire student row locks after application locks, always in a
+        # deterministic order. Concurrent family reassignment must settle before
+        # an award can be created using that student's family membership.
+        student_ids = {student.pk for _, _, student, _ in resolved_awards}
+        locked_students = {
+            student.pk: student for student in Student.objects.select_for_update(of=("self",))
+            .filter(pk__in=student_ids, school_id=school_id)
+            .order_by("pk")
+        }
+        if set(locked_students) != student_ids:
+            return Response({"error": "Student eligibility changed before commit"}, status=status.HTTP_409_CONFLICT)
+        for _award_data, application, student, _award_type in resolved_awards:
+            if locked_students[student.pk].family_id != locked_apps[application.pk].family_id:
+                return Response({"error": "Student eligibility changed before commit"}, status=status.HTTP_409_CONFLICT)
+
+        for award_data, application, student, award_type in resolved_awards:
+            application = locked_apps[application.pk]
+            student = locked_students[student.pk]
+            # Same active-offer decision key as the officer pathway.
+            # A controlled decline permits a new, independently recorded offer.
+            already_active = AidAward.objects.filter(
+                school_id=school_id,
+                academic_year=academic_year,
+                student=student,
+                aid_application=application,
+                award_type=award_type,
+            ).exclude(decision_status=AidAward.DECISION_DECLINED).exists()
+            if already_active:
+                skipped_count += 1
+                continue
+
+            amount_cents = _currency_to_cents(Decimal(award_data["amount"]))
+            award = AidAward.objects.create(
+                school_id=school_id,
+                academic_year=academic_year,
+                student=student,
+                aid_application=application,
+                award_type=award_type,
+                awarded_cents=amount_cents,
+                recommended_award_cents=amount_cents,
+                decision_status=AidAward.DECISION_OFFERED,
+                explanation_json={
+                    "source": "financial_aid_wizard",
+                    "rationale": award_data.get("rationale", ""),
+                },
+            )
+            AidAuditEvent.log(
+                school=session.school,
+                entity_type=AidAuditEvent.ENTITY_AWARD,
+                entity_id=award.id,
+                action="AWARD_STAGED",
+                actor_user=request.user if request.user.is_authenticated else None,
+                details={
+                    "application_id": application.id,
+                    "student_id": str(student.id),
+                    "award_type": award_type,
+                    "awarded_cents": amount_cents,
+                    "wizard_session_id": str(session.id),
+                },
+            )
+            created_count += 1
+
+        commit_result = {
+            "awards_created": created_count,
+            "awards_skipped": skipped_count,
+            "errors": [],
+        }
+        session.commit_result = commit_result
+        session.status = FinancialAidWizardSession.STATUS_COMMITTED
+        session.save()
+
+    return Response({"session_id": str(session.id), "status": session.status, **commit_result})
+
+
+@extend_schema(responses=OpenApiTypes.OBJECT)
+@api_view(["GET", "POST"])
+@authentication_classes(_AUTH)
+@permission_classes(_EDIT_PERM)
+@transaction.atomic
+def verify_session(request, session_id):
+    school_id = get_request_school_id(request)
+    session = (
+        get_object_or_404(
+            FinancialAidWizardSession.objects.select_for_update(),
+            id=session_id, school_id=school_id,
+        ) if request.method == "POST" else _get_session(session_id, school_id)
+    )
+    if session.status == FinancialAidWizardSession.STATUS_VERIFIED:
+        return Response({"session_id": str(session.id), "status": session.status, **(session.commit_result or {})})
+    if session.status != FinancialAidWizardSession.STATUS_COMMITTED:
+        return Response({"error": f"Cannot verify from status '{session.status}'"}, status=status.HTTP_409_CONFLICT)
+    if request.method == "POST":
+        session.status = FinancialAidWizardSession.STATUS_VERIFIED
+        session.save(update_fields=["status", "updated_at"])
+    return Response({"session_id": str(session.id), "status": session.status, **(session.commit_result or {})})

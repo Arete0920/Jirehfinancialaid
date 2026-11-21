@@ -1,0 +1,393 @@
+from __future__ import annotations
+
+import builtins
+from datetime import date
+
+import pytest
+from django.contrib.auth import get_user_model
+from rest_framework.test import APIClient
+
+from academics.models import AcademicYear, Assignment, AssignmentCategory, Course, Section, Term
+from core.models import Family, School, UserRole
+from households.models import Guardian, Household, Student as HouseholdStudent
+from parent360.api import views as parent_overview_views
+from servicehours.models import ServiceEntry
+
+
+pytestmark = pytest.mark.django_db
+
+TEST_SECRET = "test-pass"
+PARENT360_V1_URL = "/api/v1/parent360/me/overview/"
+PARENT360_URL = "/api/parent360/me/overview/"
+
+
+def _make_parent_client(*, school: School, email: str = "parent@example.com"):
+    user = get_user_model().objects.create_user(
+        username=f"parent-{school.id}",
+        password=TEST_SECRET,
+        email=email,
+        school=school,
+    )
+    UserRole.objects.get_or_create(user=user, school=school, role_code="PARENT")
+
+    client = APIClient()
+    client.force_authenticate(user=user)
+    return client, user
+
+
+def _make_household_bundle(
+    school: School,
+    *,
+    account=None,
+    email: str = "parent@example.com",
+    household_name: str = "Demo Family",
+    first_name: str = "Ava",
+    last_name: str = "Student",
+    active: bool = True,
+):
+    household = Household.objects.create(
+        school_id=school.id,
+        name=household_name,
+        is_active=active,
+    )
+    Guardian.objects.create(
+        school_id=school.id,
+        household=household,
+        account=account,
+        first_name="Pat",
+        last_name="Parent",
+        email=email,
+        is_primary=True,
+    )
+    child = HouseholdStudent.objects.create(
+        school_id=school.id,
+        household=household,
+        first_name=first_name,
+        last_name=last_name,
+        grade_level="5",
+        is_active=True,
+    )
+    return household, child
+
+
+def _make_core_student_with_service_hours(
+    school: School,
+    *,
+    first_name: str,
+    last_name: str,
+    hours: str = "4.5",
+):
+    family = Family.objects.create(school=school, family_name=f"{last_name} Family {school.name}")
+    from core.models import Student as CoreStudent
+
+    student = CoreStudent.objects.create(
+        school=school,
+        family=family,
+        student_number=f"S-{school.name[:3]}-{first_name[:1]}{last_name[:1]}",
+        first_name=first_name,
+        last_name=last_name,
+        dob=date(2014, 1, 15),
+        status="ACTIVE",
+    )
+    ServiceEntry.objects.create(
+        school=school,
+        student=student,
+        date=date.today(),
+        hours=hours,
+        status="approved",
+    )
+    return student
+
+
+def _make_assignment_for_unenrolled_section(school: School, *, due_date: date, name: str):
+    academic_year = AcademicYear.objects.create(
+        school=school,
+        name=f"{school.name} 2025-2026 {name}",
+        start_date=date(2025, 8, 1),
+        end_date=date(2026, 6, 1),
+        is_current=True,
+    )
+    term = Term.objects.create(
+        school_id=school.id,
+        academic_year=academic_year,
+        code=f"TERM-{name[:4]}",
+        name=f"Term {name}",
+        school_year="2025-2026",
+    )
+    course = Course.objects.create(
+        school_id=school.id,
+        code=f"COURSE-{name[:4]}",
+        name=f"Course {name}",
+    )
+    section = Section.objects.create(
+        school_id=school.id,
+        course=course,
+        term_ref=term,
+        term=term.code,
+    )
+    category = AssignmentCategory.objects.create(
+        school_id=school.id,
+        section=section,
+        name="Homework",
+        weight_percent=100,
+    )
+    return Assignment.objects.create(
+        school_id=school.id,
+        section=section,
+        category=category,
+        name=name,
+        points_possible=10,
+        due_date=due_date,
+        is_published=True,
+    )
+
+
+def test_parent_self_overview_v1_route_returns_200_and_household_shape():
+    school = School.objects.create(name="Heritage Parent Academy")
+    client, user = _make_parent_client(school=school)
+    household, child = _make_household_bundle(school, account=user)
+
+    response = client.get(PARENT360_V1_URL)
+
+    assert response.status_code == 200, response.content
+    payload = response.json()
+    assert payload["household"]["id"] == str(household.id)
+    assert payload["household"]["name"] == household.name
+    assert payload["children_count"] == 1
+    assert payload["children"][0]["id"] == str(child.id)
+
+
+def test_parent_self_overview_legacy_alias_uses_same_canonical_link():
+    school = School.objects.create(name="Parent Alias School")
+    client, user = _make_parent_client(school=school, email="alias-parent@example.com")
+    household, _ = _make_household_bundle(
+        school,
+        account=user,
+        email="alias-parent@example.com",
+        household_name="Alias Family",
+    )
+
+    response = client.get(PARENT360_URL)
+
+    assert response.status_code == 200, response.content
+    assert response.json()["household"]["id"] == str(household.id)
+
+
+def test_parent_self_overview_does_not_authorize_matching_email_without_link():
+    school = School.objects.create(name="No Email Fallback School")
+    email = "matching-email@example.com"
+    client, _ = _make_parent_client(school=school, email=email)
+    _make_household_bundle(school, email=email, household_name="Unlinked Household")
+
+    response = client.get(PARENT360_URL)
+
+    assert response.status_code == 404, response.content
+    assert response.json() == {
+        "detail": "No active household access is configured for the current account."
+    }
+
+
+def test_parent_self_overview_rejects_foreign_school_guardian_email_match():
+    school = School.objects.create(name="Home School")
+    other_school = School.objects.create(name="Foreign School")
+    email = "shared-parent@example.com"
+
+    _make_household_bundle(other_school, email=email, household_name="Foreign Household")
+    client, _ = _make_parent_client(school=school, email=email)
+
+    response = client.get(PARENT360_URL)
+
+    assert response.status_code == 404, response.content
+
+
+def test_parent_self_overview_rejects_inactive_household_link():
+    school = School.objects.create(name="Inactive Household Endpoint School")
+    client, user = _make_parent_client(school=school, email="inactive-household@example.com")
+    _make_household_bundle(
+        school,
+        account=user,
+        email="inactive-household@example.com",
+        household_name="Inactive Family",
+        active=False,
+    )
+
+    response = client.get(PARENT360_URL)
+
+    assert response.status_code == 404, response.content
+
+
+def test_parent_self_overview_service_hours_do_not_bridge_across_schools():
+    school = School.objects.create(name="Home Service School")
+    other_school = School.objects.create(name="Foreign Service School")
+    client, user = _make_parent_client(school=school, email="service-parent@example.com")
+    _, child = _make_household_bundle(
+        school,
+        account=user,
+        email="service-parent@example.com",
+        household_name="Service Family",
+        first_name="Jordan",
+        last_name="Cross",
+    )
+    _make_core_student_with_service_hours(
+        other_school,
+        first_name=child.first_name,
+        last_name=child.last_name,
+        hours="6.0",
+    )
+
+    response = client.get(PARENT360_URL)
+
+    assert response.status_code == 200, response.content
+    payload = response.json()
+    assert payload["children"][0]["service_hours"]["completed"] == 0
+
+
+def test_parent_self_overview_ignores_assignments_for_unenrolled_sections():
+    school = School.objects.create(name="Unenrolled Assignment School")
+    client, user = _make_parent_client(school=school, email="assignments-parent@example.com")
+    _make_household_bundle(
+        school,
+        account=user,
+        email="assignments-parent@example.com",
+        household_name="Assignment Family",
+    )
+    _make_assignment_for_unenrolled_section(
+        school,
+        due_date=date(2026, 1, 10),
+        name="Past Due Work",
+    )
+    _make_assignment_for_unenrolled_section(
+        school,
+        due_date=date.today(),
+        name="Upcoming Work",
+    )
+
+    response = client.get(PARENT360_URL)
+
+    assert response.status_code == 200, response.content
+    payload = response.json()
+    assert payload["missing_assignments_total"] == 0
+    assert payload["upcoming_assignments_total"] == 0
+    assert payload["children"][0]["missing_assignments"] == 0
+    assert payload["children"][0]["upcoming_assignments"] == []
+
+
+def test_parent_self_overview_admissions_continuity_shape_and_zero_counters_without_apps():
+    school = School.objects.create(name="Admissions Continuity Shape School")
+    client, user = _make_parent_client(school=school, email="admissions-shape-parent@example.com")
+    _make_household_bundle(
+        school,
+        account=user,
+        email="admissions-shape-parent@example.com",
+        household_name="Admissions Shape Family",
+    )
+
+    response = client.get(PARENT360_URL)
+
+    assert response.status_code == 200, response.content
+    payload = response.json()
+    continuity = payload["admissions_continuity"]
+    assert continuity["available"] is True
+    assert continuity["applications"] == []
+    assert continuity["summary"]["total"] == 0
+    assert continuity["summary"]["accepted_pending_contract"] == 0
+    assert continuity["summary"]["contract_complete"] == 0
+    assert continuity["summary"]["deposit_complete"] == 0
+
+
+def test_admissions_continuity_degrades_when_applications_optional_imports_fail(monkeypatch):
+    school = School.objects.create(name="Admissions Optional Import School")
+    household, _ = _make_household_bundle(
+        school,
+        email="admissions-import-parent@example.com",
+        household_name="Admissions Import Family",
+    )
+
+    original_import = builtins.__import__
+
+    def _import_with_applications_failure(name, globals=None, locals=None, fromlist=(), level=0):
+        if name in {"applications.aid_projection", "applications.models"}:
+            raise ImportError("simulated optional dependency failure")
+        return original_import(name, globals, locals, fromlist, level)
+
+    monkeypatch.setattr(builtins, "__import__", _import_with_applications_failure)
+
+    continuity = parent_overview_views._build_admissions_continuity(household)
+
+    assert continuity["available"] is False
+    assert continuity["applications"] == []
+    assert continuity["summary"] == {
+        "total": 0,
+        "accepted_pending_contract": 0,
+        "contract_complete": 0,
+        "deposit_complete": 0,
+    }
+
+
+@pytest.mark.parametrize("url", [PARENT360_V1_URL, PARENT360_URL])
+def test_parent_overview_returns_latest_contract_per_application_with_household_scope(url):
+    from applications.models import Application, EnrollmentContract
+
+    school = School.objects.create(name="Parent Contract Version School")
+    client, user = _make_parent_client(school=school)
+    household, _ = _make_household_bundle(school, account=user)
+    applications = [
+        Application.objects.create(school_id=school.id, household=household)
+        for _ in range(3)
+    ]
+
+    latest_contracts = {}
+    for application, latest_version, amount in (
+        (applications[0], 3, 123400),
+        (applications[1], 2, 567800),
+    ):
+        # Create older versions afterward so version outranks creation time.
+        latest_contracts[str(application.id)] = EnrollmentContract.objects.create(
+            school_id=school.id,
+            application=application,
+            version=latest_version,
+            status="issued",
+            contract_totals={"net_family_obligation_cents": amount},
+        )
+        for version in range(1, latest_version):
+            EnrollmentContract.objects.create(
+                school_id=school.id,
+                application=application,
+                version=version,
+                status="superseded",
+                contract_totals={"net_family_obligation_cents": 999900},
+            )
+
+    other_school = School.objects.create(name="Foreign Contract School")
+    for excluded_school in (school, other_school):
+        excluded_household, _ = _make_household_bundle(
+            excluded_school,
+            email="excluded-parent@example.com",
+            household_name="Excluded Contract Household",
+        )
+        excluded_application = Application.objects.create(
+            school_id=excluded_school.id, household=excluded_household
+        )
+        EnrollmentContract.objects.create(
+            school_id=excluded_school.id,
+            application=excluded_application,
+            version=99,
+            contract_totals={"net_family_obligation_cents": 888800},
+        )
+
+    response = client.get(url)
+
+    assert response.status_code == 200, response.content
+    continuity = response.json()["admissions_continuity"]
+    rows = {row["application_id"]: row for row in continuity["applications"]}
+    assert set(rows) == {str(application.id) for application in applications}
+    assert continuity["summary"]["total"] == 3
+    for application_id, contract in latest_contracts.items():
+        detail = rows[application_id]["contract_detail"]
+        assert detail["contract_id"] == str(contract.id)
+        assert detail["version"] == contract.version
+        assert detail["status"] == "issued"
+        assert detail["totals"]["net_family_obligation_cents"] == (
+            contract.contract_totals["net_family_obligation_cents"]
+        )
+    assert rows[str(applications[2].id)]["contract_detail"] is None
