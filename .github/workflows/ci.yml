@@ -90,7 +90,7 @@ jobs:
         env:
           POSTGRES_DB: jireh_ci
           POSTGRES_USER: jireh_ci
-          POSTGRES_PASSWORD: jireh-ci-only
+          POSTGRES_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
         ports: ['5432:5432']
         options: >-
           --health-cmd "pg_isready -U jireh_ci -d jireh_ci"
@@ -101,6 +101,7 @@ jobs:
       PYTHONPATH: src
       DJANGO_SETTINGS_MODULE: jireh.schools.postgres_test_settings
       JIREH_POSTGRES_CI_ONLY: '1'
+      JIREH_POSTGRES_CI_PASSWORD: ci-${{ github.run_id }}-${{ github.run_attempt }}
     steps:
       - name: Checkout
         uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
