@@ -19,6 +19,7 @@ from django.conf import settings
 from django.contrib.auth import get_user_model, password_validation
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
+from django.http import Http404
 from django.utils import timezone
 
 from .delivery import (
@@ -202,7 +203,7 @@ def reset_password_with_recovery(*, username, token, new_password):
         raise PermissionDenied("Recovery confirmation limit reached.")
     try:
         digest = _token_digest(token)
-    except Exception:
+    except Http404:
         raise ValidationError("Invalid or expired recovery credential.") from None
 
     with transaction.atomic():
@@ -220,7 +221,9 @@ def reset_password_with_recovery(*, username, token, new_password):
         ).first()
         if credential is None:
             raise ValidationError("Invalid or expired recovery credential.")
-        # Don't accept weak passwords even when a valid code is presented.
+        # Do not pass malformed password types to Django's password hasher.
+        if not isinstance(new_password, str) or not 1 <= len(new_password) <= 1024:
+            raise ValidationError("Invalid new password.")
         password_validation.validate_password(new_password, user=account)
         account.set_password(new_password)
         account.save(update_fields=["password"])
