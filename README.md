@@ -127,7 +127,7 @@ Tests explicitly cover separated-parent households, other schools,
 revocation, unauthorized superusers, inactive identities and CSRF denial.
 The endpoints are **not deployed** and must not be exposed through production
 settings until secure login, session policy, grant provisioning, rate limits,
-audit logging and PostgreSQL tenant/integrity tests are completed.
+comprehensive auditing and PostgreSQL tenant/integrity tests are completed.
 
 
 ## Draft child selection (test-only)
@@ -156,5 +156,28 @@ The database enforces selection uniqueness and protects referenced household
 links against ordinary deletes. **Cross-table school consistency is checked by
 Django model/service validation, not by a complete database-enforced tenant
 constraint**: raw SQL and bulk updates can bypass those checks. PostgreSQL
-integrity testing, audit logging, secure login and full production authorization
+integrity testing, comprehensive auditing, secure login and full production authorization
 remain prerequisites to handling real financial information.
+
+
+## Minimal auditable draft mutations (internal and test-only)
+
+Jireh now records two successful mutation facts in `AidAuditEvent`:
+`DRAFT_CREATED` and `STUDENT_SELECTED`. Each includes the exact school,
+application, authenticated actor, timestamp and (for student selection) the
+specific application/household-child selection. There are **no financial
+amounts, household answers, tax files, child names or free-text messages**
+in this event model.
+
+The existing authorized services create these events in the **same database
+transaction** as the corresponding draft or selection. If an event cannot
+be stored, the originating mutation is rolled back. Retries of the same
+creation/selection do not create new events. The schema enforces at most one
+event for each successful draft creation and for each selected child.
+
+This is **not a comprehensive, tamper-proof audit trail**. Model instances
+reject ordinary audit edits/deletions, but direct SQL, queryset updates and
+privileged database access can bypass those restrictions. No denied-attempt,
+read, role-grant, document, decision, payment, or deletion events are yet
+covered. Independent PostgreSQL testing, database audit protections,
+retention policy and operational monitoring are required before launch.

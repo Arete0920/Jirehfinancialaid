@@ -7,7 +7,7 @@ from django.http import Http404
 from jireh.schools.access import require_household_access
 from jireh.schools.models import AcademicYear, HouseholdStudent
 
-from .models import AidApplication, AidApplicationStudent
+from .models import AidApplication, AidApplicationStudent, AidAuditEvent
 
 
 @transaction.atomic
@@ -36,6 +36,13 @@ def get_or_create_annual_draft(
     )
     if application.status != AidApplication.STATUS_DRAFT:
         raise ValidationError("Only an existing draft may be resumed.")
+    if _created:
+        AidAuditEvent.objects.create(
+            school=household.school,
+            application=application,
+            actor_user=user,
+            action=AidAuditEvent.ACTION_DRAFT_CREATED,
+        )
     return application
 
 
@@ -106,4 +113,12 @@ def select_student_for_draft(
     selection, _created = AidApplicationStudent.objects.get_or_create(
         application=draft, household_student=link
     )
+    if _created:
+        AidAuditEvent.objects.create(
+            school=draft.school,
+            application=draft,
+            student_selection=selection,
+            actor_user=user,
+            action=AidAuditEvent.ACTION_STUDENT_SELECTED,
+        )
     return selection
