@@ -275,3 +275,39 @@ approved authority for issuing, revoking or reactivating grants; operators
 with direct database access can perform those changes, and privileged table
 owners can disable database triggers. This is transaction history evidence,
 not a trusted provisioning workflow, RLS or launch authorization.
+
+## Standalone runtime bootstrap (not deployed)
+
+The separate `jireh.runtime` Django settings, WSGI/ASGI entries and root
+`manage.py` establish a **fail-closed configuration foundation**. This is not
+an approved public service, a customer demo or a complete authentication stack.
+The runtime URL configuration exposes **only** `GET/HEAD /healthz/`: a
+process-liveness response, **not** proof of database, financial-aid workflow,
+provisioning or security readiness. Test-only family/staff API routes stay
+in `jireh.schools.test_settings` and are not included in runtime routing.
+
+Runtime startup requires explicit `JIREH_ENABLE_RUNTIME=1` and these values:
+
+- `JIREH_SECRET_KEY`: an externally managed secret of at least 50 characters;
+  never commit it or reuse the test secret.
+- `JIREH_ALLOWED_HOSTS`: comma-separated exact hostnames/IP addresses; no
+  wildcard, scheme, or port.
+- `JIREH_DB_NAME`, `JIREH_DB_USER`, `JIREH_DB_PASSWORD`, `JIREH_DB_HOST`:
+  PostgreSQL connection identity; optionally `JIREH_DB_PORT` (default 5432).
+- `JIREH_DB_SSLROOTCERT`: an absolute path to an existing trusted CA PEM
+  bundle. PostgreSQL connections use `sslmode=verify-full` and must verify the
+  server's certificate and hostname. A file's presence alone does not verify
+  its trust or the database connection.
+
+The entrypoints force runtime settings; the disposable test settings are not
+accepted as a runtime override. The runtime requires a compatible PostgreSQL
+Python driver, and that driver, deployment packaging, host-specific TLS
+termination, operator authentication, secure grant management, financial forms,
+submission and award decisions must be verified separately before hosting.
+`SECURE_SSL_REDIRECT` is enabled, but HSTS is deliberately disabled until a
+real HTTPS origin is verified. Do not deploy on the strength of `check`, `/healthz/`
+or CI alone; do not expose real family information or collect payments.
+
+Configuration contract tests run in the lightweight Python job. The existing
+PostgreSQL CI job also verifies the actual Django runtime settings and the
+absence of family/staff routes without creating cloud resources.
