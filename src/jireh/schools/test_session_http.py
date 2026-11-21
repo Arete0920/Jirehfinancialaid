@@ -211,7 +211,7 @@ class TestOnlyFamilySessionTests(TestCase):
             '{"username":"x","username":"y","password":"secret"}',
             '{"username":"x"}',
             '{"username":null,"password":"secret"}',
-            json.dumps({"username": "invalid\\u0000user", "password": PASSWORD}),
+            json.dumps({"username": "invalid" + chr(0) + "user", "password": PASSWORD}),
             json.dumps({"username": "  spaced", "password": PASSWORD}),
             json.dumps({"username": "x" * 151, "password": PASSWORD}),
             '{"username":"x","password":null}',
