@@ -131,7 +131,7 @@ class SchoolManagedRevocationTests(TestCase):
 
     def test_unknown_user_and_missing_scope_are_denied(self):
         for changes in (
-            {"subject_user_id": uuid.uuid4()},
+            {"subject_user_id": 99999999},
             {"subject_user_id": None},
             {"household_id": None},
             {"household_id": uuid.uuid4()},
@@ -228,7 +228,7 @@ class SchoolManagedRevocationTests(TestCase):
         for kwargs in (
             {"school_id": self.other_school.pk, "subject_user_id": self.other_director.pk},
             {"subject_user_id": self.other_director.pk},
-            {"subject_user_id": uuid.uuid4()},
+            {"subject_user_id": 99999999},
             {"subject_user_id": None},
         ):
             with self.subTest(kwargs=kwargs):
