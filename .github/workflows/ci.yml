@@ -205,3 +205,43 @@ jobs:
           assert count == 2, f"Grant trigger reapply incomplete: {count}"
           print("PostgreSQL grant guard reapply: PASS")
           PY
+
+      - name: Verify PostgreSQL grant transition history migration replay
+        run: |
+          set -euo pipefail
+          python -m django migrate schools 0004 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger "
+                  "WHERE tgname IN ("
+                  "'jireh_household_grant_transition_capture', "
+                  "'jireh_staff_grant_transition_capture', "
+                  "'jireh_grant_transition_append_only') "
+                  "AND NOT tgisinternal"
+              )
+              count = cursor.fetchone()[0]
+          assert count == 0, f"Grant transition rollback incomplete: {count}"
+          print("Grant transition rollback: PASS")
+          PY
+          python -m django migrate schools 0005 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger "
+                  "WHERE tgname IN ("
+                  "'jireh_household_grant_transition_capture', "
+                  "'jireh_staff_grant_transition_capture', "
+                  "'jireh_grant_transition_append_only') "
+                  "AND NOT tgisinternal"
+              )
+              count = cursor.fetchone()[0]
+          assert count == 3, f"Grant transition reapply incomplete: {count}"
+          print("Grant transition reapply: PASS")
+          PY

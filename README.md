@@ -252,3 +252,26 @@ SQLite has no database-level grant guard. A separately authorized grant
 issuance, revocation/reactivation, audit, authentication and privilege
 management design remains necessary before actual schools or families
 are onboarded.
+
+### PostgreSQL grant transition evidence (still not operator authorization)
+
+PostgreSQL migration `schools.0005_grant_transition_events` records every
+new household or school-staff grant and every **actual change** to its
+`is_active` flag, including direct queryset/bulk updates. The grant UUID,
+school UUID, scope UUID, target user ID, event type (created, revoked or
+reactivated), new active status, database role and timestamp are stored in
+`GrantTransitionEvent`. The event is written by an AFTER trigger **in the
+same database transaction**; failed or rolled-back grant changes create no
+committed event. An UPDATE that leaves `is_active` unchanged adds no event.
+
+The event table is append-only under ordinary PostgreSQL UPDATE/DELETE.
+Event reads are internal only; no family/staff route is exposed. SQLite has
+the model but **no database transition capture**, so only PostgreSQL tests
+certify this particular behavior. Existing grants are not backfilled.
+
+**Important attribution limit:** `database_role` is the PostgreSQL login,
+**not a verified human operator**. The current implementation still lacks
+approved authority for issuing, revoking or reactivating grants; operators
+with direct database access can perform those changes, and privileged table
+owners can disable database triggers. This is transaction history evidence,
+not a trusted provisioning workflow, RLS or launch authorization.
