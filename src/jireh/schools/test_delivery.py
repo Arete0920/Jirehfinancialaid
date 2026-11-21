@@ -277,11 +277,18 @@ class DeliveryTests(TestCase):
                 {"school_id": self.other_school.pk},
                 {"household_id": self.other_household.pk},
                 {"user": AnonymousUser()},
-                {"invitation_token": "a" * 64},
+                {"household_id": None},
             ):
                 with self.subTest(scope=scope):
                     expected = PermissionDenied if "user" in scope else Http404
                     with self.assertRaises(expected):
                         self.mailbox(self.code(seen[0]), **scope)
+            with self.assertRaises(Http404):
+                deliver_mailbox_challenge(
+                    user=self.parent,
+                    school_id=self.school.pk,
+                    household_id=self.household.pk,
+                    invitation_token="a" * 64,
+                )
             send.assert_not_called()
         self.assertEqual(MailboxChallenge.objects.count(), 0)
