@@ -181,3 +181,27 @@ privileged database access can bypass those restrictions. No denied-attempt,
 read, role-grant, document, decision, payment, or deletion events are yet
 covered. Independent PostgreSQL testing, database audit protections,
 retention policy and operational monitoring are required before launch.
+
+
+## Disposable PostgreSQL 16 verification (not a production deployment)
+
+A dedicated GitHub Actions job runs Jireh's Django migrations and complete
+test suite against a **temporary local PostgreSQL 16 container**, using
+fixed test-only credentials and a settings module that requires an explicit
+CI guard. It uses the PostgreSQL driver version already pinned in CROWN.
+The job requires the live database backend to be PostgreSQL 16; an SQLite
+fallback or other PostgreSQL major version fails the job.
+
+Additional PostgreSQL tests verify the database-backed annual uniqueness
+constraint and a real second-connection `SELECT FOR UPDATE NOWAIT` lock.
+Four tests explicitly document **expected failures**, i.e. current
+database-level tenant-integrity deficiencies. These are **not** passing
+security controls: raw/bulk changes can cross school or household
+relationships without invoking Django model validation. They must be
+converted into ordinary passing negative tests after database-level
+protections are implemented.
+
+This job uses only disposable CI data and does not deploy or modify Azure
+or any existing database. PostgreSQL validation is a prerequisite, but it
+does not establish enterprise security, production availability, or
+compliance certification.
