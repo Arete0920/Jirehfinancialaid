@@ -4,6 +4,7 @@ from django.urls import path
 
 from . import views
 from jireh.financial_aid.views import staff_application_index
+from jireh.financial_aid.family_views import family_annual_draft
 
 
 urlpatterns = [
@@ -23,5 +24,12 @@ urlpatterns = [
         "<uuid:academic_year_id>/aid-applications/",
         staff_application_index,
         name="jireh_staff_application_index",
+    ),
+
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/",
+        family_annual_draft,
+        name="jireh_family_annual_draft",
     ),
 ]
