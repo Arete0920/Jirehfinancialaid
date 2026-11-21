@@ -75,7 +75,7 @@ def install(apps, schema_editor):
                       "schools_passwordrecoverychallenge"):
             cursor.execute(
                 "CREATE TRIGGER jireh_" + table + "_protect "
-                "BEFORE UPDATE OR DELETE ON " + table +
+                "BEFORE INSERT OR UPDATE OR DELETE ON " + table +
                 " FOR EACH ROW EXECUTE FUNCTION jireh_recovery_row_protect()"
             )
 
