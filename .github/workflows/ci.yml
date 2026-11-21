@@ -245,3 +245,45 @@ jobs:
           assert count == 3, f"Grant transition reapply incomplete: {count}"
           print("Grant transition reapply: PASS")
           PY
+
+      - name: Check standalone runtime and closed routes (no deployment)
+        env:
+          JIREH_ENABLE_RUNTIME: '1'
+          JIREH_ALLOWED_HOSTS: 'jireh.example.invalid'
+          JIREH_DB_NAME: 'jireh_ci'
+          JIREH_DB_USER: 'jireh_ci'
+          JIREH_DB_HOST: '127.0.0.1'
+          JIREH_DB_SSLROOTCERT: '/etc/ssl/certs/ca-certificates.crt'
+        run: |
+          set -euo pipefail
+          export JIREH_DB_PASSWORD="$JIREH_POSTGRES_CI_PASSWORD"
+          export JIREH_SECRET_KEY="$(python -c 'import secrets; print(secrets.token_urlsafe(48))')"
+          python -m django check --settings=jireh.runtime.settings
+          python - <<'PY'
+          import os
+          os.environ['DJANGO_SETTINGS_MODULE'] = 'jireh.runtime.settings'
+          import django
+          django.setup()
+          from django.conf import settings
+          from django.test import Client
+          from django.urls import Resolver404, get_resolver, resolve
+          assert settings.DEBUG is False
+          assert settings.SECURE_SSL_REDIRECT is True
+          assert settings.SESSION_COOKIE_SECURE and settings.CSRF_COOKIE_SECURE
+          assert settings.DATABASES['default']['OPTIONS']['sslmode'] == 'verify-full'
+          assert len(get_resolver().url_patterns) == 1, 'Only liveness may be routed'
+          assert resolve('/healthz/').url_name == 'jireh_health'
+          client = Client()
+          response = client.get('/healthz/', secure=True, HTTP_HOST='jireh.example.invalid')
+          assert response.status_code == 200, response.status_code
+          assert response.json() == {'status': 'alive'}
+          assert response['Cache-Control'].find('no-cache') >= 0
+          for path in ('/api/v1/', '/api/v1/schools/', '/admin/', '/login/'):
+              try:
+                  resolve(path)
+              except Resolver404:
+                  pass
+              else:
+                  raise AssertionError(f'Unexpected public route: {path}')
+          print('Standalone runtime configuration and route isolation: PASS')
+          PY
