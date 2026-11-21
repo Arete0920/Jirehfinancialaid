@@ -1,0 +1,34 @@
+# Local configuration and credentials
+.env
+.env.*
+!.env.example
+!.env.*.example
+*.pem
+*.key
+*.p12
+*.pfx
+
+# Python and local environments
+__pycache__/
+*.py[cod]
+.venv/
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Local databases and build output
+*.sqlite3
+*.db
+build/
+dist/
+node_modules/
+.local-backups/
+
+# Editor and test artifacts
+.idea/
+.vscode/
+coverage/
+test-results/
+.DS_Store
