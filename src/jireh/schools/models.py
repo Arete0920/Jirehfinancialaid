@@ -249,3 +249,57 @@ class SchoolStaffAccess(GrantImmutableBinding, UUIDStampedModel):
                 name="jireh_staff_aid_director_only",
             ),
         ]
+
+
+class GrantTransitionEvent(UUIDStampedModel):
+    """DB-captured grant status history; not human operator authorization.
+
+    On PostgreSQL the transition trigger writes events atomically for grant
+    INSERT and actual is_active changes, even when QuerySet.update() is used.
+    The DB role is NOT the identity of a human operator. No public API exists.
+    """
+
+    KIND_HOUSEHOLD = "HOUSEHOLD"
+    KIND_STAFF = "STAFF"
+    ACTION_CREATED = "CREATED"
+    ACTION_REVOKED = "REVOKED"
+    ACTION_REACTIVATED = "REACTIVATED"
+
+    school = models.ForeignKey(
+        School, on_delete=models.PROTECT, related_name="grant_transition_events"
+    )
+    grant_kind = models.CharField(
+        max_length=16,
+        choices=[(KIND_HOUSEHOLD, "Household"), (KIND_STAFF, "Staff")],
+    )
+    grant_id = models.UUIDField()
+    scope_id = models.UUIDField()
+    subject_user_id = models.CharField(max_length=128)
+    action = models.CharField(
+        max_length=16,
+        choices=[
+            (ACTION_CREATED, "Created"),
+            (ACTION_REVOKED, "Revoked"),
+            (ACTION_REACTIVATED, "Reactivated"),
+        ],
+    )
+    is_active = models.BooleanField()
+    database_role = models.CharField(max_length=128)
+
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        indexes = [
+            models.Index(
+                fields=["school", "grant_id"],
+                name="jireh_grant_event_lookup",
+            )
+        ]
+
+    def save(self, *args, **kwargs):
+        raise ValidationError(
+            "Grant transition events are written by PostgreSQL triggers only."
+        )
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Grant transition events are append-only.")
