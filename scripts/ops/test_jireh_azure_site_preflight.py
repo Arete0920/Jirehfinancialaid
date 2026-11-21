@@ -3,6 +3,7 @@ import subprocess
 import sys
 import tempfile
 from pathlib import Path
+from unittest.mock import patch
 from jireh_azure_site_preflight import collect
 
 
@@ -118,6 +119,23 @@ class JirehAdmissionTests(unittest.TestCase):
             )
             self.assertEqual(result.returncode, 0)
             self.assertIn("provisioning and deployment NOT AUTHORIZED", result.stdout)
+
+    def test_invalid_offline_modes_never_call_azure(self):
+        from jireh_azure_site_preflight import main
+        cases = (
+            ["--inventory", "", "--group", "jireh-staging", "--resource-group", "jireh-staging"],
+            ["--verify-resource", "", "--group", "jireh-staging", "--resource-group", "jireh-staging"],
+            ["--inventory", "", "--group", "jireh-staging"],
+            ["--verify-resource", "", "--group", "jireh-staging"],
+            ["--inventory", "unused.json", "--group", "jireh-staging", "--resource-group", "jireh-staging"],
+            ["--resource-group", "jireh-staging", "--group", "jireh-staging"],
+        )
+        for args in cases:
+            with self.subTest(args=args), patch.object(sys, "argv", ["preflight", *args]), \
+                    patch("jireh_azure_site_preflight.collect") as collector, \
+                    self.assertRaises(SystemExit):
+                main()
+            collector.assert_not_called()
 
 
 class JirehDeferredHostingContractTests(unittest.TestCase):

@@ -150,13 +150,18 @@ def main():
     parser.add_argument('--resource-group', help='Explicit Jireh target group for read-only collection')
     parser.add_argument('--output', default='jireh-azure-site-preflight.json')
     args = parser.parse_args()
-    if args.inventory or args.verify_resource:
+    if args.inventory is not None or args.verify_resource is not None:
         if not args.group:
             parser.error('--group is required for offline inventory checks')
+        if args.resource_group is not None:
+            parser.error('--resource-group is only valid for read-only collection')
+        path = args.inventory if args.inventory is not None else args.verify_resource
+        if not path:
+            parser.error('offline inventory path must not be empty')
         try:
-            with open(args.inventory or args.verify_resource, encoding='utf-8') as source:
+            with open(path, encoding='utf-8') as source:
                 resource = json.load(source)
-            if args.inventory:
+            if args.inventory is not None:
                 print(plan(resource, args.name, group=args.group))
             else:
                 verify(resource, args.name, group=args.group)
@@ -168,6 +173,8 @@ def main():
         return
     if not args.resource_group:
         parser.error('--resource-group is required for read-only collection')
+    if args.group is not None:
+        parser.error('--group is only valid for offline inventory checks')
     try:
         data = collect(args.resource_group)
     except ValueError:
