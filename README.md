@@ -364,3 +364,30 @@ returns a short-lived token to an internal trusted caller; only a separately
 certified sender can deliver it to its bound address. Until such delivery
 is certified, no real family should be invited or onboarded. Neither raw
 secret is persisted. Runtime URL routing remains liveness-only.
+
+
+## Optional authenticated SMTP delivery adapter (not activated)
+
+The internal \`jireh.schools.delivery\` module adds **explicitly opt-in**
+email sending for household invitation secrets and mailbox challenge proofs.
+It requires the real Django SMTP backend, authenticated credentials,
+STARTTLS on port 587 or implicit TLS on port 465, a remote SMTP host,
+a dedicated sender, and a bounded network timeout. Delivery is disabled
+unless \`JIREH_EMAIL_DELIVERY_ENABLED\` is explicitly set to boolean \`True\`
+in an independently reviewed environment configuration. No such runtime
+enablement, credentials, providers, or customer mailboxes are configured
+by this change.
+
+On successful SMTP submission the service returns only an invitation or
+challenge ID to the trusted caller, never the raw token. A failed or
+ambiguous send cancels the pending invitation with an actor audit or consumes
+the undelivered challenge, so a retry cannot use the earlier code. SMTP
+errors are sanitized rather than exposing provider responses or secret data.
+
+**Security boundary:** SMTP acceptance does not prove human receipt, mailbox
+ownership, or verified identity. The user must still authenticate and supply
+both separately generated secrets to redeem an invitation. This adapter is
+not a public route, login system, queue, delivery guarantee, rate limiter,
+email-provider integration, or buyer-ready onboarding process. No real mail
+should be sent until SMTP configuration and authenticated UI flow receive
+separate approval and independent verification.
