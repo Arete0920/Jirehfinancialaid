@@ -40,6 +40,27 @@ asset census: external designs, prior history, and other branches must be
 reviewed separately. A targeted search of open CROWN pull requests did not
 identify a Jireh-titled open PR; it is not an exhaustive branch comparison.
 
+### Local baseline assessment
+
+On 2026-11-21, using application source at Jireh commit
+`48e0fb5965c975a2b5dcb744d9023163dae5891c`:
+
+- The Jireh site tests passed (5 tests); the dashboard frontend build and
+  eight focused aid/SGO frontend test files passed (85 tests).
+- Django system and migration checks passed. The focused fictional presenter,
+  aid authorization/award, and SGO intake API suite passed (31 tests and
+  17 subtests), including submission, review, a noncash credit, SGO correction,
+  and access checks on an isolated test database.
+- In the isolated Heritage local demo, the existing Chromium tests passed
+  (2 tests): a fictional parent submitted school aid and saw it after a browser
+  reload, and the test found no `actual_income` input or file-upload field.
+  This browser rehearsal does not prove browser-based review, approval,
+  renewal, or SGO.
+
+These are local results, not independent review, hosted acceptance, or proof
+that a complete customer aid cycle is ready to sell. The demo uses CROWN
+fixtures and adapters; it is not an independently operated Jireh installation.
+
 ## Standalone and commercial boundary
 
 Jireh must work without a running CROWN installation before it can be offered as
