@@ -497,3 +497,28 @@ customer activation. Existing enrollment is deliberately immutable;
 contact rotation requires a separately designed and verified workflow.
 It must not be used for real user onboarding until these controls are
 independently accepted. The standalone runtime remains liveness-only.
+
+
+## Audited recovery-contact rotation (internal service; not deployed)
+
+An authenticated family account may replace its verified recovery mailbox
+only after presenting its **current password** and **two fresh, account-bound
+mailbox codes**: one for the currently verified address and one for the
+replacement. The one-time proofs must be distinct, unexpired and unconsumed.
+Both are consumed atomically with the rotation. Older recovery contacts
+remain in immutable history with a supersession timestamp; exactly one
+current recovery contact per account is enforced by a database constraint.
+
+Each successful rotation creates a protected event recording the authenticated
+account, old and new contacts, and the authenticated actor. Any pending
+password-recovery codes are consumed so the former address cannot reset the
+password. Subsequent recovery messages are directed only to the new verified
+contact. The prior contact and audit evidence cannot be deleted or rewritten
+through the model API or PostgreSQL integrity guards.
+
+**Not a public workflow:** No customer routes, provider configuration,
+production secrets, or deployment are introduced. SMTP delivery remains
+disabled by default. This service does not authorize a support agent,
+school employee, or an attacker with only a session to rotate the contact;
+production activation requires independent delivery, identity,
+monitoring and account-recovery policy acceptance.

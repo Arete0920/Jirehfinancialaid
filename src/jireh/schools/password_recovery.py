@@ -28,7 +28,7 @@ from .delivery import (
 from .login_budget import _identifier_digest
 from .models import (
     MailboxChallenge, PasswordRecoveryChallenge, RecoveryAttemptBudget,
-    VerifiedRecoveryContact,
+    RecoveryContactRotationEvent, VerifiedRecoveryContact,
 )
 from .redemption import _authenticated, _token_digest
 
@@ -89,7 +89,9 @@ def enroll_verified_recovery_contact(*, user, email, mailbox_token):
     account = get_user_model()._default_manager.select_for_update().get(
         pk=user.pk, is_active=True,
     )
-    if VerifiedRecoveryContact.objects.filter(user_id=account.pk).exists():
+    if VerifiedRecoveryContact.objects.filter(
+        user_id=account.pk, superseded_at__isnull=True,
+    ).exists():
         raise ValidationError("A recovery contact is already enrolled.")
     now = timezone.now()
     proof = MailboxChallenge.objects.select_for_update().filter(
@@ -120,7 +122,9 @@ def _prepare_recovery(*, username):
     ).first()
     if account is None:
         return None
-    contact = VerifiedRecoveryContact.objects.filter(user=account).first()
+    contact = VerifiedRecoveryContact.objects.filter(
+        user=account, superseded_at__isnull=True,
+    ).first()
     if contact is None:
         return None
     now = timezone.now()
@@ -216,6 +220,7 @@ def reset_password_with_recovery(*, username, token, new_password):
         credential = PasswordRecoveryChallenge.objects.select_for_update().filter(
             user=account,
             token_digest=digest,
+            contact__superseded_at__isnull=True,
             consumed_at__isnull=True,
             expires_at__gt=now,
         ).first()
@@ -233,3 +238,76 @@ def reset_password_with_recovery(*, username, token, new_password):
             "consumed_at", "password_changed_at", "updated_at",
         ])
     return {"password_changed": True}
+
+
+
+def rotate_verified_recovery_contact(
+    *, user, current_password, old_mailbox_token,
+    new_email, new_mailbox_token,
+):
+    """Change the current recovery mailbox without deleting historical evidence.
+
+    Requires a fresh account password and two separately issued one-use
+    mailbox codes: one for the current verified contact, another for the
+    replacement. The account lock serializes rotation with password reset
+    and recovery issuance. Old recovery codes become unusable immediately.
+    """
+    _authenticated(user)
+    if not isinstance(current_password, str) or not 1 <= len(current_password) <= 1024:
+        raise PermissionDenied("Rotation credentials invalid.")
+    old_digest = _token_digest(old_mailbox_token)
+    new_digest = _token_digest(new_mailbox_token)
+    if old_digest == new_digest:
+        raise ValidationError("Distinct mailbox proofs are required.")
+    from .invitations import _normalize_recipient
+    normalized = _normalize_recipient(new_email)
+    allowed, _ = _charge(
+        username=user.get_username(),
+        purpose=RecoveryAttemptBudget.PURPOSE_CONFIRM,
+    )
+    if not allowed:
+        raise PermissionDenied("Contact rotation attempt limit reached.")
+
+    with transaction.atomic():
+        account = get_user_model()._default_manager.select_for_update().filter(
+            pk=user.pk, is_active=True,
+        ).first()
+        if account is None or not account.check_password(current_password):
+            raise PermissionDenied("Rotation credentials invalid.")
+        current = VerifiedRecoveryContact.objects.select_for_update().filter(
+            user=account, superseded_at__isnull=True,
+        ).first()
+        if current is None or current.email == normalized:
+            raise ValidationError("A distinct verified contact is required.")
+        now = timezone.now()
+        old_proof = MailboxChallenge.objects.select_for_update().filter(
+            user=account, email=current.email, token_digest=old_digest,
+            consumed_at__isnull=True, expires_at__gt=now,
+        ).first()
+        new_proof = MailboxChallenge.objects.select_for_update().filter(
+            user=account, email=normalized, token_digest=new_digest,
+            consumed_at__isnull=True, expires_at__gt=now,
+        ).first()
+        if old_proof is None or new_proof is None:
+            raise ValidationError("Invalid or expired mailbox proofs.")
+        # Consume both mailbox credentials; rollback preserves them if
+        # anything else in the rotation transaction fails.
+        for proof in (old_proof, new_proof):
+            proof.consumed_at = now
+            proof.save(update_fields=["consumed_at", "updated_at"])
+        current.superseded_at = now
+        current.save(update_fields=["superseded_at", "updated_at"])
+        # Reissue cannot race rotation: all recovery mutations lock account.
+        for pending in PasswordRecoveryChallenge.objects.select_for_update().filter(
+            user=account, consumed_at__isnull=True,
+        ):
+            pending.consumed_at = now
+            pending.save(update_fields=["consumed_at", "updated_at"])
+        replacement = VerifiedRecoveryContact.objects.create(
+            user=account, proof=new_proof, email=normalized, verified_at=now,
+        )
+        RecoveryContactRotationEvent.objects.create(
+            user=account, actor=account,
+            old_contact=current, new_contact=replacement,
+        )
+    return replacement
