@@ -565,3 +565,27 @@ class MailboxChallenge(UUIDStampedModel):
     def delete(self, *args, **kwargs):
         raise ValidationError("Mailbox challenge records cannot be deleted.")
 
+
+class RedemptionAttemptBudget(UUIDStampedModel):
+    """Durable user-wide redemption throttle; no tokens or target IDs stored.
+
+    One row per authenticated account, shared across sessions and schools.
+    The caller locks the auth user before updating this row to serialize
+    concurrent attempts on PostgreSQL. No public routing is enabled here.
+    """
+
+    user = models.OneToOneField(
+        settings.AUTH_USER_MODEL,
+        on_delete=models.PROTECT,
+        related_name="jireh_redemption_attempt_budget",
+    )
+    window_started_at = models.DateTimeField()
+    attempt_count = models.PositiveSmallIntegerField(default=0)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(attempt_count__lte=10),
+                name="jireh_redemption_attempt_max10",
+            ),
+        ]

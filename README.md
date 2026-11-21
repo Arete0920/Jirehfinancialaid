@@ -415,3 +415,27 @@ identity recovery, rate-limiting, CAPTCHA, abuse monitoring or production
 onboarding solution. Do not route it into the deployable runtime before
 authentication, operational rate limiting and provider-delivery controls
 receive independent acceptance.
+
+
+## Durable authenticated redemption attempt budget (test-only)
+
+The disposable test-only household redemption POST endpoint now has a
+**database-backed, account-wide** attempt budget: up to **10 authenticated
+POST attempts per rolling-reset 15-minute window**. The budget is shared
+across browser sessions and school/household URL parameters for the same
+account; invalid credentials and malformed JSON count as attempts. Requests
+beyond the limit return HTTP 429 with a Retry-After header and no grant.
+
+The row stores only the authenticated user, window start and count — **no
+tokens, email addresses, IP addresses, household identifiers or payloads**.
+A database row lock on the user serializes attempt debits on PostgreSQL, and
+a database constraint prevents counts above 10. The attempt is committed
+before redeeming credentials, so a failed redemption cannot erase the debit.
+An account's budget resets on its next request after 15 minutes.
+
+**Not production-ready:** This prototype is not a global IP/network throttle,
+CAPTCHA, distributed abuse monitor, incident logging system, lockout recovery
+flow, or security-certified sign-in system. It must remain test-only until
+trusted login, session policy, host-level protections and operations monitoring
+are separately implemented and verified. The standalone runtime still routes
+only \`/healthz/\`.

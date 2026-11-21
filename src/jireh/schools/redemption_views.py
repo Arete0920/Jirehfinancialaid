@@ -12,6 +12,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
+from .attempt_budget import charge_redemption_attempt
 from .redemption import redeem_household_invitation
 
 
@@ -73,6 +74,18 @@ def test_household_redemption(request, school_id, household_id):
 
     if request.method == "GET":
         return JsonResponse({"ready": True})
+
+    # Debit every authenticated POST, including malformed or invalid codes.
+    # Use a database-persisted, account-wide counter before credential lookup.
+    allowed, retry_after = charge_redemption_attempt(user=user)
+    if not allowed:
+        if retry_after == 0:
+            return JsonResponse({"detail": "Forbidden."}, status=403)
+        response = JsonResponse(
+            {"detail": "Too many redemption attempts."}, status=429,
+        )
+        response["Retry-After"] = str(retry_after)
+        return response
 
     try:
         data = _parse_codes(request)
