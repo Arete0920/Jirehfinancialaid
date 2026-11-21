@@ -284,6 +284,13 @@ class VerifiedPasswordRecoveryTests(TestCase):
                 username=self.parent.username, token=secret,
                 new_password="short",
             )
+        for malformed in (None, 123, "", "x" * 1025):
+            with self.subTest(malformed=type(malformed).__name__):
+                with self.assertRaises(ValidationError):
+                    reset_password_with_recovery(
+                        username=self.parent.username,
+                        token=secret, new_password=malformed,
+                    )
         challenge = PasswordRecoveryChallenge.objects.get()
         self.assertIsNone(challenge.consumed_at)
         self.assertTrue(
