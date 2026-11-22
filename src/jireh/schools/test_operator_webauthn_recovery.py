@@ -211,9 +211,7 @@ class OperatorWebAuthnRecoveryTests(TransactionTestCase):
         with self.assertRaises(PermissionDenied):
             self.revoke(approver_password="bad")
         self.assertEqual(
-            LoginAttemptBudget.objects.filter(
-                identifier_digest__isnull=False,
-            ).count(), 2,
+            LoginAttemptBudget.objects.get().attempt_count, 2,
         )
         self.assertFalse(OperatorWebAuthnRecovery.objects.exists())
 
