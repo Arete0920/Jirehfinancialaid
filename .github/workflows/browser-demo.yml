@@ -8,7 +8,7 @@ on:
       - "scripts/run_local_browser_demo.py"
       - "scripts/verify_local_browser_demo.py"
       - "src/jireh/schools/demo_*.py"
-      - "src/jireh/schools/demo_page.html"
+      - "src/jireh/schools/templates/jireh/demo_page.html"
       - "src/jireh/schools/test_demo_browser.py"
       - "src/jireh/schools/urls.py"
       - "src/jireh/schools/session_views.py"
