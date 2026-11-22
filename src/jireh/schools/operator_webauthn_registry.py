@@ -6,7 +6,6 @@ and signature counter update share one durable transaction. A rejected
 assertion consumes its challenge and cannot mutate a credential.
 """
 
-import hashlib
 import re
 
 from django.core.exceptions import PermissionDenied
