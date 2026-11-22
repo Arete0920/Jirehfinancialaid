@@ -426,5 +426,129 @@
       "topic": "Approval gate",
       "question": "Who signs off final field list, validation, privacy and financial methodology before migrations and customer-facing routes?"
     }
-  ]
+  ],
+  "policy_safety_baselines": {
+    "status": "OWNER_AUTHORIZED_INTERIM_GUARDRAILS_NOT_COLLECTION_APPROVAL",
+    "scope": "Q04-Q10",
+    "issue": "https://github.com/Arete0920/Jirehfinancialaid/issues/43",
+    "note": "Non-operational defaults. Every outstanding_authorizations entry remains an implementation and live-data approval gate. Do not derive runtime settings or live questionnaire fields from this design artifact.",
+    "decisions": {
+      "Q04": {
+        "topic": "Household roster",
+        "guardrails": [
+          "EXPLICIT_SCHOOL_HOUSEHOLD_MEMBERSHIP",
+          "SHARED_STUDENT_NEVER_GRANTS_ACCESS",
+          "MINIMIZE_DUPLICATED_IDENTITIES",
+          "DEPENDENT_COUNT_NEEDS_APPROVED_POLICY"
+        ],
+        "outstanding_authorizations": [
+          "REQUIRED_ADULT_IDENTITY_FIELDS",
+          "DEPENDENT_COUNTING_CRITERIA",
+          "CORRECTION_AND_IDENTITY_VERIFICATION"
+        ]
+      },
+      "Q05": {
+        "topic": "Supporting financial documents",
+        "guardrails": [
+          "UPLOADS_DISABLED_UNTIL_SECURE_STORAGE_APPROVED",
+          "DOCUMENTS_ONLY_BY_APPROVED_QUESTION_RULE",
+          "SCHOOL_HOUSEHOLD_APPLICATION_AUTHORIZATION_REQUIRED",
+          "FILE_ALLOWLIST_AND_MALWARE_CHECK_REQUIRED",
+          "NO_PUBLIC_OBJECT_URLS"
+        ],
+        "outstanding_authorizations": [
+          "REQUIRED_DOCUMENT_TYPES",
+          "FILE_LIMITS",
+          "STORAGE_AND_ENCRYPTION_KEY_DESIGN",
+          "RETENTION_PURGE_AND_BACKUP_RULES"
+        ]
+      },
+      "Q06": {
+        "topic": "School-specific questions",
+        "guardrails": [
+          "CUSTOM_PUBLISHING_DISABLED_UNTIL_REVIEW",
+          "APPROVED_TYPED_ANSWERS_ONLY",
+          "IMMUTABLE_SCHOOL_YEAR_QUESTION_VERSION",
+          "NO_ARBITRARY_UNRESTRICTED_JSON",
+          "SENSITIVE_TOPICS_REQUIRE_SEPARATE_APPROVAL"
+        ],
+        "outstanding_authorizations": [
+          "ALLOWABLE_TOPICS_AND_TYPES",
+          "FIELD_LIMITS",
+          "CONDITIONAL_REQUIREDNESS",
+          "AUTHORIZED_QUESTION_PUBLISHERS"
+        ]
+      },
+      "Q07": {
+        "topic": "Consent and prior-year reuse",
+        "guardrails": [
+          "NO_PRESELECTED_OR_IMPLICIT_CONSENT",
+          "ACCURACY_ATTESTATION_SEPARATE_FROM_REUSE_OPT_IN",
+          "PURPOSE_VERSION_ACTOR_TIMESTAMP_SCHOOL_HOUSEHOLD_YEAR_REQUIRED",
+          "NO_AUTOMATIC_CARRY_FORWARD",
+          "NO_CROSS_HOUSEHOLD_CONSENT"
+        ],
+        "outstanding_authorizations": [
+          "LEGAL_REVIEWED_DISCLOSURE_TEXT",
+          "ADULT_ATTESTATION_AUTHORITY",
+          "WITHDRAWAL_PROCEDURE",
+          "REUSE_DURATION_REVERIFICATION"
+        ]
+      },
+      "Q08": {
+        "topic": "Retention security and incident response",
+        "guardrails": [
+          "NO_LIVE_DATA_WITHOUT_SIGNED_RETENTION_SCHEDULE",
+          "DATA_CLASS_SPECIFIC_RETENTION_AND_PURGE",
+          "ENCRYPTION_IN_TRANSIT_AND_AT_REST_REQUIRED",
+          "METADATA_ONLY_AUDIT",
+          "SCHOOL_BOUND_EXPORT_AUTHORIZATION",
+          "BACKUP_PURGE_HOLD_POLICY_REQUIRED",
+          "NAMED_INCIDENT_RESPONDERS_REQUIRED"
+        ],
+        "outstanding_authorizations": [
+          "RETENTION_PERIODS_AND_TRIGGERS",
+          "LEGAL_APPLICABILITY_PER_JURISDICTION",
+          "KEY_STORAGE_AND_THREAT_MODEL",
+          "DELETION_AND_BACKUP_EXPIRY",
+          "INCIDENT_ESCALATION_AND_NOTIFICATION"
+        ]
+      },
+      "Q09": {
+        "topic": "Financial-answer verification",
+        "guardrails": [
+          "SELF_ATTESTED_IS_NOT_VERIFIED",
+          "NO_AUTOMATIC_VERIFICATION_FROM_UPLOAD_OR_CALCULATION",
+          "REVIEW_REQUIRES_EXPLICIT_ACTIVE_SCHOOL_ROLE",
+          "EVIDENCE_PROVENANCE_REQUIRED",
+          "METADATA_ONLY_VERIFICATION_AUDIT",
+          "CORRECTIONS_INVALIDATE_AFFECTED_VERIFICATION"
+        ],
+        "outstanding_authorizations": [
+          "REVIEW_EVIDENCE_STANDARDS",
+          "VERIFICATION_STATE_MACHINE",
+          "ADDITIONAL_STAFF_ROLES_IF_ANY",
+          "REVERIFICATION_AFTER_CORRECTION"
+        ]
+      },
+      "Q10": {
+        "topic": "Final policy and release authorization",
+        "guardrails": [
+          "VERSIONED_FIELD_CONTRACT_BEFORE_SCHEMA_CHANGE",
+          "PRODUCT_OWNER_OR_AUTHORIZED_INTEGRATION_MANAGER_SIGNOFF",
+          "PRIVACY_SECURITY_REVIEW_REQUIRED",
+          "EXACT_RELEASE_SHA_ENVIRONMENT_EVIDENCE",
+          "ALL_PRODUCTION_GATES_PASS_BEFORE_LIVE_DATA",
+          "FINANCIAL_METHODOLOGY_SEPARATELY_APPROVED"
+        ],
+        "outstanding_authorizations": [
+          "FINAL_FIELD_AND_ROLE_MATRIX",
+          "SIGNED_CONSENT_RETENTION_PRIVACY_APPROVAL",
+          "PROVEN_SECURITY_AND_RECOVERY",
+          "APPROVED_FINANCIAL_METHODOLOGY",
+          "EXPLICIT_RELEASE_GO_DECISION"
+        ]
+      }
+    }
+  }
 }
