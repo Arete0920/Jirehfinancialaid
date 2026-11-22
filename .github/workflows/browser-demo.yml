@@ -15,6 +15,20 @@ on:
       - "src/jireh/financial_aid/**"
       - "requirements.txt"
 
+  push:
+    branches: [main]
+    paths:
+      - ".github/workflows/browser-demo.yml"
+      - "scripts/run_local_browser_demo.py"
+      - "scripts/verify_local_browser_demo.py"
+      - "src/jireh/schools/demo_*.py"
+      - "src/jireh/schools/templates/jireh/demo_page.html"
+      - "src/jireh/schools/test_demo_browser.py"
+      - "src/jireh/schools/urls.py"
+      - "src/jireh/schools/session_views.py"
+      - "src/jireh/financial_aid/**"
+      - "requirements.txt"
+
 permissions:
   contents: read
 
@@ -40,17 +54,20 @@ jobs:
       - name: Drive disposable synthetic browser and capture evidence
         run: python scripts/verify_local_browser_demo.py
       - name: Inspect public SonarCloud PR findings (diagnostic only)
-        if: always()
+        if: always() && github.event_name == 'pull_request'
+        env:
+          JIREH_SONAR_PR_NUMBER: ${{ github.event.pull_request.number }}
         run: |
           python - <<'PY'
           import json
+          import os
           from urllib.error import HTTPError, URLError
           from urllib.parse import urlencode
           from urllib.request import urlopen
 
           params = urlencode({
               "componentKeys": "Arete0920_Jirehfinancialaid",
-              "pullRequest": "52",
+              "pullRequest": os.environ["JIREH_SONAR_PR_NUMBER"],
               "resolved": "false",
               "ps": 100,
           })
@@ -79,4 +96,4 @@ jobs:
           name: jireh-synthetic-browser-evidence
           path: artifacts/synthetic-demo/
           if-no-files-found: warn
-          retention-days: 7
+          retention-days: 14
