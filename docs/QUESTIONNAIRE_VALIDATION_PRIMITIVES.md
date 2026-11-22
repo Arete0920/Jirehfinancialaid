@@ -5,8 +5,8 @@ approved, but individual financial fields, applicable tax years, amount limits,
 contributor rights, document requirements and actual consent language remain
 unapproved. This module must not be connected to real-family data yet.
 
-`src/jireh/financial_aid/questionnaire_validation.py` adds three narrowly
-typed, pure validators plus optional-consent handling:
+`src/jireh/financial_aid/questionnaire_validation.py` provides strictly
+side-effect-free, policy-parameterized validation helpers:
 
 - `validate_amount_cents(value, *, min_cents, max_cents)` requires an exact
   Python integer, rejects booleans and decimal/string coercion, and requires
@@ -17,6 +17,16 @@ typed, pure validators plus optional-consent handling:
 - `validate_flow(..., period_start, period_end, min_cents, max_cents)` requires
   valid `YYYY-MM-DD` dates and a non-inverted interval. It does not annualize,
   normalize to a tax year, determine countable income or categorize expense.
+- `validate_calendar_year_flow(..., reporting_year, ...)` requires a caller-
+  selected integer calendar year and rejects flows with either endpoint outside
+  it; it never selects the school aid-cycle reporting year or splits/annualizes.
+- `validate_typed_question_answer(..., answer_type, enum_options)` supports
+  strict boolean and exact-option enum *candidate* wire types only. Enum
+  options must be an explicit nonempty tuple of distinct, nonblank strings;
+  unsupported types, nested JSON, missing answers and coercion fail closed.
+  The choices in synthetic tests are **not approved school questions**. This
+  helper is not evidence that a question, version, school/year scope, publisher,
+  requiredness, or collection method has been authorized; Q06 remains gated.
 - `validate_balance(..., as_of_date, min_cents, max_cents)` requires an exact
   snapshot date, not a flow or implied annual amount. It does not determine
   whether an asset/liability qualifies for financial assessment.
