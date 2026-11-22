@@ -1,6 +1,5 @@
 """Synthetic local cryptographic WebAuthn assertions: no real operators or keys."""
 
-from dataclasses import replace
 import unittest
 
 from cryptography.hazmat.primitives import hashes
