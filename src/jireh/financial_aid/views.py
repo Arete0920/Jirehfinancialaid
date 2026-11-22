@@ -13,7 +13,7 @@ from django.views.decorators.http import require_safe
 from jireh.schools.access import require_aid_director_access
 from jireh.schools.models import AcademicYear
 
-from .models import AidApplication
+from .models import AidApplication, AidApplicationStudent
 
 
 @never_cache
@@ -53,5 +53,50 @@ def staff_application_index(request, school_id, academic_year_id):
                 for row in rows[:100]
             ],
             "has_more": len(rows) > 100,
+        }
+    )
+
+
+@never_cache
+@require_safe
+def staff_application_detail(request, school_id, academic_year_id, application_id):
+    """Authorized read-only draft case detail for disposable test routing only.
+
+    This deliberately excludes household identity, financial questions,
+    assessments, documents, and awards. The URL is untrusted school scope.
+    """
+    try:
+        school = require_aid_director_access(request.user, school_id=school_id)
+    except PermissionDenied:
+        return JsonResponse({"detail": "Forbidden."}, status=403)
+    except Http404:
+        return JsonResponse({"detail": "Not found."}, status=404)
+
+    application = (
+        AidApplication.objects.for_school(school.pk)
+        .filter(
+            pk=application_id,
+            academic_year_id=academic_year_id,
+            status=AidApplication.STATUS_DRAFT,
+        )
+        .first()
+    )
+    if application is None:
+        return JsonResponse({"detail": "Not found."}, status=404)
+
+    selected_ids = list(
+        AidApplicationStudent.objects.for_school(school.pk)
+        .filter(application_id=application.pk)
+        .order_by("household_student__student_id")
+        .values_list("household_student__student_id", flat=True)
+    )
+    return JsonResponse(
+        {
+            "school_id": str(school.pk),
+            "academic_year_id": str(application.academic_year_id),
+            "application_id": str(application.pk),
+            "status": application.status,
+            "selected_student_count": len(selected_ids),
+            "selected_student_ids": [str(student_id) for student_id in selected_ids],
         }
     )

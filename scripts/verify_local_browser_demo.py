@@ -83,6 +83,8 @@ def main():
 
             page.get_by_role("button", name="School A director").click()
             expect(page.locator("#application-count")).to_have_text("1")
+            page.get_by_role("button", name="View selected children").click()
+            expect(page.locator("#case-detail")).to_contain_text("selected children: 2")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
             page.get_by_role("button", name="Verify other school is denied").click()
             expect(page.locator("#events")).to_contain_text(

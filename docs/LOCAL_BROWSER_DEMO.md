@@ -43,6 +43,8 @@ over loopback HTTP. Do not use on untrusted workstations or with real data.
    School B access and rejects a request missing its CSRF header.
 5. **School A director:** Switch personas (logging out the prior account)
    and see the school's read-only draft inventory.
+   Select **View selected children** to inspect the authorized draft's read-only
+   child-selection count. No financial information or award is exposed.
 6. **School B director:** See that this director cannot read School A's
    inventory and has no School B drafts.
 
