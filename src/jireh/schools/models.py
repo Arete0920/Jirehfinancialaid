@@ -1025,3 +1025,55 @@ class OperatorWebAuthnCredential(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Operator credentials cannot be deleted.")
+
+
+class OperatorWebAuthnRegistration(UUIDStampedModel):
+    """One-use internal registration ceremony, not verified identity enrollment."""
+
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_operator_webauthn_registrations",
+    )
+    rp_id = models.CharField(max_length=253)
+    origin = models.CharField(max_length=261)
+    challenge = models.CharField(max_length=128, unique=True)
+    expires_at = models.DateTimeField()
+    closed_at = models.DateTimeField(null=True, blank=True)
+    credential_id_digest = models.CharField(max_length=64, null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["operator"], condition=Q(closed_at__isnull=True),
+                name="jireh_one_open_operator_registration",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(credential_id_digest__isnull=True) |
+                    Q(closed_at__isnull=False)
+                ),
+                name="jireh_operator_registration_closed",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.origin != f"https://{self.rp_id}":
+            raise ValidationError("Registration origin must match its RP.")
+        if self.credential_id_digest is not None and self.closed_at is None:
+            raise ValidationError("Registered credential requires closed ceremony.")
+        if not self._state.adding:
+            old = type(self).objects.filter(pk=self.pk).values(
+                "operator_id", "rp_id", "origin", "challenge", "expires_at",
+                "closed_at", "credential_id_digest",
+            ).first()
+            if old:
+                for field in ("operator_id", "rp_id", "origin",
+                              "challenge", "expires_at"):
+                    if getattr(self, field) != old[field]:
+                        raise ValidationError("Registration binding is immutable.")
+                if old["closed_at"] is not None:
+                    raise ValidationError("Closed registration is immutable.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Registration history cannot be deleted.")
