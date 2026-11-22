@@ -58,9 +58,12 @@ def main():
             expect(page.locator("#school-name")).to_have_text("Synthetic Christian Academy")
             page.get_by_role("button", name="Create / resume annual draft").click()
             expect(page.locator("#draft-status")).to_have_text("DRAFT")
-            for _ in range(2):
+            for selected_count in range(2):
                 page.locator("#children button").filter(has_text="Select child").first.click()
-            expect(page.locator("#children button").filter(has_text="Selected")).to_have_count(2)
+                # Wait for each async POST and UI refresh before the next click.
+                expect(
+                    page.locator("#children button").filter(has_text="Selected")
+                ).to_have_count(selected_count + 1)
             page.get_by_role("button", name="Verify School B access is denied").click()
             expect(page.locator("#events")).to_contain_text("PASS: School B family draft denied (404)")
             page.get_by_role("button", name="Verify CSRF protection").click()
