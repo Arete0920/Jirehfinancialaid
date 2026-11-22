@@ -263,6 +263,44 @@ class OperatorCredentialRegistryTests(TransactionTestCase):
             with transaction.atomic():
                 OperatorWebAuthnCredential.objects.filter(pk=self.credential.pk).delete()
 
+    def test_postgresql_unapproved_credential_activation_rejected(self):
+        if connection.vendor != "postgresql":
+            return
+        pending_id = b"synthetic-unapproved-credential-key-2026"
+        pending_key = ec.generate_private_key(ec.SECP256R1())
+        pending_data = bytes(AttestedCredentialData.create(
+            b"\x00" * 16, pending_id,
+            ES256.from_cryptography_key(pending_key.public_key()),
+        ))
+        pending_digest = hashlib.sha256(pending_id).hexdigest()
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                OperatorWebAuthnCredential.objects.create(
+                    operator=self.operator,
+                    credential_id_digest=pending_digest,
+                    credential_data=pending_data,
+                    rp_id=RP, origin=ORIGIN,
+                    enrollment_verified_at=timezone.now(),
+                )
+        pending = OperatorWebAuthnCredential.objects.create(
+            operator=self.operator,
+            credential_id_digest=pending_digest,
+            credential_data=pending_data,
+            rp_id=RP, origin=ORIGIN,
+        )
+        with self.assertRaises(IntegrityError):
+            with transaction.atomic():
+                OperatorWebAuthnCredential.objects.filter(pk=pending.pk).update(
+                    enrollment_verified_at=timezone.now(),
+                )
+        pending.refresh_from_db()
+        self.assertIsNone(pending.enrollment_verified_at)
+        self.assertFalse(
+            OperatorWebAuthnEnrollmentApproval.objects.filter(
+                credential=pending,
+            ).exists()
+        )
+
     def test_failed_database_update_rolls_back_challenge_success(self):
         options, request_id = self.begin()
         with patch(
