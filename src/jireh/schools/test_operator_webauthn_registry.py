@@ -146,11 +146,27 @@ class OperatorCredentialRegistryTests(TransactionTestCase):
             self.complete(request_id, self.assertion(options))
 
     def test_unverified_credential_never_issues_a_challenge(self):
-        self.credential.enrollment_verified_at = None
-        self.credential.save(update_fields=["enrollment_verified_at", "updated_at"])
+        unverified_id = b"synthetic-pending-verification-key-id"
+        unverified_data = bytes(AttestedCredentialData.create(
+            b"\x00" * 16, unverified_id,
+            ES256.from_cryptography_key(self.key.public_key()),
+        ))
+        unverified_digest = hashlib.sha256(unverified_id).hexdigest()
+        OperatorWebAuthnCredential.objects.create(
+            operator=self.operator,
+            credential_id_digest=unverified_digest,
+            credential_data=unverified_data,
+            rp_id=RP, origin=ORIGIN,
+            enrollment_verified_at=None,
+        )
         with self.assertRaises(PermissionDenied):
-            self.begin()
+            self.begin(digest=unverified_digest)
         self.assertFalse(OperatorWebAuthnChallenge.objects.exists())
+
+    def test_verified_enrollment_cannot_be_erased(self):
+        self.credential.enrollment_verified_at = None
+        with self.assertRaises(ValidationError):
+            self.credential.save()
 
     def test_revocation_blocks_new_and_pending_challenges(self):
         options, request_id = self.begin()
@@ -190,7 +206,7 @@ class OperatorCredentialRegistryTests(TransactionTestCase):
         with self.assertRaises(ValidationError):
             self.credential.save()
         self.credential.refresh_from_db()
-        self.credential.credential_data = bytes(original[:-1] + b"\x00")
+        self.credential.credential_data = bytes(original)[:-1] + bytes([original[-1] ^ 1])
         with self.assertRaises(ValidationError):
             self.credential.save()
 
