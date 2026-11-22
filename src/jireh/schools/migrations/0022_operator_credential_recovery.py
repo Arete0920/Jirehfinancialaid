@@ -39,18 +39,18 @@ BEGIN
     IF NEW.confirmed_by_id = NEW.operator_id
         OR NOT EXISTS (
             SELECT 1 FROM schools_operatorwebauthnrecovery r
-            JOIN schools_operatorwebauthncredential old
-              ON old.id = r.credential_id
+            JOIN schools_operatorwebauthncredential lost_key
+              ON lost_key.id = r.credential_id
             JOIN schools_operatorwebauthncredential fresh
               ON fresh.id = NEW.replacement_credential_id
             JOIN schools_operatorwebauthnenrollmentapproval a
               ON a.credential_id = fresh.id
             WHERE r.id = NEW.recovery_id
               AND r.operator_id = NEW.operator_id
-              AND old.revoked_at = r.authorized_at
-              AND fresh.id <> old.id
+              AND lost_key.revoked_at = r.authorized_at
+              AND fresh.id <> lost_key.id
               AND fresh.operator_id = r.operator_id
-              AND fresh.rp_id = old.rp_id AND fresh.origin = old.origin
+              AND fresh.rp_id = lost_key.rp_id AND fresh.origin = lost_key.origin
               AND fresh.created_at > r.authorized_at
               AND fresh.enrollment_verified_at IS NOT NULL
               AND fresh.enrollment_verified_at > r.authorized_at
