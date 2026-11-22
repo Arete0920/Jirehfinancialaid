@@ -48,21 +48,21 @@
     "money_flow": {
       "wire_type": "integer",
       "unit": "USD cents",
-      "min": 0,
+      "min": "PENDING_OWNER_POLICY",
       "period_required": true,
       "period_choices": [
         "CALENDAR_YEAR",
         "MONTH",
         "OTHER_APPROVED"
       ],
-      "note": "period_start and period_end required; conversion and category interpretation not approved"
+      "note": "Period start/end required; no period conversion or allowable value bounds approved"
     },
     "money_balance": {
       "wire_type": "integer",
       "unit": "USD cents",
-      "min": 0,
+      "min": "PENDING_OWNER_POLICY",
       "as_of_date_required": true,
-      "note": "Balance at a date, never annualized"
+      "note": "Snapshot valuation as-of date required; limits, inclusions, and negative handling not approved"
     },
     "date": {
       "wire_type": "ISO-8601 date"
@@ -74,6 +74,11 @@
     "consent_decision": {
       "wire_type": "explicit_boolean_with_server_timestamp",
       "note": "purpose-specific, no default true"
+    },
+    "timestamp": {
+      "wire_type": "ISO-8601 UTC timestamp",
+      "source": "server",
+      "note": "Timezone-aware server-side event time only; cannot be supplied by applicant"
     }
   },
   "sections": [
@@ -362,10 +367,10 @@
         },
         {
           "id": "consent.attestation_timestamp",
-          "type": "date",
+          "type": "timestamp",
           "required": "server",
           "sensitivity": "internal",
-          "note": "Actual implementation must use timezone-aware server timestamp, not this illustrative date type"
+          "note": "Server-supplied timezone-aware timestamp, not an applicant-controlled value"
         }
       ]
     }
