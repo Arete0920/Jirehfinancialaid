@@ -749,7 +749,7 @@ registry tests create matching synthetic audit and possession evidence.
 No production MFA is enabled.
 
 
-### Action-bound WebAuthn evidence (internal-only, not yet enforced)
+### Mandatory action-bound WebAuthn for first-director bootstrap (internal-only)
 
 The `operator_webauthn_actions` service creates a one-use evidence record
 for a specific **first-director proposal or approval**, hashing the canonical
@@ -758,13 +758,19 @@ before exposing a WebAuthn challenge. Only a verified, active registered
 operator key may sign the challenge. Mismatched action context, expired
 or unverified assertions, revoked credentials, and consumed records are
 rejected. PostgreSQL prevents raw rewrites, replay and deletion of evidence.
-Consumption is restricted to the same database transaction as the future
-privileged action so the evidence rolls back when the action fails.
+Both first-director proposal and independent approval now require the
+exact operator's fresh, action-matched proof, consumed in the **same database
+transaction** as proposal/grant creation. A wrong school, subject, request,
+authorization reference, operator, revoked key, expired assertion or already
+consumed proof fails closed. The original password and attempt-budget checks
+and two-distinct-operator requirement remain in force. If either the action
+MFA flag or the bootstrap feature is disabled, no grant can proceed.
 
-This is NOT yet connected to the first-director grant service. Creating or
-verifying a proof does not authorize a grant, login or operator session.
-`JIREH_OPERATOR_ACTION_MFA_ENABLED` defaults to false. Existing bootstrap
-remains separately disabled by default; do not activate it for real schools
-until mandatory MFA consumption is integrated, tested and independently
-accepted. The strict positive-increasing-counter authenticator policy still
-applies; credential recovery and hardware backup-state policy remain pending.
+`JIREH_OPERATOR_ACTION_MFA_ENABLED` and
+`JIREH_FIRST_DIRECTOR_BOOTSTRAP_ENABLED` both default to false. This code
+has **no live operator console, public endpoints or production acceptance**.
+Human identity verification, real credential onboarding, recovery and
+hardware backup-state policy are still required before real-school use.
+Synthetic cryptographic integration tests exercise both operator signatures,
+wrong scope, replay, revocation, and transactional rollback. A verified proof
+does not itself grant login or an operator session.
