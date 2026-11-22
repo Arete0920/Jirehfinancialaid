@@ -114,6 +114,41 @@ class QuestionnaireFieldCatalogDesignTests(unittest.TestCase):
         self.assertIn("explicit_boolean", self.catalog["types"]["consent_decision"]["wire_type"])
         self.assertEqual(fields["consent.attestation_actor_id"]["required"], "server")
 
+    def test_owner_authorized_interim_guardrails_preserve_gates(self):
+        baselines = self.catalog["policy_safety_baselines"]
+        self.assertEqual(
+            baselines["status"],
+            "OWNER_AUTHORIZED_INTERIM_GUARDRAILS_NOT_COLLECTION_APPROVAL",
+        )
+        self.assertEqual(baselines["scope"], "Q04-Q10")
+        self.assertEqual(
+            list(baselines["decisions"]),
+            [f"Q{i:02}" for i in range(4, 11)],
+        )
+        for decision_id, decision in baselines["decisions"].items():
+            with self.subTest(decision=decision_id):
+                self.assertTrue(decision["topic"])
+                self.assertTrue(decision["guardrails"])
+                self.assertTrue(decision["outstanding_authorizations"])
+                self.assertEqual(
+                    len(decision["guardrails"]),
+                    len(set(decision["guardrails"])),
+                )
+
+    def test_interim_guardrails_never_approve_collection(self):
+        self.assertEqual(
+            self.catalog["schema_status"],
+            "DESIGN_ONLY_NOT_APPROVED_FOR_COLLECTION",
+        )
+        self.assertIs(self.catalog["requirements"]["no_data_storage"], True)
+        self.assertIs(self.catalog["requirements"]["no_production_routes"], True)
+        self.assertIs(self.catalog["requirements"]["no_implicit_carry_forward"], True)
+        self.assertEqual(
+            [d["id"] for d in self.catalog["pending_owner_decisions"]],
+            [f"Q{i:02}" for i in range(1, 11)],
+        )
+        self.assertNotIn("production_enabled", self.catalog)
+
     def test_unapproved_policy_decisions_are_explicit(self):
         decisions = self.catalog["pending_owner_decisions"]
         self.assertEqual([d["id"] for d in decisions], [f"Q{i:02}" for i in range(1, 11)])
