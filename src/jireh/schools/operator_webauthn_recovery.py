@@ -162,6 +162,10 @@ def confirm_recovery_replacement(
             )
             if recovery is None or actor.pk == recovery.operator_id:
                 raise PermissionDenied("Independent recovery confirmation required.")
+            if OperatorWebAuthnRecoveryReplacement.objects.filter(
+                recovery=recovery,
+            ).exists():
+                raise PermissionDenied("Recovery replacement already confirmed.")
             # Serialize replacement against registration/activation/revocation.
             operator = (
                 get_user_model()._default_manager.select_for_update()
