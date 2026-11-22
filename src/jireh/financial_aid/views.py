@@ -72,12 +72,18 @@ def staff_application_detail(request, school_id, academic_year_id, application_i
     except Http404:
         return JsonResponse({"detail": "Not found."}, status=404)
 
-    application = get_object_or_404(
-        AidApplication.objects.for_school(school.pk),
-        pk=application_id,
-        academic_year_id=academic_year_id,
-        status=AidApplication.STATUS_DRAFT,
+    application = (
+        AidApplication.objects.for_school(school.pk)
+        .filter(
+            pk=application_id,
+            academic_year_id=academic_year_id,
+            status=AidApplication.STATUS_DRAFT,
+        )
+        .first()
     )
+    if application is None:
+        return JsonResponse({"detail": "Not found."}, status=404)
+
     selected_ids = list(
         AidApplicationStudent.objects.for_school(school.pk)
         .filter(application_id=application.pk)
