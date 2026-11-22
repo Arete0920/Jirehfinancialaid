@@ -50,7 +50,7 @@ def install(apps, schema_editor):
     with schema_editor.connection.cursor() as cursor:
         cursor.execute(GUARD_SQL)
         cursor.execute(
-            "CREATE TRIGGER jireh_operator_enrollment_approval_guard "
+            "CREATE TRIGGER jireh_operator_enrollment_approval_protect_trigger "
             "BEFORE INSERT OR UPDATE OR DELETE ON "
             "schools_operatorwebauthnenrollmentapproval "
             "FOR EACH ROW EXECUTE FUNCTION "
@@ -63,7 +63,7 @@ def remove(apps, schema_editor):
         return
     with schema_editor.connection.cursor() as cursor:
         cursor.execute(
-            "DROP TRIGGER IF EXISTS jireh_operator_enrollment_approval_guard "
+            "DROP TRIGGER IF EXISTS jireh_operator_enrollment_approval_protect_trigger "
             "ON schools_operatorwebauthnenrollmentapproval"
         )
         cursor.execute(
