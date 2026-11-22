@@ -1,0 +1,40 @@
+name: Jireh reused UI component verification
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ui-reuse.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/**"
+      - ".github/workflows/ui-reuse.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  reusable-wizard:
+    name: Locked React/Vite wizard tests and build
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - name: Checkout
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22.23.3"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+      - name: Install locked dependencies
+        run: npm ci --no-audit
+      - name: Run copied CROWN regression and standalone header test
+        run: npm run test
+      - name: Bundle reused components without mounting any customer routes
+        run: npm run build
