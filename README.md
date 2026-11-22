@@ -662,3 +662,24 @@ disabled by default; no customer accounts or production resources are touched.
 The strict-increasing-counter prototype intentionally excludes devices that
 always return zero. A documented backup-state and counter policy is still
 required before production rollout.
+
+### Internal WebAuthn registration ceremony (inactive, pending-only)
+
+The `operator_webauthn_registration` service adds a five-minute,
+operator-bound and one-use registration ceremony. The Yubico FIDO2 server
+checks the exact relying-party origin, challenge, user presence, user
+verification and registration data. Rejected/expired submissions are
+consumed, and the protected PostgreSQL journal forbids reopening history.
+New public keys are stored **unverified** (`enrollment_verified_at=NULL`).
+The ceremony requires `JIREH_OPERATOR_WEBAUTHN_REGISTRATION_ENABLED=True`
+as well as the existing internal challenge feature flag; both are disabled
+by default. No public URL or production deployment enables them.
+
+**Security boundary:** WebAuthn registration with attestation `none` is
+not evidence of independently verified operator identity, trusted device
+provenance or an approved institutional enrollment. It cannot mark a
+credential verified; an additional independently authorized identity
+verification and proof-of-possession workflow must be built and accepted
+before keys are enabled. No authenticated session, school role or privileged
+bootstrap decision is granted. Synthetic tests are not a production
+registration certification.
