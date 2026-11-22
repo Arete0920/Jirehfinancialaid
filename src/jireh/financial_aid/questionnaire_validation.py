@@ -137,6 +137,43 @@ def validate_balance(
     )
 
 
+def validate_typed_question_answer(
+    *, value: object, answer_type: object, enum_options: object = None
+) -> bool | str:
+    """Reject arbitrary school-question responses without approved field rules.
+
+    Only structural validation for candidate boolean/enum wire types.
+    The caller must separately authorize the immutable question definition,
+    its school/year, version, permissions and requiredness. This does not
+    publish a question or authorize collection, storage or disclosure.
+    """
+    if type(answer_type) is not str or answer_type not in ("boolean", "enum"):
+        raise QuestionnaireValidationError("question_type_unsupported")
+
+    if answer_type == "boolean":
+        if enum_options is not None:
+            raise QuestionnaireValidationError("question_definition_invalid")
+        if type(value) is not bool:
+            raise QuestionnaireValidationError("question_answer_type_invalid")
+        return value
+
+    if (
+        type(enum_options) is not tuple
+        or not enum_options
+        or any(
+            type(option) is not str or not option or option != option.strip()
+            for option in enum_options
+        )
+        or len(set(enum_options)) != len(enum_options)
+    ):
+        raise QuestionnaireValidationError("question_definition_invalid")
+    if type(value) is not str:
+        raise QuestionnaireValidationError("question_answer_type_invalid")
+    if value not in enum_options:
+        raise QuestionnaireValidationError("question_answer_not_allowed")
+    return value
+
+
 def validate_optional_consent(value: object) -> bool | None:
     """Preserve unanswered (None), explicit refusal (False), and opt-in (True).
 
