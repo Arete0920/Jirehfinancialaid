@@ -1361,7 +1361,8 @@ class OperatorWebAuthnRecoveryReplacement(UUIDStampedModel):
                 or credential.rp_id != old.rp_id
                 or credential.origin != old.origin
                 or credential.enrollment_verified_at is None
-                or credential.enrollment_verified_at < self.recovery.authorized_at
+                or credential.created_at <= self.recovery.authorized_at
+                or credential.enrollment_verified_at <= self.recovery.authorized_at
                 or credential.revoked_at is not None
                 or self.confirmed_at < credential.enrollment_verified_at):
             raise ValidationError("A separate, newly approved active key is required.")
