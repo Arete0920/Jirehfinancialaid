@@ -150,6 +150,120 @@ After approval, freeze a separately versioned accepted policy/field contract
 and add disposable synthetic tests before considering migrations. For now,
 keep all product/production collection paths disabled.
 
+## Q04-Q10 interim safeguards — owner-authorized design baseline
+
+**Status: DESIGN GUARDRAILS ONLY; collection and production remain NO-GO.**
+The product owner authorized proceeding with the remaining questionnaire
+policy decisions. The following conservative defaults are recorded for
+engineering design and negative tests, not as permission to collect real
+financial data or as certification of legal/privacy compliance. Specific
+unresolved implementation choices remain in the machine-readable catalog's
+`policy_safety_baselines.decisions[*].outstanding_authorizations` entries.
+All 31 field definitions remain candidates; no field is approved for live
+collection. Existing Q01-Q03 academic-year, financial-value, and independent
+household safeguards continue to apply.
+
+### Q04 — Household roster
+
+Reuse an already-authorized standalone Jireh household/student relationship
+rather than requiring unnecessary duplicate identity entries. A shared child,
+residence, family relationship or financial contributor flag must never grant
+access to another household's data. Dependent counting cannot be inferred
+from the count of linked students or from custodial status.
+
+**Still requires approval:** Minimum adult identity fields; which people
+qualify as dependents and contributors; permitted corrections; and any
+identity-proofing requirements before the questionnaire is released.
+
+### Q05 — Financial documents
+
+Document upload stays disabled until there is approved encrypted storage,
+file-type/size allowlists, malware inspection, exact household/application
+authorization and retention/deletion behavior. No direct public object links,
+credentials or document contents may appear in logs, audit records or exports.
+Do not automatically require tax returns, payroll records or bank statements
+from every family without an approved requirement for the specific question.
+
+**Still requires approval:** Required evidence by question, file limits,
+storage provider and encryption keys, download/revocation controls,
+backup expiry and document retention. Track technical implementation in
+[issue #44](https://github.com/Arete0920/Jirehfinancialaid/issues/44).
+
+### Q06 — School-specific questions
+
+Schools cannot publish new custom questions until question topics, data
+types, conditional logic, length limits and publisher roles have been vetted.
+Definitions must be scoped to school and applicable year, with immutable
+versions for existing answers and no unrestricted JSON/free-form sensitive
+data. Sensitive questions, including those involving affiliation or
+demographics, require separate fairness and privacy review.
+
+**Still requires approval:** Permitted question taxonomy, field bounds,
+school publisher authority and changes to existing questionnaire versions.
+
+### Q07 — Consent and prior-year reuse
+
+Accuracy attestation and optional prior-year reuse are separate affirmative
+acts. Neither is preselected. Reuse cannot occur automatically; any eventual
+consent record must bind explicit purpose, disclosure version, authenticated
+and authorized actor, school/household/year, and server-generated timestamp.
+Consent by one household never authorizes access to another household.
+Withdrawal must stop unauthorized future reuse, but does not automatically
+erase data subject to a separately accepted retention obligation.
+
+**Still requires approval:** Actual consent language, adults authorized to
+attest, withdrawal effects and processes, duration and re-verification.
+Final application submission remains [issue #45](https://github.com/Arete0920/Jirehfinancialaid/issues/45).
+
+### Q08 — Retention, security and incident response
+
+Live financial intake remains disabled until an authorized data-class
+retention and deletion schedule exists. Distinguish drafts, submitted
+answers, supporting files, consent evidence, audit events, exports, backups
+and legal holds. Require encryption in transit/at rest, scoped exports,
+metadata-only audit, reviewed secrets and keys, incident response and
+tested recovery. No blanket retention period or universal legal
+applicability is inferred.
+
+**Still requires approval:** Data-class durations, statutory/contractual
+grounds by school and jurisdiction, key/hosting architecture, named
+responders, breach processes, deletion SLA, backups and holds. These remain
+blocked by [security issue #48](https://github.com/Arete0920/Jirehfinancialaid/issues/48).
+
+### Q09 — Verification
+
+An applicant assertion is not independently verified. Uploaded evidence
+and financial formulas never automatically verify a record. A reviewer
+must have an active, explicit authorization for the correct school and
+documented evidence/provenance. A changed answer invalidates the affected
+verification; log status changes and actor metadata, not raw amounts.
+
+**Still requires approval:** Verification evidence standards, state
+transitions, any additional reviewer roles, and re-review procedures.
+Existing SchoolStaffAccess recognizes AID_DIRECTOR; this design does not
+introduce or authorize another staff role.
+
+### Q10 — Final field, privacy and release approvals
+
+Freeze an owner-approved, versioned field/policy contract before migrations.
+Record authorized product-owner or integration-manager signoff, separate
+privacy/security review, and final financial methodology approval. Live
+operation additionally requires every exact-release production acceptance
+gate to PASS and an explicit environment-specific GO decision. This
+Q04-Q10 design review is **not** that decision.
+
+**Still requires approval:** Exact approved field list, reporting-year
+mapping, amount bounds, household permissions, consent and retention rules,
+data-protection design, scoring methodology, operational evidence and
+production release authorization.
+
+**Engineering follow-on:** Use synthetic tests to enforce scope/consent and
+disabled-capability defaults while Q01-Q10 still contain open policy values.
+Do not create persistent financial-answer models, live questionnaires,
+upload flows or production endpoints from this design metadata.
+
+---
+
 ## Decisions required before any schema migration
 
 The catalog tracks ten open decisions as `Q01` through `Q10`: reporting
