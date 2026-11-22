@@ -77,7 +77,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <script>
 "use strict";
 (() => {
-  const PASSWORD = "Local-Synthetic-Demo-2026-Only!";
+  const PASSWORD = __JIREH_BROWSER_DEMO_PASSWORD__;
   const state = {role: null, config: null, students: [], draft: null};
   const $ = id => document.getElementById(id);
   const cookie = name => (document.cookie.split("; ").find(v=>v.startsWith(name+"="))||"").split("=").slice(1).join("=");
