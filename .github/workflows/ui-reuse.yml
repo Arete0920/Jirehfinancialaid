@@ -32,6 +32,11 @@ jobs:
           node-version: "22.23.3"
           cache: "npm"
           cache-dependency-path: frontend/package-lock.json
+      # Disposable diagnostic; lockfile and manifest remain unchanged in Git.
+      - name: Resolve patched Vitest family and record exact diff
+        run: |
+          npm install --package-lock-only --ignore-scripts --no-audit --no-fund --save-dev --save-exact vitest@4.1.12
+          git diff -- package.json package-lock.json
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit
       - name: Audit locked dependency graph (including development dependencies)
