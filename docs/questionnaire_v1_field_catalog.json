@@ -1,0 +1,430 @@
+{
+  "schema_id": "jireh.financial_questionnaire.v1-design-candidate",
+  "schema_status": "DESIGN_ONLY_NOT_APPROVED_FOR_COLLECTION",
+  "schema_version": "0.1.0",
+  "source": {
+    "crown_repository": "Arete0920/Crown-CSMS",
+    "crown_commit": "46b56609fe18360299b08eabaa8bccdffb356a0e",
+    "crown_models": "backend/aid/models.py",
+    "crown_profile_service": "backend/aid/services/profile_service.py"
+  },
+  "purpose": "Typed field-level proposal for product/privacy review; not a runtime contract or a deployed questionnaire.",
+  "scope": [
+    "school_id",
+    "academic_year_id",
+    "household_id",
+    "application_id"
+  ],
+  "requirements": {
+    "no_production_routes": true,
+    "no_data_storage": true,
+    "no_financial_scoring": true,
+    "no_implicit_carry_forward": true,
+    "no_inferred_household_access": true,
+    "explicit_consent_for_reuse": true,
+    "versioned_question_definitions": true,
+    "audit_metadata_only": true
+  },
+  "types": {
+    "identifier": {
+      "wire_type": "uuid",
+      "note": "Opaque server-bound ID only; never use a posted ID as permission"
+    },
+    "short_text": {
+      "wire_type": "string",
+      "max_length": 160,
+      "normalize": "trim",
+      "note": "Allow only on approved record types; do not log raw values"
+    },
+    "boolean": {
+      "wire_type": "boolean",
+      "nullable": true,
+      "note": "null means unanswered; false means explicitly no"
+    },
+    "enum": {
+      "wire_type": "string",
+      "note": "Only approved enumeration options, no free-form additional values"
+    },
+    "money_flow": {
+      "wire_type": "integer",
+      "unit": "USD cents",
+      "min": "PENDING_OWNER_POLICY",
+      "period_required": true,
+      "period_choices": [
+        "CALENDAR_YEAR",
+        "MONTH",
+        "OTHER_APPROVED"
+      ],
+      "note": "Period start/end required; no period conversion or allowable value bounds approved"
+    },
+    "money_balance": {
+      "wire_type": "integer",
+      "unit": "USD cents",
+      "min": "PENDING_OWNER_POLICY",
+      "as_of_date_required": true,
+      "note": "Snapshot valuation as-of date required; limits, inclusions, and negative handling not approved"
+    },
+    "date": {
+      "wire_type": "ISO-8601 date"
+    },
+    "question_answer": {
+      "wire_type": "typed_by_immutable_question_definition",
+      "note": "No unconstrained arbitrary JSON"
+    },
+    "consent_decision": {
+      "wire_type": "explicit_boolean_with_server_timestamp",
+      "note": "purpose-specific, no default true"
+    },
+    "timestamp": {
+      "wire_type": "ISO-8601 UTC timestamp",
+      "source": "server",
+      "note": "Timezone-aware server-side event time only; cannot be supplied by applicant"
+    }
+  },
+  "sections": [
+    {
+      "id": "household",
+      "name": "Household members and financial contributors",
+      "lifecycle": "candidate",
+      "fields": [
+        {
+          "id": "household.members[].member_id",
+          "type": "identifier",
+          "required": "system",
+          "sensitivity": "personal",
+          "note": "Standalone household-scoped opaque identifier; not an access grant"
+        },
+        {
+          "id": "household.members[].role",
+          "type": "enum",
+          "choices": [
+            "ADULT",
+            "STUDENT",
+            "DEPENDENT",
+            "CONTRIBUTOR"
+          ],
+          "required": "pending-policy",
+          "sensitivity": "personal"
+        },
+        {
+          "id": "household.members[].relationship",
+          "type": "enum",
+          "choices": [
+            "PARENT_GUARDIAN",
+            "SPOUSE_PARTNER",
+            "CHILD_DEPENDENT",
+            "OTHER_APPROVED"
+          ],
+          "required": "pending-policy",
+          "sensitivity": "personal",
+          "note": "Relationship taxonomy requires approval"
+        },
+        {
+          "id": "household.members[].resides_in_household",
+          "type": "boolean",
+          "required": "pending-policy",
+          "sensitivity": "personal"
+        },
+        {
+          "id": "household.members[].financial_contributor",
+          "type": "boolean",
+          "required": "pending-policy",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "household.members[].student_link_id",
+          "type": "identifier",
+          "required": "optional",
+          "sensitivity": "personal",
+          "note": "Must resolve through this household student link; no data access from shared child"
+        }
+      ]
+    },
+    {
+      "id": "income",
+      "name": "Income",
+      "lifecycle": "candidate",
+      "fields": [
+        {
+          "id": "income.items[].category",
+          "type": "enum",
+          "choices": [
+            "EMPLOYMENT",
+            "SELF_EMPLOYMENT",
+            "BENEFITS",
+            "SUPPORT",
+            "OTHER_APPROVED"
+          ],
+          "required": "pending-policy",
+          "sensitivity": "financial",
+          "note": "Names only; inclusion and treatment unresolved"
+        },
+        {
+          "id": "income.items[].amount",
+          "type": "money_flow",
+          "required": "pending-policy",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "income.items[].period_start",
+          "type": "date",
+          "required": "when-amount-present",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "income.items[].period_end",
+          "type": "date",
+          "required": "when-amount-present",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "income.items[].contributor_id",
+          "type": "identifier",
+          "required": "pending-policy",
+          "sensitivity": "financial",
+          "note": "Contributor permission and scope checks mandatory"
+        },
+        {
+          "id": "income.items[].source_type",
+          "type": "enum",
+          "choices": [
+            "APPLICANT",
+            "PRIOR_YEAR",
+            "DOCUMENT",
+            "AUTHORIZED_STAFF"
+          ],
+          "required": "system",
+          "sensitivity": "internal",
+          "note": "Provenance is server-controlled"
+        }
+      ]
+    },
+    {
+      "id": "assets",
+      "name": "Assets",
+      "lifecycle": "candidate",
+      "fields": [
+        {
+          "id": "assets.items[].category",
+          "type": "enum",
+          "choices": [
+            "CASH",
+            "INVESTMENTS",
+            "PROPERTY",
+            "OTHER_APPROVED"
+          ],
+          "required": "pending-policy",
+          "sensitivity": "financial",
+          "note": "Inclusions and exclusions not approved"
+        },
+        {
+          "id": "assets.items[].balance",
+          "type": "money_balance",
+          "required": "pending-policy",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "assets.items[].as_of_date",
+          "type": "date",
+          "required": "when-balance-present",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "assets.items[].owner_member_id",
+          "type": "identifier",
+          "required": "pending-policy",
+          "sensitivity": "financial"
+        }
+      ]
+    },
+    {
+      "id": "liabilities",
+      "name": "Liabilities",
+      "lifecycle": "candidate",
+      "fields": [
+        {
+          "id": "liabilities.items[].category",
+          "type": "enum",
+          "choices": [
+            "MORTGAGE",
+            "EDUCATION_DEBT",
+            "OTHER_DEBT",
+            "OTHER_APPROVED"
+          ],
+          "required": "pending-policy",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "liabilities.items[].balance",
+          "type": "money_balance",
+          "required": "pending-policy",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "liabilities.items[].as_of_date",
+          "type": "date",
+          "required": "when-balance-present",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "liabilities.items[].responsible_member_id",
+          "type": "identifier",
+          "required": "pending-policy",
+          "sensitivity": "financial"
+        }
+      ]
+    },
+    {
+      "id": "expenses",
+      "name": "Recurring expenses",
+      "lifecycle": "candidate",
+      "fields": [
+        {
+          "id": "expenses.items[].category",
+          "type": "enum",
+          "choices": [
+            "HOUSING",
+            "UTILITIES",
+            "CHILDCARE",
+            "MEDICAL",
+            "OTHER_APPROVED"
+          ],
+          "required": "pending-policy",
+          "sensitivity": "financial",
+          "note": "Deductibility and treatment unresolved"
+        },
+        {
+          "id": "expenses.items[].amount",
+          "type": "money_flow",
+          "required": "pending-policy",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "expenses.items[].period_start",
+          "type": "date",
+          "required": "when-amount-present",
+          "sensitivity": "financial"
+        },
+        {
+          "id": "expenses.items[].period_end",
+          "type": "date",
+          "required": "when-amount-present",
+          "sensitivity": "financial"
+        }
+      ]
+    },
+    {
+      "id": "school_questions",
+      "name": "School-specific questions",
+      "lifecycle": "candidate",
+      "fields": [
+        {
+          "id": "school_questions[].definition_id",
+          "type": "identifier",
+          "required": "system",
+          "sensitivity": "internal"
+        },
+        {
+          "id": "school_questions[].definition_version",
+          "type": "short_text",
+          "required": "system",
+          "sensitivity": "internal",
+          "note": "Immutable version; school/year/question-key uniqueness separate from response validation"
+        },
+        {
+          "id": "school_questions[].answer",
+          "type": "question_answer",
+          "required": "by-versioned-definition",
+          "sensitivity": "restricted",
+          "note": "Type and options set by approved version, no arbitrary JSON"
+        }
+      ]
+    },
+    {
+      "id": "consent",
+      "name": "Consent and attestation",
+      "lifecycle": "candidate",
+      "fields": [
+        {
+          "id": "consent.current_year_accuracy",
+          "type": "consent_decision",
+          "required": "pending-policy",
+          "sensitivity": "restricted"
+        },
+        {
+          "id": "consent.prior_year_reuse",
+          "type": "consent_decision",
+          "required": "optional",
+          "sensitivity": "restricted",
+          "note": "False unless explicitly opted in; scoped to same school/household and purpose"
+        },
+        {
+          "id": "consent.attestation_actor_id",
+          "type": "identifier",
+          "required": "server",
+          "sensitivity": "internal",
+          "note": "Actor must be explicitly authorized to attest"
+        },
+        {
+          "id": "consent.attestation_timestamp",
+          "type": "timestamp",
+          "required": "server",
+          "sensitivity": "internal",
+          "note": "Server-supplied timezone-aware timestamp, not an applicant-controlled value"
+        }
+      ]
+    }
+  ],
+  "pending_owner_decisions": [
+    {
+      "id": "Q01",
+      "topic": "Reporting years",
+      "question": "Calendar tax year, school financial-aid year, or both for annual cash flow?"
+    },
+    {
+      "id": "Q02",
+      "topic": "Money rules",
+      "question": "Allowed amounts, currency, rounding, negative/correction semantics, periods, and balance snapshot valuation date?"
+    },
+    {
+      "id": "Q03",
+      "topic": "Custody and financial contributors",
+      "question": "Which adults may enter, review or consent to separate financial disclosures; can one household view another household's answers? Default no."
+    },
+    {
+      "id": "Q04",
+      "topic": "Household roster",
+      "question": "Required identity fields, dependent counting rules and whether to avoid duplicating names already in school records?"
+    },
+    {
+      "id": "Q05",
+      "topic": "Documentation",
+      "question": "Which question types demand which supporting documents; upload limits, malware and encryption policy?"
+    },
+    {
+      "id": "Q06",
+      "topic": "Custom school questions",
+      "question": "Allowed data types, topics, optional fields, conditional logic, and version freezing?"
+    },
+    {
+      "id": "Q07",
+      "topic": "Consent and carry-forward",
+      "question": "Purpose-specific consent text, scope, duration, withdrawal, re-verification and past-year data reuse?"
+    },
+    {
+      "id": "Q08",
+      "topic": "Retention and incident handling",
+      "question": "Retention, deletion, access logs, exports, encryption, support escalation and incident response?"
+    },
+    {
+      "id": "Q09",
+      "topic": "Verification",
+      "question": "Who can label data verified and how does that differ from self-attested or document-reviewed?"
+    },
+    {
+      "id": "Q10",
+      "topic": "Approval gate",
+      "question": "Who signs off final field list, validation, privacy and financial methodology before migrations and customer-facing routes?"
+    }
+  ]
+}
