@@ -135,11 +135,9 @@ class OperatorEnrollmentApprovalTests(TransactionTestCase):
         proof = OperatorWebAuthnPossessionChallenge.objects.get(
             verified_at__isnull=False,
         )
-        proof.verified_at = timezone.now() - timedelta(hours=25)
-        proof.closed_at = proof.verified_at
-        # Synthetic fixture adjustment uses QuerySet.update; PostgreSQL
-        # protects finalized proof history, so mock the time at approval.
-        proof.refresh_from_db()
+        # Keep immutable proof evidence intact; advance the approval clock
+        # instead to exercise expiry on SQLite and PostgreSQL alike.
+        self.assertIsNotNone(proof.verified_at)
         with patch(
             "jireh.schools.operator_webauthn_approval.timezone.now",
             return_value=timezone.now() + timedelta(hours=25),
