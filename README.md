@@ -569,6 +569,16 @@ privilege grant. Even a **revoked** historical director grant blocks initial
 bootstrap, preventing use as a privilege-restoration path. Expired proposals
 may be closed and replaced without deleting their history.
 
+The existing bounded authentication counter now provides a separate
+**10 attempts per 15 minutes per allowlisted operator** budget for both
+proposal and approval calls. Operator identifiers are HMAC-pseudonymized
+and never stored in plaintext. The debit is committed before the
+grant-issuing transaction, so rejected passwords cannot refund an attempt.
+Missing database storage and rollback-capable outer transactions fail closed.
+This does not replace phishing-resistant operator MFA, institutional
+authorization, secure enrollment/recovery or abuse monitoring; those
+remain requirements before any real operation.
+
 **Not enabled or deployed:** The bootstrap setting defaults to disabled
 and no operator IDs are configured by runtime settings. The service is not
 an HTTP endpoint, a customer onboarding workflow, a school creator, or

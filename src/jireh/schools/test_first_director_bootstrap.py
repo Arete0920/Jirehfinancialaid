@@ -6,7 +6,7 @@ from unittest.mock import patch
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import AnonymousUser
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import IntegrityError, connection, transaction
+from django.db import DatabaseError, IntegrityError, connection, transaction
 from django.http import Http404
 from django.test import TestCase
 from django.utils import timezone
@@ -16,7 +16,7 @@ from .first_director_bootstrap import (
     approve_first_director, propose_first_director,
 )
 from .models import (
-    FirstDirectorBootstrapRequest, School, SchoolGrantDecisionEvent,
+    FirstDirectorBootstrapRequest, LoginAttemptBudget, School, SchoolGrantDecisionEvent,
     SchoolStaffAccess,
 )
 from .password_recovery import enroll_verified_recovery_contact
@@ -168,6 +168,40 @@ class FirstDirectorBootstrapTests(TestCase):
         with self.assertRaises(PermissionDenied):
             self.approve(proposal, operator_password="incorrect")
         self.assertFalse(SchoolStaffAccess.objects.exists())
+
+    def test_failed_password_checks_exhaust_operator_budget(self):
+        self.verify()
+        for _ in range(10):
+            with self.assertRaises(PermissionDenied):
+                self.propose(operator_password="invalid")
+        self.assertEqual(LoginAttemptBudget.objects.get().attempt_count, 10)
+        with self.assertRaises(PermissionDenied):
+            self.propose()
+        self.assertFalse(FirstDirectorBootstrapRequest.objects.exists())
+        self.assertFalse(SchoolStaffAccess.objects.exists())
+
+    def test_rejected_reference_does_not_refund_attempt(self):
+        self.verify()
+        with self.assertRaises(ValidationError):
+            self.propose(authorization_reference="invalid")
+        self.assertEqual(LoginAttemptBudget.objects.get().attempt_count, 1)
+        self.assertFalse(FirstDirectorBootstrapRequest.objects.exists())
+
+    def test_distinct_operator_budgets_and_storage_outage(self):
+        self.verify()
+        proposal = self.propose()
+        self.approve(proposal)
+        self.assertEqual(
+            sorted(LoginAttemptBudget.objects.values_list("attempt_count", flat=True)),
+            [1, 1],
+        )
+        with patch(
+            "jireh.schools.first_director_bootstrap.charge_bootstrap_operator_attempt",
+            side_effect=DatabaseError("synthetic store unavailable"),
+        ):
+            with self.assertRaises(PermissionDenied):
+                self.propose()
+        self.assertEqual(LoginAttemptBudget.objects.count(), 2)
 
     def test_two_people_must_be_distinct_and_not_subject(self):
         self.verify()

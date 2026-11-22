@@ -1,4 +1,4 @@
-"""Persist a bounded test-only login attempt count without retaining usernames.
+"""Persist bounded test sign-in and internal operator attempts without raw IDs.
 
 HMAC-protects identifiers with Django's secret key and serializes attempts
 against the same digest on PostgreSQL. A unique constraint arbitrates first
@@ -32,14 +32,15 @@ def _identifier_digest(username):
     ).hexdigest()
 
 
-@transaction.atomic
-def charge_login_attempt(*, username):
-    """Return (allowed, retry_after_seconds) for a syntactically valid login.
+def _bootstrap_operator_digest(operator_id):
+    # Distinct HMAC domain: a family username cannot alias this counter.
+    message = ("jireh-bootstrap-operator-attempt-v1:" + str(operator_id)).encode("utf-8")
+    return hmac.new(settings.SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
 
-    Both unknown and known usernames are charged. This is NOT an IP/network
-    abuse control and does not authorize exposing the test-only login route.
-    """
-    digest = _identifier_digest(username)
+
+@transaction.atomic
+def _charge_digest(digest):
+    """Apply an HMAC-only, database-serialized attempt budget."""
     now = timezone.now()
     budget, _ = (
         LoginAttemptBudget.objects.select_for_update().get_or_create(
@@ -62,3 +63,12 @@ def charge_login_attempt(*, username):
         update_fields=["window_started_at", "attempt_count", "updated_at"]
     )
     return True, 0
+
+def charge_login_attempt(*, username):
+    """Return (allowed, retry_after_seconds) for test-only sign-in attempts."""
+    return _charge_digest(_identifier_digest(username))
+
+
+def charge_bootstrap_operator_attempt(*, operator_id):
+    """Charge a distinct operator-scoped bootstrap attempt, never a username."""
+    return _charge_digest(_bootstrap_operator_digest(operator_id))
