@@ -945,3 +945,83 @@ class OperatorWebAuthnChallenge(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Operator challenges cannot be deleted.")
+
+
+class OperatorWebAuthnCredential(UUIDStampedModel):
+    """Internal-only WebAuthn public credential record, NOT enrollment approval.
+
+    This table is not writable by any HTTP endpoint. A future verified
+    enrollment ceremony must set enrollment_verified_at. Synthetic tests may
+    seed it; no real operator credentials can be provisioned by this module.
+    A credential's ID, public key, operator and RP are permanently bound.
+    """
+
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_operator_webauthn_credentials",
+    )
+    credential_id_digest = models.CharField(max_length=64, unique=True)
+    credential_data = models.BinaryField(max_length=4096)
+    rp_id = models.CharField(max_length=253)
+    origin = models.CharField(max_length=261)
+    enrollment_verified_at = models.DateTimeField(null=True, blank=True)
+    sign_count = models.PositiveBigIntegerField(default=0)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(sign_count__lte=4294967295),
+                name="jireh_operator_webauthn_counter32",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.origin != f"https://{self.rp_id}":
+            raise ValidationError("Operator credential RP origin mismatch.")
+        # Validate that the trusted enrollment bytes contain the SAME
+        # credential identifier as the database's unique lookup digest.
+        # This only validates structure, NOT an enrollment ceremony.
+        from .operator_webauthn import _known_credential
+        import hashlib
+        import hmac
+
+        try:
+            credential = _known_credential(bytes(self.credential_data))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Invalid operator credential public data.") from exc
+        actual = hashlib.sha256(credential.credential_id).hexdigest()
+        if (not isinstance(self.credential_id_digest, str)
+                or not hmac.compare_digest(actual, self.credential_id_digest)):
+            raise ValidationError("Operator credential identifier mismatch.")
+        if self.enrollment_verified_at is not None and self.revoked_at is not None:
+            if self.revoked_at < self.enrollment_verified_at:
+                raise ValidationError("Credential revocation predates enrollment.")
+        if not 0 <= self.sign_count <= 4294967295:
+            raise ValidationError("Invalid WebAuthn signature counter.")
+
+        if self._state.adding:
+            return
+        previous = type(self).objects.filter(pk=self.pk).values(
+            "operator_id", "credential_id_digest", "credential_data",
+            "rp_id", "origin", "enrollment_verified_at",
+            "sign_count", "revoked_at",
+        ).first()
+        if previous is None:
+            return
+        immutable = ("operator_id", "credential_id_digest", "rp_id", "origin")
+        if any(getattr(self, key) != previous[key] for key in immutable):
+            raise ValidationError("Operator credential identity is immutable.")
+        if bytes(self.credential_data) != bytes(previous["credential_data"]):
+            raise ValidationError("Operator credential public key is immutable.")
+        if (previous["enrollment_verified_at"] is not None
+                and self.enrollment_verified_at != previous["enrollment_verified_at"]):
+            raise ValidationError("Operator enrollment proof is immutable.")
+        if previous["revoked_at"] is not None and self.revoked_at != previous["revoked_at"]:
+            raise ValidationError("Revoked operator credentials are immutable.")
+        if self.sign_count < previous["sign_count"]:
+            raise ValidationError("Operator credential counter cannot decrease.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Operator credentials cannot be deleted.")
