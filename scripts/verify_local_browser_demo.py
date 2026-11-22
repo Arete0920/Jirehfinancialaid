@@ -68,8 +68,10 @@ def main():
                     page.locator("#children button").filter(has_text="Selected")
                 ).to_have_count(selected_count + 1)
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Select children")
-            # Reauthentication must restore selected children from the existing draft.
+            # Wait for the new session, not stale text from the previous persona.
             page.get_by_role("button", name="Family applicant").click()
+            expect(page.locator("#family")).to_be_visible()
+            expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             expect(page.locator("#draft-status")).to_have_text("DRAFT")
             expect(page.locator("#children button").filter(has_text="Selected")).to_have_count(2)
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Select children")
