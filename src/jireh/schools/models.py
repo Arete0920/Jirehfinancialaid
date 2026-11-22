@@ -1206,3 +1206,55 @@ class OperatorWebAuthnEnrollmentApproval(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Credential approval evidence cannot be deleted.")
+
+
+class OperatorWebAuthnActionIntent(UUIDStampedModel):
+    """Action-bound verified key evidence; no privilege until consumed atomically."""
+
+    ACTION_DIRECTOR_PROPOSE = "DIRECTOR_PROPOSE"
+    ACTION_DIRECTOR_APPROVE = "DIRECTOR_APPROVE"
+    ACTION_CHOICES = (
+        (ACTION_DIRECTOR_PROPOSE, "Director proposal"),
+        (ACTION_DIRECTOR_APPROVE, "Director approval"),
+    )
+
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_operator_privileged_action_intents",
+    )
+    challenge = models.OneToOneField(
+        "OperatorWebAuthnChallenge", on_delete=models.PROTECT,
+        related_name="jireh_privileged_action_intent",
+    )
+    action = models.CharField(max_length=24, choices=ACTION_CHOICES)
+    payload_digest = models.CharField(max_length=64)
+    expires_at = models.DateTimeField()
+    consumed_at = models.DateTimeField(null=True, blank=True)
+
+    def clean(self):
+        super().clean()
+        if (self.operator_id is not None and self.challenge_id is not None
+                and self.challenge.operator_id != self.operator_id):
+            raise ValidationError("Action intent operator/challenge mismatch.")
+        if (self.challenge_id is not None
+                and self.expires_at != self.challenge.expires_at):
+            raise ValidationError("Action intent and challenge expiry mismatch.")
+        if not self._state.adding:
+            before = type(self).objects.filter(pk=self.pk).values(
+                "operator_id", "challenge_id", "action",
+                "payload_digest", "expires_at", "consumed_at",
+            ).first()
+            if before:
+                immutable = ("operator_id", "challenge_id", "action",
+                             "payload_digest", "expires_at")
+                if any(getattr(self, name) != before[name] for name in immutable):
+                    raise ValidationError("Action intent binding is immutable.")
+                if before["consumed_at"] is not None:
+                    raise ValidationError("Consumed action intent is immutable.")
+        if self.consumed_at is not None:
+            if (self.challenge.verified_at is None
+                    or self.consumed_at > self.expires_at):
+                raise ValidationError("Action intent requires timely verified assertion.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Action intent evidence cannot be deleted.")

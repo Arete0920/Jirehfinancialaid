@@ -747,3 +747,24 @@ responsibility of the disabled-by-default approval service and a separately
 validated real-world identity-verification procedure. Existing synthetic
 registry tests create matching synthetic audit and possession evidence.
 No production MFA is enabled.
+
+
+### Action-bound WebAuthn evidence (internal-only, not yet enforced)
+
+The `operator_webauthn_actions` service creates a one-use evidence record
+for a specific **first-director proposal or approval**, hashing the canonical
+action type, exact school/subject or request ID and authorization reference
+before exposing a WebAuthn challenge. Only a verified, active registered
+operator key may sign the challenge. Mismatched action context, expired
+or unverified assertions, revoked credentials, and consumed records are
+rejected. PostgreSQL prevents raw rewrites, replay and deletion of evidence.
+Consumption is restricted to the same database transaction as the future
+privileged action so the evidence rolls back when the action fails.
+
+This is NOT yet connected to the first-director grant service. Creating or
+verifying a proof does not authorize a grant, login or operator session.
+`JIREH_OPERATOR_ACTION_MFA_ENABLED` defaults to false. Existing bootstrap
+remains separately disabled by default; do not activate it for real schools
+until mandatory MFA consumption is integrated, tested and independently
+accepted. The strict positive-increasing-counter authenticator policy still
+applies; credential recovery and hardware backup-state policy remain pending.

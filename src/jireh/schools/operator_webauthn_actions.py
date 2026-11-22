@@ -1,0 +1,189 @@
+"""Internal, disabled WebAuthn proof bound to one specific director action.
+
+This is a *prerequisite* for enforced MFA, not a public authentication route.
+A verified assertion proves possession of an enrolled operator key but cannot
+authorize a school grant until the future grant transaction calls
+consume_director_action_proof() with the EXACT action parameters. The caller
+must consume inside that same transaction or rollback.
+"""
+
+import hashlib
+import json
+import re
+from uuid import UUID
+
+from django.conf import settings
+from django.core.exceptions import PermissionDenied
+from django.db import DatabaseError, connection, transaction
+from django.utils import timezone
+
+from .models import (
+    OperatorWebAuthnActionIntent,
+    OperatorWebAuthnChallenge,
+    OperatorWebAuthnCredential,
+)
+from .operator_webauthn_challenges import _operator_locked
+from .operator_webauthn_registry import (
+    begin_registered_operator_challenge,
+    complete_registered_operator_challenge,
+)
+
+
+_REFERENCE = re.compile(r"\A[A-Z0-9][A-Z0-9-]{7,119}\Z")
+
+
+def _enabled():
+    if getattr(settings, "JIREH_OPERATOR_ACTION_MFA_ENABLED", False) is not True:
+        raise PermissionDenied("Privileged action WebAuthn evidence disabled.")
+
+
+def _uuid(value):
+    try:
+        return str(UUID(str(value)))
+    except (ValueError, TypeError, AttributeError):
+        raise PermissionDenied("Action context identifier invalid.") from None
+
+
+def director_action_digest(
+    *, action, authorization_reference,
+    school_id=None, subject_user_id=None, request_id=None,
+):
+    """Produce identical, domain-separated digests at issuance and consumption."""
+    if (not isinstance(authorization_reference, str)
+            or not _REFERENCE.fullmatch(authorization_reference)):
+        raise PermissionDenied("External authorization reference invalid.")
+    if action == OperatorWebAuthnActionIntent.ACTION_DIRECTOR_PROPOSE:
+        if school_id is None or subject_user_id is None or request_id is not None:
+            raise PermissionDenied("Director proposal scope invalid.")
+        context = {
+            "action": action, "school_id": _uuid(school_id),
+            "subject_user_id": _uuid(subject_user_id),
+            "authorization_reference": authorization_reference,
+        }
+    elif action == OperatorWebAuthnActionIntent.ACTION_DIRECTOR_APPROVE:
+        if request_id is None or school_id is not None or subject_user_id is not None:
+            raise PermissionDenied("Director approval scope invalid.")
+        context = {
+            "action": action, "request_id": _uuid(request_id),
+            "authorization_reference": authorization_reference,
+        }
+    else:
+        raise PermissionDenied("Unsupported privileged action.")
+    payload = json.dumps(context, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(
+        b"jireh-privileged-director-action-v1\x00" + payload.encode("utf-8")
+    ).hexdigest()
+
+
+def begin_director_action_proof(
+    *, operator, credential_id_digest, action,
+    authorization_reference, school_id=None, subject_user_id=None,
+    request_id=None,
+):
+    """Issue a verified-key challenge before disclosing options to the caller."""
+    _enabled()
+    digest = director_action_digest(
+        action=action, authorization_reference=authorization_reference,
+        school_id=school_id, subject_user_id=subject_user_id,
+        request_id=request_id,
+    )
+    options, challenge_id = begin_registered_operator_challenge(
+        operator=operator, credential_id_digest=credential_id_digest,
+    )
+    try:
+        with transaction.atomic(durable=True):
+            account = _operator_locked(operator)
+            challenge = (
+                OperatorWebAuthnChallenge.objects.select_for_update()
+                .filter(pk=challenge_id, operator=account, closed_at__isnull=True)
+                .first()
+            )
+            if challenge is None or challenge.expires_at <= timezone.now():
+                raise PermissionDenied("WebAuthn action challenge unavailable.")
+            intent = OperatorWebAuthnActionIntent.objects.create(
+                operator=account, challenge=challenge,
+                action=action, payload_digest=digest,
+                expires_at=challenge.expires_at,
+            )
+            return options, intent.pk
+    except (DatabaseError, RuntimeError):
+        raise PermissionDenied("WebAuthn action evidence unavailable.") from None
+
+
+def complete_director_action_proof(*, operator, intent_id, response):
+    """Verify the intended challenge, without authorizing its target action."""
+    _enabled()
+    try:
+        with transaction.atomic(durable=True):
+            account = _operator_locked(operator)
+            intent = (
+                OperatorWebAuthnActionIntent.objects.select_for_update()
+                .select_related("challenge")
+                .filter(pk=intent_id, operator=account, consumed_at__isnull=True)
+                .first()
+            )
+            if (
+                intent is None or intent.expires_at <= timezone.now()
+                or intent.challenge.closed_at is not None
+                or intent.challenge.verified_at is not None
+            ):
+                raise PermissionDenied("Pending action challenge unavailable.")
+            challenge_id = intent.challenge_id
+    except (DatabaseError, RuntimeError):
+        raise PermissionDenied("WebAuthn action evidence unavailable.") from None
+    return complete_registered_operator_challenge(
+        operator=operator, challenge_id=challenge_id, response=response,
+    )
+
+
+def consume_director_action_proof(
+    *, operator, intent_id, action, authorization_reference,
+    school_id=None, subject_user_id=None, request_id=None,
+):
+    """One-use proof consumption; MUST share the future grant transaction.
+
+    Explicitly NOT a grant, login, MFA certificate, or authorization decision.
+    This service does not change first-director bootstrap in this milestone.
+    """
+    _enabled()
+    if not connection.in_atomic_block:
+        raise PermissionDenied("Privileged action evidence needs grant transaction.")
+    digest = director_action_digest(
+        action=action, authorization_reference=authorization_reference,
+        school_id=school_id, subject_user_id=subject_user_id,
+        request_id=request_id,
+    )
+    account = _operator_locked(operator)
+    intent = (
+        OperatorWebAuthnActionIntent.objects.select_for_update()
+        .filter(pk=intent_id, operator=account, action=action,
+                payload_digest=digest, consumed_at__isnull=True)
+        .first()
+    )
+    if intent is None:
+        raise PermissionDenied("Action-specific WebAuthn proof required.")
+    challenge = (
+        OperatorWebAuthnChallenge.objects.select_for_update()
+        .filter(pk=intent.challenge_id, operator=account).first()
+    )
+    now = timezone.now()
+    if (
+        challenge is None or challenge.verified_at is None
+        or challenge.closed_at is None
+        or challenge.verified_at > now
+        or challenge.verified_at > intent.expires_at
+        or intent.expires_at <= now
+    ):
+        raise PermissionDenied("Fresh verified WebAuthn action proof required.")
+    credential = (
+        OperatorWebAuthnCredential.objects.select_for_update()
+        .filter(operator=account,
+                credential_id_digest=challenge.credential_id_digest,
+                enrollment_verified_at__isnull=False,
+                revoked_at__isnull=True).first()
+    )
+    if credential is None:
+        raise PermissionDenied("Approved active credential required.")
+    intent.consumed_at = now
+    intent.save(update_fields=["consumed_at", "updated_at"])
+    return intent.pk
