@@ -112,9 +112,9 @@ authorization, approved field rules and privacy controls exist.
 
 ### Q03 — separated households, contributors and access
 
-**Proposed v1 security posture (not approved for financial data):** A school's
-existing explicit `HouseholdAccess` grants control access to exactly **one**
-household within the school and year. Sharing a student does not imply access
+**Proposed v1 security posture (not approved for financial data):** An
+existing explicit `HouseholdAccess` grant is bound to one household in one
+school; the application and academic-year scope must be checked separately. Sharing a student does not imply access
 to another household. Marking a person as a financial contributor never
 grants them read, edit or consent authority. An adult must have their own
 authenticated, active, explicit household authorization to submit an answer;
@@ -142,8 +142,8 @@ The owner can record an approval or requested modification for **each**
 decision in [issue 43](https://github.com/Arete0920/Jirehfinancialaid/issues/43).
 A response of "proceed" to general development is **not** equivalent to
 accepting unreviewed values or collection rules. Owner-reviewed Q01–Q03
-policy remains a subset of the wider Q01–Q10 gate: documentation (Q05),
-school-defined questions (Q06), consent (Q07), retention/security (Q08),
+policy remains a subset of the wider Q01–Q10 gate: household roster (Q04),
+documentation (Q05), school-defined questions (Q06), consent (Q07), retention/security (Q08),
 verification (Q09), and final sign-off (Q10) remain unresolved.
 
 After approval, freeze a separately versioned accepted policy/field contract
