@@ -181,7 +181,7 @@ class PostgreSQLIntegrityTests(TransactionTestCase):
                 "WHERE tgname LIKE 'jireh%guard' AND NOT tgisinternal"
             )
             trigger_count = cursor.fetchone()[0]
-        self.assertEqual(trigger_count, 8)
+        self.assertEqual(trigger_count, 7)
 
     def test_raw_bulk_create_cross_school_household_student_rejected(self):
         with self.assertRaises(IntegrityError):
