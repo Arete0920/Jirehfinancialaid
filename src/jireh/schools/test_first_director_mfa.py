@@ -65,10 +65,10 @@ class FirstDirectorWithWebAuthnTests(TransactionTestCase):
             password="Synthetic-Only-Director-Password-2026!",
         )
         _, token = issue_mailbox_challenge(
-            user=self.subject, email="mfa-subject@example.invalid",
+            user=self.subject, email="mfa-subject@example.org",
         )
         enroll_verified_recovery_contact(
-            user=self.subject, email="mfa-subject@example.invalid",
+            user=self.subject, email="mfa-subject@example.org",
             mailbox_token=token,
         )
         self.second_key = ec.generate_private_key(ec.SECP256R1())
