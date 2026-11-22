@@ -32,7 +32,7 @@ Field name alignment with real models:
   policy.*                     = AidPolicy.*
 """
 
-from __future__ import annotations
+
 
 from dataclasses import dataclass
 from typing import Any, Dict, Tuple
