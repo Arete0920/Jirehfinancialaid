@@ -1,0 +1,205 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Jireh | Synthetic Family Demonstration</title>
+<style>
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;color:#182a26;background:#f5f8f5;font-synthesis:none}
+*{box-sizing:border-box}body{margin:0}button{font:inherit;cursor:pointer}button:disabled{cursor:not-allowed;opacity:.6}
+header{background:#103b31;color:white;padding:21px max(24px,calc((100vw - 1080px)/2));display:flex;justify-content:space-between;align-items:center;gap:16px}
+.brand{font-size:26px;letter-spacing:.08em;font-weight:780}.brand span{color:#e9c17a}.overline{font-size:11px;text-transform:uppercase;letter-spacing:.15em;color:#b9d9cf}
+.pill{font-size:12px;background:#2d6256;border-radius:20px;padding:8px 13px;white-space:nowrap}
+main{max-width:1080px;margin:30px auto;padding:0 22px 48px}.intro{display:flex;gap:24px;justify-content:space-between;align-items:start;margin-bottom:22px}
+h1{font-size:clamp(25px,4vw,38px);letter-spacing:-.04em;margin:0 0 10px}h2{font-size:20px;margin:0 0 16px}h3{font-size:15px;margin:0 0 9px}p{color:#576962;line-height:1.5;margin:0 0 12px}
+.notice{background:#fff8e9;border:1px solid #e8d9b4;border-radius:12px;padding:14px 16px;font-size:13px;max-width:380px;line-height:1.5;color:#6d5730}
+.layout{display:grid;grid-template-columns:260px minmax(0,1fr);gap:20px}.panel{background:white;border:1px solid #e2e9e4;border-radius:16px;padding:23px;box-shadow:0 6px 24px #143c2510}
+.sidebar{height:max-content}.step{display:flex;align-items:center;gap:11px;padding:12px;border-radius:11px;font-weight:600;font-size:14px;color:#56645e}
+.step .num{width:26px;height:26px;display:grid;place-items:center;background:#e9f0ea;border-radius:50%;color:#31594c;font-size:12px}
+.step.active{background:#e8f4ec;color:#155c45}.step.active .num{background:#176747;color:white}
+.separator{height:1px;background:#e7ece8;margin:18px 0}.small{font-size:12px;color:#6d7b73}.persona{display:grid;grid-template-columns:repeat(3,1fr);gap:10px;margin:15px 0}
+.persona button{border:1px solid #cdded2;border-radius:11px;background:white;padding:12px 7px;color:#275440;font-weight:650}
+.persona button:hover,.persona button:focus-visible{border-color:#0f6a47;background:#f0faf3}
+.persona button.selected{background:#176747;color:white;border-color:#176747}
+.statusbar{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:12px 14px;background:#f2f6f2;border-radius:10px;margin:14px 0;color:#40564b;font-size:13px}
+.button{background:#176747;color:#fff;border:0;border-radius:10px;padding:11px 17px;font-weight:650}
+.button:hover{background:#0e5439}.button.secondary{background:#edf3ee;color:#1f5f45}.button.secondary:hover{background:#e0eee3}
+.actions{display:flex;gap:10px;flex-wrap:wrap;margin:16px 0}.grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:13px}
+.metric{padding:17px;background:#f7faf7;border:1px solid #e7eee9;border-radius:13px}
+.metric strong{display:block;font-size:22px;color:#1e4f38}.metric span{font-size:12px;color:#64766b}
+.child{display:flex;justify-content:space-between;align-items:center;padding:13px;border:1px solid #e4eae5;border-radius:10px;margin:9px 0}
+.child-name{font-weight:650}.chip{background:#eff5e6;color:#44602a;padding:5px 9px;border-radius:12px;font-size:12px}
+#events{background:#102923;color:#d2e9da;padding:14px;border-radius:10px;min-height:100px;max-height:255px;overflow:auto;white-space:pre-wrap;font:12px/1.6 ui-monospace,SFMono-Regular,monospace}
+#events div{padding:3px 0;border-bottom:1px solid #ffffff16}.good{color:#8fe0b2}.bad{color:#ffd38e}.hidden{display:none!important}
+footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:#68776e}
+@media(max-width:760px){header{padding:17px 22px}.intro{display:block}.notice{max-width:none;margin-top:14px}.layout{grid-template-columns:1fr}.sidebar{display:flex;flex-wrap:wrap;gap:7px}.sidebar .separator{display:none}.step{padding:8px}.persona{grid-template-columns:1fr}.grid{grid-template-columns:1fr}.panel{padding:17px}}
+</style>
+</head>
+<body>
+<header><div><div class="overline">Independent financial aid platform</div><div class="brand">JIREH<span>.</span></div></div><div class="pill">LOCAL SYNTHETIC DEMO · NOT LIVE</div></header>
+<main>
+<div class="intro"><div><div class="overline" style="color:#4d7965">Financial aid · 2026–27</div><h1>Family application walkthrough</h1><p>Experience the verified draft and school-access workflow with fictional people and institutions.</p></div><div class="notice"><strong>Demonstration limits:</strong> Financial questions, uploads, submission, assessment, awards and payments are not implemented in this demo. This page is loopback-only, uses disposable data, and must not be deployed.</div></div>
+<div class="layout">
+<aside class="panel sidebar" aria-label="Journey navigation">
+<div class="small" style="font-weight:750;letter-spacing:.1em;text-transform:uppercase">Walkthrough</div>
+<div class="step active"><span class="num">1</span> Choose a persona</div>
+<div class="step"><span class="num">2</span> View household</div>
+<div class="step"><span class="num">3</span> Create annual draft</div>
+<div class="step"><span class="num">4</span> Select children</div>
+<div class="step"><span class="num">5</span> Director review</div>
+<div class="separator"></div>
+<p class="small">Every action below calls the actual test-only Django API. The second synthetic school demonstrates that permissions cannot cross tenant boundaries.</p>
+</aside>
+<section class="panel" aria-live="polite">
+<h2>Choose who you are viewing as</h2>
+<p>Sign in using a fictional account. Switching personas logs out the prior session.</p>
+<div class="persona">
+<button type="button" data-role="local-demo-family">Family applicant</button>
+<button type="button" data-role="local-demo-director-a">School A director</button>
+<button type="button" data-role="local-demo-director-b">School B director</button>
+</div>
+<div class="statusbar"><span id="identity">No session selected</span><span id="authstatus">Signed out</span></div>
+<div id="family" class="hidden">
+<h3>Family overview</h3>
+<div class="grid"><div class="metric"><strong id="school-name">—</strong><span>Participating school</span></div><div class="metric"><strong id="draft-status">Not created</strong><span>Annual application status</span></div></div>
+<div class="actions"><button class="button secondary" id="load-household" type="button">Refresh household</button><button class="button" id="create-draft" type="button">Create / resume annual draft</button></div>
+<h3>Children in household</h3><div id="children"><p>Load your household to see children.</p></div>
+<div class="actions"><button class="button secondary" id="verify-tenant" type="button">Verify School B access is denied</button><button class="button secondary" id="verify-csrf" type="button">Verify CSRF protection</button></div>
+</div>
+<div id="director" class="hidden"><h3>School financial aid director</h3><p>View a read-only list of annual draft applications within this school. No financial assessment or award is shown.</p>
+<div class="grid"><div class="metric"><strong id="director-school">—</strong><span>Assigned school</span></div><div class="metric"><strong id="application-count">—</strong><span>Drafts visible</span></div></div>
+<div class="actions"><button class="button" id="load-inventory" type="button">Load school drafts</button><button class="button secondary" id="verify-director" type="button">Verify other school is denied</button></div>
+<div id="inventory"></div></div>
+<div class="separator"></div><h3>Test activity</h3><div id="events" role="log" aria-label="Synthetic demonstration activity log"><div>Choose a persona to begin. No real data is used.</div></div>
+</section></div>
+</main><footer>Jireh Financial Aid · Standalone development prototype · Local synthetic data only · Production release: NO-GO</footer>
+<script>
+"use strict";
+(() => {
+  const PASSWORD = "Local-Synthetic-Demo-2026-Only!";
+  const state = {role: null, config: null, students: [], draft: null};
+  const $ = id => document.getElementById(id);
+  const cookie = name => (document.cookie.split("; ").find(v=>v.startsWith(name+"="))||"").split("=").slice(1).join("=");
+  const log = (msg, good=true) => { const d=document.createElement("div"); d.className=good?"good":"bad";d.textContent=new Date().toLocaleTimeString()+"  "+msg;$("events").prepend(d); };
+  const api = async (path, method="GET", csrf=true) => {
+    const options={method, credentials:"same-origin", headers:{}};
+    if(method!=="GET"&&csrf)options.headers["X-CSRFToken"]=decodeURIComponent(cookie("csrftoken"));
+    const r=await fetch(path,options);
+    const data=await r.json().catch(()=>({detail:"Unexpected response"}));
+    return {status:r.status,ok:r.ok,data};
+  };
+  const path = (school, household, year) => "/api/v1/schools/"+school.id+"/households/"+household+"/academic-years/"+year+"/aid-application/draft/";
+  const staffPath = school => "/api/v1/schools/"+school.id+"/academic-years/"+school.year_id+"/aid-applications/";
+  const primary = () => state.config.school_a;
+  const secondary = () => state.config.school_b;
+  async function logout(){
+    if(!state.role)return;
+    await api("/test-auth/logout/","POST");
+    state.role=null;state.config=null;state.students=[];state.draft=null;
+  }
+  async function login(role){
+    try{
+      await logout();
+      await api("/test-auth/login/");
+      const r=await fetch("/test-auth/login/",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRFToken":decodeURIComponent(cookie("csrftoken"))},body:JSON.stringify({username:role,password:PASSWORD})});
+      const data=await r.json();
+      if(!r.ok)throw new Error("Sign-in failed: "+r.status+" "+(data.detail||""));
+      const conf=await api("/local-demo/config/");
+      if(!conf.ok)throw new Error("Demo configuration denied: "+conf.status);
+      state.role=role;state.config=conf.data;
+      document.querySelectorAll("[data-role]").forEach(b=>b.classList.toggle("selected",b.dataset.role===role));
+      const family=role==="local-demo-family";
+      $("family").classList.toggle("hidden",!family);
+      $("director").classList.toggle("hidden",family);
+      $("identity").textContent=family?"Sample Family":role==="local-demo-director-a"?"School A director":"School B director";
+      $("authstatus").textContent="Synthetic session active";
+      log("Authenticated "+$("identity").textContent);
+      if(family){$("school-name").textContent=primary().name;$("draft-status").textContent="Not loaded";await loadHousehold();}
+      else{$("director-school").textContent=(role==="local-demo-director-a"?primary():secondary()).name;$("application-count").textContent="—";$("inventory").textContent="";await loadInventory();}
+    }catch(e){log(e.message,false);}
+  }
+  async function loadHousehold(){
+    if(!state.config || state.role!=="local-demo-family")return;
+    const a=primary();
+    const h=await api("/api/v1/schools/"+a.id+"/households/"+a.household_id+"/");
+    const s=await api("/api/v1/schools/"+a.id+"/households/"+a.household_id+"/students/");
+    if(!h.ok||!s.ok){log("Household access denied ("+h.status+"/"+s.status+")",false);return;}
+    state.students=s.data.students;
+    const draft=await api(path(a,a.household_id,a.year_id));
+    state.draft=draft.ok?draft.data:null;
+    $("draft-status").textContent=draft.ok?draft.data.status:"Not created";
+    renderStudents();
+    log("Household verified: "+h.data.name+"; "+state.students.length+" linked children");
+  }
+  function renderStudents(){
+    const parent=$("children");parent.replaceChildren();
+    state.students.forEach(student=>{
+      const item=document.createElement("div");item.className="child";
+      const name=document.createElement("span");name.className="child-name";name.textContent=student.first_name+" "+student.last_name;
+      const btn=document.createElement("button");btn.type="button";btn.className="button secondary";btn.textContent="Select child";btn.disabled=!state.draft;
+      btn.addEventListener("click",async()=>{
+        const a=primary();
+        const result=await api(path(a,a.household_id,a.year_id)+"students/"+student.id+"/","POST");
+        if(!result.ok){log("Child selection failed HTTP "+result.status,false);return;}
+        log("Selected "+student.first_name+" under annual draft "+result.data.application_id.slice(0,8)+"…");
+        await refreshSelections();
+      });
+      item.append(name,btn);parent.append(item);
+    });
+    if(!state.students.length)parent.textContent="No children linked.";
+  }
+  async function refreshSelections(){
+    const a=primary(),r=await api(path(a,a.household_id,a.year_id)+"students/");
+    if(!r.ok)return;
+    document.querySelectorAll("#children .child").forEach((item,index)=>{
+      const chosen=r.data.student_ids.includes(state.students[index].id);
+      const btn=item.querySelector("button");btn.textContent=chosen?"Selected ✓":"Select child";btn.disabled=chosen;
+    });
+  }
+  async function createDraft(){
+    if(!state.config||state.role!=="local-demo-family")return;
+    const a=primary(),r=await api(path(a,a.household_id,a.year_id),"POST");
+    if(!r.ok){log("Draft request failed HTTP "+r.status,false);return;}
+    state.draft=r.data;$("draft-status").textContent=r.data.status;
+    log("Annual draft active: "+r.data.id.slice(0,8)+"… — repeated creation is idempotent");
+    renderStudents();await refreshSelections();
+  }
+  async function loadInventory(){
+    if(!state.config||state.role==="local-demo-family")return;
+    const school=state.role==="local-demo-director-a"?primary():secondary();
+    const r=await api(staffPath(school));
+    if(!r.ok){log("Inventory request failed HTTP "+r.status,false);return;}
+    $("application-count").textContent=r.data.applications.length;
+    $("inventory").replaceChildren();
+    const p=document.createElement("p");p.textContent=r.data.applications.length?
+      "Authorized school drafts: "+r.data.applications.map(a=>a.status+" #"+a.id.slice(0,8)).join(", "):
+      "No drafts have been created for this school.";
+    $("inventory").append(p);log("School-specific director inventory returned HTTP 200");
+  }
+  async function verifyFamilyTenant(){
+    if(state.role!=="local-demo-family")return;
+    const b=secondary(),r=await api(path(b,b.household_id,b.year_id));
+    log(r.status===404?"PASS: School B family draft denied (404)":"FAIL: Unexpected School B response "+r.status,r.status===404);
+  }
+  async function verifyCSRF(){
+    if(state.role!=="local-demo-family"||!state.draft){log("Create draft before checking CSRF protection",false);return;}
+    const a=primary(),r=await api(path(a,a.household_id,a.year_id)+"students/"+state.students[0].id+"/","POST",false);
+    log(r.status===403?"PASS: Missing CSRF header rejected (403)":"FAIL: Missing CSRF returned "+r.status,r.status===403);
+  }
+  async function verifyDirector(){
+    if(!state.role||state.role==="local-demo-family")return;
+    const other=state.role==="local-demo-director-a"?secondary():primary();
+    const r=await api(staffPath(other));
+    log(r.status===404?"PASS: Another school's director inventory denied (404)":"FAIL: Cross-school inventory returned "+r.status,r.status===404);
+  }
+  document.querySelectorAll("[data-role]").forEach(b=>b.addEventListener("click",()=>login(b.dataset.role)));
+  $("load-household").addEventListener("click",loadHousehold);
+  $("create-draft").addEventListener("click",createDraft);
+  $("load-inventory").addEventListener("click",loadInventory);
+  $("verify-tenant").addEventListener("click",verifyFamilyTenant);
+  $("verify-csrf").addEventListener("click",verifyCSRF);
+  $("verify-director").addEventListener("click",verifyDirector);
+})();
+</script>
+</body></html>
