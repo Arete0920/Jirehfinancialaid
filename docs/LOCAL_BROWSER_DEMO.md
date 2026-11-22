@@ -52,7 +52,7 @@ For actual browser evidence, install Playwright and Chromium in an isolated
 development environment (these are NOT application dependencies):
 
 ```sh
-python -m pip install --only-binary=:all: "playwright==1.65.2"
+python -m pip install playwright
 python -m playwright install chromium
 python scripts/verify_local_browser_demo.py
 ```
@@ -78,7 +78,7 @@ does **not** authorize deployment, real-family intake, payment, or school onboar
 
 ### Exact-commit engineering evidence (2026-11-22)
 
-- Verified protected \`main\` baseline: \`730a1a5ac46b84be4b6795c55c664547a1fa51a4\`.
+- Verified protected `main` baseline: `730a1a5ac46b84be4b6795c55c664547a1fa51a4`.
 - [Foundation checks — run 45049851530](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45049851530):
   Python contracts, Django tests, PostgreSQL 16 integrity, and SonarCloud PASS.
 - [Chromium browser E2E — run 45049851532](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45049851532):
@@ -86,7 +86,7 @@ does **not** authorize deployment, real-family intake, payment, or school onboar
   active journey steps, director inventories, CSRF denial and two-school denial.
 - [Screenshot/video artifact 14765275764](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45049851532/artifacts/14765275764):
   downloaded and SHA-256 verified against GitHub digest
-  \`1f033c3aa069a29b70e43f585c7c7fa12a8dfd932feec85ee63a5a36e3a32d39\`.
+  `1f033c3aa069a29b70e43f585c7c7fa12a8dfd932feec85ee63a5a36e3a32d39`.
   All three PNG screenshots were visually inspected. A WebM recording exists,
   but its playback has **not** been independently reviewed.
   GitHub retention expires on **2026-12-06**.
@@ -103,7 +103,7 @@ does **not** authorize deployment, real-family intake, payment, or school onboar
 
 | Sequence | Presenter action | Permitted observation |
 | --- | --- | --- |
-| 1 | Start the demo on a trusted workstation; open \`http://127.0.0.1:8765/local-demo/\` | Explicit LOCAL SYNTHETIC DEMO / NOT LIVE disclosure |
+| 1 | Start the demo on a trusted workstation; open `http://127.0.0.1:8765/local-demo/` | Explicit LOCAL SYNTHETIC DEMO / NOT LIVE disclosure |
 | 2 | Select **Family applicant** | Synthetic sign-in, authorized School A household and its two linked children |
 | 3 | Select **Create / resume annual draft**, then choose both children | One school/year DRAFT and two idempotent linked-child selections |
 | 4 | Select **Family applicant** again | The existing DRAFT and both selected children reappear after sign-in |
@@ -126,7 +126,7 @@ demo URL. Do not imply that a viewer can sign into a hosted product.
 **No unverified claims:** Do not describe the financial aid form as completed,
 the award engine as operating, the synthetic login as production identity
 verification, the 404 checks as proof of all deployed tenant isolation, the
-\`/healthz/\` endpoint as production readiness, or any payment capability as
+`/healthz/` endpoint as production readiness, or any payment capability as
 active. Do not label the product compliant or commercially ready without
 separate evidence and approvals.
 
@@ -148,7 +148,7 @@ If any test fails, a real person/school record appears, a forbidden route
 becomes accessible, or evidence no longer matches the checkout, **stop
 presentation and retain NO-GO** until the issue is resolved. This acceptance
 packet is intentionally distinct from the eleven production release gates in
-\`docs/PRODUCTION_READINESS.md\`; completing the demo never enables production.
+`docs/PRODUCTION_READINESS.md`; completing the demo never enables production.
 
 ## Limitations (present during every demonstration)
 
