@@ -1,0 +1,123 @@
+"""Negative tests for policy-parameterized questionnaire primitives.
+
+Test limits (0..100000) are SYNTHETIC. They do not approve Jireh money policy,
+income definitions, retention, collection, or access to financial answers.
+"""
+import unittest
+from dataclasses import FrozenInstanceError
+from datetime import date
+
+from jireh.financial_aid.questionnaire_validation import (
+    QuestionnaireValidationError,
+    validate_amount_cents,
+    validate_balance,
+    validate_flow,
+    validate_optional_consent,
+)
+
+
+class QuestionnaireValidationTests(unittest.TestCase):
+    def test_exact_integer_cents_with_explicit_bounds(self):
+        self.assertEqual(validate_amount_cents(12345, min_cents=0, max_cents=100000), 12345)
+        self.assertEqual(validate_amount_cents(0, min_cents=0, max_cents=100000), 0)
+        self.assertEqual(validate_amount_cents(100000, min_cents=0, max_cents=100000), 100000)
+
+    def test_missing_or_invalid_policy_bounds_are_rejected(self):
+        for low, high, error in (
+            (None, 100000, "money_bounds_not_configured"),
+            (0, None, "money_bounds_not_configured"),
+            (True, 100000, "money_bounds_not_configured"),
+            (0.0, 100000, "money_bounds_not_configured"),
+            (100001, 100000, "money_bounds_invalid"),
+        ):
+            with self.subTest(low=low, high=high):
+                with self.assertRaisesRegex(QuestionnaireValidationError, "^" + error + "$"):
+                    validate_amount_cents(250, min_cents=low, max_cents=high)
+
+    def test_unanswered_is_never_coerced_to_zero(self):
+        for value in (None, "", "0", "123.45", 0.0, 1.25, True, False, [], {}, [25]):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(QuestionnaireValidationError, "^amount_type_invalid$"):
+                    validate_amount_cents(value, min_cents=0, max_cents=100000)
+
+    def test_out_of_range_and_negative_rejected_by_explicit_limits(self):
+        for value in (-1, 100001, 10**100):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(QuestionnaireValidationError, "^amount_out_of_range$"):
+                    validate_amount_cents(value, min_cents=0, max_cents=100000)
+        self.assertEqual(validate_amount_cents(-25, min_cents=-100, max_cents=100), -25)
+
+    def test_strict_calendar_date_and_ordered_flow(self):
+        row = validate_flow(
+            amount_cents=12500, period_start="2026-01-01", period_end="2026-12-31",
+            min_cents=0, max_cents=100000,
+        )
+        self.assertEqual((row.amount_cents, row.period_start, row.period_end),
+                         (12500, date(2026, 1, 1), date(2026, 12, 31)))
+        self.assertNotIn("12500", repr(row))
+        with self.assertRaises(FrozenInstanceError):
+            row.amount_cents = 99
+
+    def test_same_day_flow_is_permitted_without_annualization(self):
+        row = validate_flow(
+            amount_cents=1, period_start="2026-03-31", period_end="2026-03-31",
+            min_cents=0, max_cents=100,
+        )
+        self.assertEqual(row.period_start, row.period_end)
+
+    def test_inverted_flow_period_fails_without_echoing_financial_inputs(self):
+        with self.assertRaises(QuestionnaireValidationError) as context:
+            validate_flow(
+                amount_cents=12345, period_start="2026-12-31", period_end="2026-01-01",
+                min_cents=0, max_cents=100000,
+            )
+        self.assertEqual(str(context.exception), "flow_period_inverted")
+
+    def test_invalid_iso_dates_never_parse_or_normalize(self):
+        for bad in (
+            None, 20260101, date(2026, 1, 1), "2026-1-01", "2026-01-1",
+            "2026-02-30", "2026-13-01", "2026-00-10",
+            "2026-01-01T00:00:00Z", "2026-01-01 ", " 2026-01-01",
+            "2026/01/01", "2026-01-01\n", False,
+        ):
+            with self.subTest(bad=bad):
+                with self.assertRaisesRegex(QuestionnaireValidationError, "^date_invalid$"):
+                    validate_balance(
+                        balance_cents=12345, as_of_date=bad,
+                        min_cents=0, max_cents=100000,
+                    )
+
+    def test_balance_is_not_flow_or_annualized(self):
+        row = validate_balance(
+            balance_cents=76543, as_of_date="2026-07-01",
+            min_cents=0, max_cents=100000,
+        )
+        self.assertEqual((row.balance_cents, row.as_of_date), (76543, date(2026, 7, 1)))
+        self.assertFalse(hasattr(row, "period_start"))
+        self.assertFalse(hasattr(row, "annual_amount_cents"))
+        self.assertNotIn("76543", repr(row))
+        with self.assertRaises(FrozenInstanceError):
+            row.balance_cents = 0
+
+    def test_consent_distinguishes_unknown_no_and_yes(self):
+        self.assertIsNone(validate_optional_consent(None))
+        self.assertIs(validate_optional_consent(False), False)
+        self.assertIs(validate_optional_consent(True), True)
+        for bad in (0, 1, "", "false", "true", [], {}, [True]):
+            with self.subTest(value=bad):
+                with self.assertRaisesRegex(QuestionnaireValidationError, "^consent_type_invalid$"):
+                    validate_optional_consent(bad)
+
+    def test_error_messages_contain_only_stable_codes(self):
+        secret = "SYNTHETIC_HOUSEHOLD_INCOME_SECRET"
+        try:
+            validate_amount_cents(secret, min_cents=0, max_cents=100000)
+        except QuestionnaireValidationError as exc:
+            self.assertEqual(str(exc), "amount_type_invalid")
+            self.assertNotIn(secret, str(exc))
+        else:
+            self.fail("Unapproved string financial input accepted")
+
+
+if __name__ == "__main__":
+    unittest.main()
