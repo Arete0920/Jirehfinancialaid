@@ -20,8 +20,7 @@ DATABASES = {
     "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": _db},
 }
 DEBUG = False
-SESSION_COOKIE_SECURE = False  # localhost HTTP only, never real user sessions
-CSRF_COOKIE_SECURE = False  # localhost HTTP only, never real user sessions
+# Inherits Django test-only defaults; this is loopback HTTP, not production.
 CSRF_COOKIE_HTTPONLY = False  # local demo JS sends standard Django CSRF header
 SESSION_COOKIE_SAMESITE = "Strict"
 CSRF_COOKIE_SAMESITE = "Strict"
