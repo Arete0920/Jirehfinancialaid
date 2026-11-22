@@ -34,6 +34,8 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: Install locked dependencies
         run: npm ci --ignore-scripts --no-audit
+      - name: Audit locked dependency graph (including development dependencies)
+        run: npm audit --audit-level=low
       - name: Run copied CROWN regression and standalone header test
         run: npm run test
       - name: Bundle reused components without mounting any customer routes
