@@ -5,6 +5,7 @@ production provisioning or real operator credential enrollment.
 """
 
 import hashlib
+from datetime import timedelta
 from unittest.mock import patch
 
 from cryptography.hazmat.primitives import hashes
@@ -24,7 +25,11 @@ from fido2.webauthn import (
     CollectedClientData,
 )
 
-from .models import OperatorWebAuthnChallenge, OperatorWebAuthnCredential
+from .models import (
+    OperatorWebAuthnChallenge, OperatorWebAuthnCredential,
+    OperatorWebAuthnRegistration, OperatorWebAuthnPossessionChallenge,
+    OperatorWebAuthnEnrollmentApproval,
+)
 from .operator_webauthn_registry import (
     begin_registered_operator_challenge,
     complete_registered_operator_challenge,
@@ -62,8 +67,34 @@ class OperatorCredentialRegistryTests(TransactionTestCase):
             credential_id_digest=self.digest,
             credential_data=self.enrollment,
             rp_id=RP, origin=ORIGIN,
-            enrollment_verified_at=timezone.now(),  # synthetic-only fixture
+            enrollment_verified_at=None,
         )
+        # Synthetic approval chain for this test fixture. PostgreSQL must
+        # verify that even test credentials cannot skip activation evidence.
+        now = timezone.now()
+        registration = OperatorWebAuthnRegistration.objects.create(
+            operator=self.operator, rp_id=RP, origin=ORIGIN,
+            challenge="synthetic-registry-registration-challenge",
+            expires_at=now + timedelta(minutes=5),
+            closed_at=now,
+            credential_id_digest=self.digest,
+        )
+        possession = OperatorWebAuthnPossessionChallenge.objects.create(
+            operator=self.operator, credential=self.credential,
+            challenge="synthetic-registry-possession-challenge",
+            expires_at=now + timedelta(minutes=5),
+            closed_at=now, verified_at=now, verified_sign_count=0,
+        )
+        OperatorWebAuthnEnrollmentApproval.objects.create(
+            operator=self.operator, approver=self.second,
+            approver_role=OperatorWebAuthnEnrollmentApproval.ROLE_OWNER,
+            credential=self.credential, registration=registration,
+            possession_proof=possession,
+            identity_verification_reference="SYNTHETIC-REGISTRY-APPROVAL-2026",
+            approved_at=now,
+        )
+        self.credential.enrollment_verified_at = now
+        self.credential.save(update_fields=["enrollment_verified_at", "updated_at"])
         guard = self.settings(
             JIREH_OPERATOR_WEBAUTHN_CHALLENGES_ENABLED=True,
             JIREH_BOOTSTRAP_OPERATOR_IDS=(self.operator.pk, self.second.pk),
