@@ -11,6 +11,7 @@ from jireh.financial_aid.questionnaire_validation import (
     QuestionnaireValidationError,
     validate_amount_cents,
     validate_balance,
+    validate_calendar_year_flow,
     validate_flow,
     validate_optional_consent,
 )
@@ -84,6 +85,61 @@ class QuestionnaireValidationTests(unittest.TestCase):
                 with self.assertRaisesRegex(QuestionnaireValidationError, "^date_invalid$"):
                     validate_balance(
                         balance_cents=12345, as_of_date=bad,
+                        min_cents=0, max_cents=100000,
+                    )
+
+    def test_calendar_year_flow_requires_explicit_selected_year(self):
+        row = validate_calendar_year_flow(
+            reporting_year=2026, amount_cents=12500,
+            period_start="2026-02-01", period_end="2026-02-28",
+            min_cents=0, max_cents=100000,
+        )
+        self.assertEqual((row.period_start.year, row.period_end.year), (2026, 2026))
+        self.assertEqual(row.amount_cents, 12500)
+        self.assertNotIn("12500", repr(row))
+
+    def test_reporting_year_invalid_without_explicit_integer(self):
+        for invalid in (None, True, False, 0, 10000, "2026", 2026.0, [], {}):
+            with self.subTest(invalid=invalid):
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^reporting_year_invalid$"
+                ):
+                    validate_calendar_year_flow(
+                        reporting_year=invalid, amount_cents=100,
+                        period_start="2026-01-01", period_end="2026-12-31",
+                        min_cents=0, max_cents=100000,
+                    )
+
+    def test_cross_year_and_wrong_year_flows_fail_closed(self):
+        for start, end in (
+            ("2025-12-31", "2026-01-01"),
+            ("2026-12-31", "2027-01-01"),
+            ("2025-01-01", "2025-12-31"),
+        ):
+            with self.subTest(start=start, end=end):
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^flow_outside_reporting_year$"
+                ):
+                    validate_calendar_year_flow(
+                        reporting_year=2026, amount_cents=100,
+                        period_start=start, period_end=end,
+                        min_cents=0, max_cents=100000,
+                    )
+
+    def test_calendar_flow_preserves_existing_money_date_guards(self):
+        for value, start, end, code in (
+            ("100", "2026-01-01", "2026-01-01", "amount_type_invalid"),
+            (-1, "2026-01-01", "2026-01-01", "amount_out_of_range"),
+            (100, "2026-02-30", "2026-03-01", "date_invalid"),
+            (100, "2026-04-02", "2026-04-01", "flow_period_inverted"),
+        ):
+            with self.subTest(code=code):
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^" + code + "$"
+                ):
+                    validate_calendar_year_flow(
+                        reporting_year=2026, amount_cents=value,
+                        period_start=start, period_end=end,
                         min_cents=0, max_cents=100000,
                     )
 
