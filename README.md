@@ -732,3 +732,18 @@ operator console, credential recovery, real operator provisioning, or
 WebAuthn MFA enforcement for first-director bootstrap is created. The
 other underlying WebAuthn feature flags remain disabled. No production
 credentials are enrolled or activated by this code change.
+
+### Database credential-activation evidence guard (internal only)
+
+PostgreSQL migration `schools.0020` denies inserting an already verified
+WebAuthn credential and rejects every initial `enrollment_verified_at`
+transition unless an exact, previously recorded owner/integration-manager
+approval exists for the **same** credential, operator and approval timestamp.
+The original immutable-key and non-revocation guards remain enforced.
+Direct Django `QuerySet.update()` and SQL cannot bypass this new audit
+requirement through ordinary application database credentials. The gate does
+not independently authenticate the human approver: that remains the
+responsibility of the disabled-by-default approval service and a separately
+validated real-world identity-verification procedure. Existing synthetic
+registry tests create matching synthetic audit and possession evidence.
+No production MFA is enabled.
