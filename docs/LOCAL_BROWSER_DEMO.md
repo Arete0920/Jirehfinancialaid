@@ -27,8 +27,8 @@ Ctrl+C stops the server and deletes its temporary database. No Azure/cloud
 service or production URL routing is used.
 
 **Do not expose, port-forward, tunnel, reverse-proxy or deploy this local
-server.** The hard-coded synthetic usernames and password are not customer
-authentication, and localhost sessions deliberately use non-secure cookies
+server.** The synthetic usernames and per-process randomly generated
+credentials are not customer authentication; localhost sessions use test-only cookies
 over loopback HTTP. Do not use on untrusted workstations or with real data.
 
 ## Browser walkthrough
