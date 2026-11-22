@@ -68,7 +68,7 @@ jobs:
 
       - name: Install verified Django dependency wheels
         run: |
-          python -m pip install --only-binary=:all: --require-hashes -r requirements.txt
+          python -m pip install --only-binary=:all: --require-hashes -r requirements.txt -r requirements-webauthn-ci.txt
 
       - name: Verify schema matches migrations
         env:
@@ -113,7 +113,7 @@ jobs:
 
       - name: Install verified Django and pinned PostgreSQL test driver
         run: |
-          python -m pip install --only-binary=:all: --require-hashes -r requirements.txt
+          python -m pip install --only-binary=:all: --require-hashes -r requirements.txt -r requirements-webauthn-ci.txt
 
       - name: Require disposable PostgreSQL 16 (never SQLite fallback)
         run: |
