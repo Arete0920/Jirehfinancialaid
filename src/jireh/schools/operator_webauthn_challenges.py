@@ -108,11 +108,18 @@ def complete_durable_operator_challenge(
             now = timezone.now()
             row.closed_at = now
             verified_counter = None
+            credential_matches = False
+            try:
+                credential_matches = (
+                    row.credential_id_digest == _credential_digest(credential_data)
+                )
+            except (ValueError, TypeError, AttributeError, KeyError):
+                pass
             if (
                 now < row.expires_at
                 and row.rp_id == rp_id
                 and row.origin == origin
-                and row.credential_id_digest == _credential_digest(credential_data)
+                and credential_matches
             ):
                 try:
                     verified_counter = verify_operator_assertion(
