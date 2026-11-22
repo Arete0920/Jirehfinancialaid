@@ -24,3 +24,13 @@ DEBUG = False
 CSRF_COOKIE_HTTPONLY = False  # local demo JS sends standard Django CSRF header
 SESSION_COOKIE_SAMESITE = "Strict"
 CSRF_COOKIE_SAMESITE = "Strict"
+
+# HTML is rendered through Django's autoescaping template engine.
+TEMPLATES = [
+    {
+        "BACKEND": "django.template.backends.django.DjangoTemplates",
+        "DIRS": [],
+        "APP_DIRS": True,
+        "OPTIONS": {},
+    }
+]
