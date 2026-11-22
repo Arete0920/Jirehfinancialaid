@@ -44,7 +44,12 @@ def _known_credential(credential_data):
     if (not isinstance(credential_data, bytes)
             or not 64 <= len(credential_data) <= 4096):
         raise ValueError("A bounded, trusted enrolled credential is required.")
-    credential = AttestedCredentialData(credential_data)
+    try:
+        credential = AttestedCredentialData(credential_data)
+    except (ValueError, TypeError, AttributeError, IndexError, KeyError, OverflowError):
+        # Invalid CBOR/COSE credentials must produce a bounded rejection rather
+        # than exposing a decoder's internal exception to privileged callers.
+        raise ValueError("Invalid enrolled credential data.") from None
     if not credential.credential_id:
         raise ValueError("The enrolled credential ID is missing.")
     return credential
