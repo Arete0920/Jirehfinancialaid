@@ -67,7 +67,7 @@ class QuestionnaireFieldCatalogDesignTests(unittest.TestCase):
             self.assertEqual(section["lifecycle"], "candidate")
             for field in section["fields"]:
                 path = field["id"]
-                self.assertTrue(path.startswith(section["id"] + "."), path)
+                self.assertTrue(\n                    path.startswith(section["id"] + ".")\n                    or path.startswith(section["id"] + "[]."),\n                    path,\n                )
                 self.assertIn(field["type"], self.catalog["types"], path)
                 self.assertIn(
                     field["sensitivity"],
