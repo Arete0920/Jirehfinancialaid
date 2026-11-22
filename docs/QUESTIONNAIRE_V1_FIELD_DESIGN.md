@@ -52,6 +52,104 @@ Changes needed before reusing those concepts:
 - Preserve the existing production liveness-only routing until security and
   operational release gates are certified.
 
+## Owner decision packet: Q01–Q03 (proposal only, 2026-11-22)
+
+**Decision status: PENDING PRODUCT-OWNER AND PRIVACY APPROVAL.** These
+recommendations do **not** update the 31-field candidate catalog or authorize
+database migrations, answer storage, APIs, production data, financial scoring,
+payments, deployment, or cross-household disclosure. The catalog's
+`pending_owner_decisions` entries remain intentionally unresolved.
+
+The recommendations below are based on the existing standalone school/year/
+household boundaries, test-only validations, and the historical CROWN reference
+at immutable revision `46b56609fe18360299b08eabaa8bccdffb356a0e`.
+Historical CROWN uses `annual_amount_cents` for financial flows **and**
+asset/liability snapshots; that is a source ambiguity to correct, not policy
+authority to carry over.
+
+### Q01 — reporting periods and academic-year identity
+
+**Proposed v1 rule (not approved):** Keep the financial-aid *application* tied
+to the school's explicitly identified academic year. Record income/expense
+cash flows against a **separately and explicitly selected calendar reporting
+year** with precise period start/end dates. The applicable tax/reporting year
+must be chosen and approved for the school's aid cycle, never guessed from
+the application's academic year or today's date. Asset and liability values
+remain dated snapshots, not annualized income.
+
+**Decision required:** Approve calendar-year reporting for annual income/
+expenses, or select academic-year reporting or both as separately labeled
+periods. Specify which reporting year(s) must be submitted for a given school
+aid cycle, and whether current-year estimates are in or out of v1.
+
+**Acceptance cases after approval:** A selected school aid year and its income
+reporting year must be independently identifiable; a flow outside its approved
+window must fail closed; an income record crossing a reporting boundary must
+not be silently annualized or split; balance snapshots cannot be counted as
+annual cash flow. No date window or year default is being configured here.
+
+### Q02 — money, rounding, periods, and correction rules
+
+**Proposed v1 safeguards (not approved):** Accept exact integer USD cents
+only, with explicit per-field approved lower/upper bounds; preserve missing
+as different from zero; reject booleans, floats, strings and implicit rounding.
+Cash flows require start/end dates; assets/liabilities require an as-of date.
+Do not automatically transform monthly amounts into annual figures. Treat
+negative amounts or correction entries as **not accepted by default** unless
+an individually approved category/policy explicitly permits them; retain
+attributable correction history separately from the original submission.
+
+**Decision required:** Specify allowable categories, field-specific minimum
+and maximum cents, whether negative income/losses or correction values are
+supported, permitted interval granularity, USD-only treatment, and explicit
+rounding/conversion rules if any. No limits, exclusions, reporting periods or
+auto-annualization may be inferred from synthetic test values.
+
+**Acceptance cases after approval:** Rejected out-of-bounds and malformed
+amounts return stable non-sensitive codes without logging values; empty vs
+zero and stock vs flow remain distinct; no transaction is persisted until
+authorization, approved field rules and privacy controls exist.
+
+### Q03 — separated households, contributors and access
+
+**Proposed v1 security posture (not approved for financial data):** A school's
+existing explicit `HouseholdAccess` grants control access to exactly **one**
+household within the school and year. Sharing a student does not imply access
+to another household. Marking a person as a financial contributor never
+grants them read, edit or consent authority. An adult must have their own
+authenticated, active, explicit household authorization to submit an answer;
+consent is purpose- and actor-specific and cannot cover another household by
+assumption. Financial records of separated households remain independent.
+School staff authorization continues to require explicit school/role grants.
+
+**Decision required:** Approve the default of **no inter-household financial
+visibility**; define which adult may submit or correct each contributor's
+financial disclosures, whether household representatives may attest for
+another adult, and whether a separately authorized process may combine
+household financial results for **school-only** review. A shared child's link
+must never become a permission or a cross-household data-copy mechanism.
+
+**Acceptance cases after approval:** Synthetic tests must exercise two
+households sharing a student, each with distinct grants/answers, revoked and
+expired permissions, unauthorized contributor IDs, cross-school/year requests,
+CSRF failures and forged headers. Neither household may read the other's
+answers or infer them from error responses. No cross-household assessment
+aggregation is authorized by this proposal.
+
+### Explicit approval record required before development
+
+The owner can record an approval or requested modification for **each**
+decision in [issue 43](https://github.com/Arete0920/Jirehfinancialaid/issues/43).
+A response of "proceed" to general development is **not** equivalent to
+accepting unreviewed values or collection rules. Owner-reviewed Q01–Q03
+policy remains a subset of the wider Q01–Q10 gate: documentation (Q05),
+school-defined questions (Q06), consent (Q07), retention/security (Q08),
+verification (Q09), and final sign-off (Q10) remain unresolved.
+
+After approval, freeze a separately versioned accepted policy/field contract
+and add disposable synthetic tests before considering migrations. For now,
+keep all product/production collection paths disabled.
+
 ## Decisions required before any schema migration
 
 The catalog tracks ten open decisions as `Q01` through `Q10`: reporting
