@@ -683,3 +683,22 @@ verification and proof-of-possession workflow must be built and accepted
 before keys are enabled. No authenticated session, school role or privileged
 bootstrap decision is granted. Synthetic tests are not a production
 registration certification.
+
+### Pending WebAuthn credential proof of possession (internal-only)
+
+The disabled-by-default `operator_webauthn_possession` service offers a
+five-minute one-use assertion challenge for an **unverified** operator public
+key already registered by the pending enrollment ceremony. Successful
+cryptographic verification records an immutable proof event and atomically
+advances the key's monotonic signature counter; failed or expired attempts
+consume the challenge without issuing evidence. PostgreSQL guards prohibit
+reopening, rewriting or deleting completed proof events.
+
+`JIREH_OPERATOR_WEBAUTHN_POSSESSION_ENABLED` defaults to **false**.
+The existing internal challenge gate and operator allowlist must also be
+explicitly active. There is **no public URL, session, MFA approval, live
+identity attestation or school-role grant**. Critically, a successful proof
+**does not change `enrollment_verified_at`**; a separate institutionally
+authorized identity and enrollment approval process remains mandatory.
+This prototype intentionally excludes authenticators with non-increasing
+signature counters until a reviewed backup/counter policy exists.
