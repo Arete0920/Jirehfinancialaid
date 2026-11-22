@@ -63,7 +63,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div id="family" class="hidden">
 <h3>Family overview</h3>
 <div class="grid"><div class="metric"><strong id="school-name">—</strong><span>Participating school</span></div><div class="metric"><strong id="draft-status">Not created</strong><span>Annual application status</span></div></div>
-<div class="actions"><button class="button secondary" id="load-household" type="button">Refresh household</button><button class="button" id="create-draft" type="button">Create / resume annual draft</button></div>
+<div class="actions"><button class="button secondary" id="load-household" type="button">Refresh household</button><button class="button" id="create-draft" type="button" disabled>Create / resume annual draft</button></div>
 <h3>Children in household</h3><div id="children"><p>Load your household to see children.</p></div>
 <div class="actions"><button class="button secondary" id="verify-tenant" type="button">Verify School B access is denied</button><button class="button secondary" id="verify-csrf" type="button">Verify CSRF protection</button></div>
 </div>
@@ -100,6 +100,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   }
   async function login(role){
     try{
+      $("create-draft").disabled=true;
       await logout();
       await api("/test-auth/login/");
       const r=await fetch("/test-auth/login/",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRFToken":decodeURIComponent(cookie("csrftoken"))},body:JSON.stringify({username:role,password:PASSWORD})});
@@ -130,6 +131,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     state.draft=draft.ok?draft.data:null;
     $("draft-status").textContent=draft.ok?draft.data.status:"Not created";
     renderStudents();
+    $("create-draft").disabled=false;
     log("Household verified: "+h.data.name+"; "+state.students.length+" linked children");
   }
   function renderStudents(){
@@ -159,11 +161,16 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   }
   async function createDraft(){
     if(!state.config||state.role!=="local-demo-family")return;
-    const a=primary(),r=await api(path(a,a.household_id,a.year_id),"POST");
-    if(!r.ok){log("Draft request failed HTTP "+r.status,false);return;}
-    state.draft=r.data;$("draft-status").textContent=r.data.status;
-    log("Annual draft active: "+r.data.id.slice(0,8)+"… — repeated creation is idempotent");
-    renderStudents();await refreshSelections();
+    $("create-draft").disabled=true;
+    try{
+      const a=primary(),r=await api(path(a,a.household_id,a.year_id),"POST");
+      if(!r.ok){log("Draft request failed HTTP "+r.status,false);return;}
+      state.draft=r.data;$("draft-status").textContent=r.data.status;
+      log("Annual draft active: "+r.data.id.slice(0,8)+"… — repeated creation is idempotent");
+      renderStudents();await refreshSelections();
+    }finally{
+      $("create-draft").disabled=false;
+    }
   }
   async function loadInventory(){
     if(!state.config||state.role==="local-demo-family")return;
