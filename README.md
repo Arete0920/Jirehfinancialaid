@@ -300,10 +300,10 @@ Runtime startup requires explicit `JIREH_ENABLE_RUNTIME=1` and these values:
   its trust or the database connection.
 
 The entrypoints force runtime settings; the disposable test settings are not
-accepted as a runtime override. The runtime requires a compatible PostgreSQL
-Python driver, and that driver, deployment packaging, host-specific TLS
+accepted as a runtime override. The hashed requirements now include the PostgreSQL 3.3.6 driver and
+CPython 3.12 binary wheels. Deployment packaging, host-specific TLS
 termination, operator authentication, secure grant management, financial forms,
-submission and award decisions must be verified separately before hosting.
+submission and award decisions must still be verified before hosting.
 `SECURE_SSL_REDIRECT` is enabled, but HSTS is deliberately disabled until a
 real HTTPS origin is verified. Do not deploy on the strength of `check`, `/healthz/`
 or CI alone; do not expose real family information or collect payments.
