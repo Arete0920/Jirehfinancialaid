@@ -1077,3 +1077,65 @@ class OperatorWebAuthnRegistration(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Registration history cannot be deleted.")
+
+class OperatorWebAuthnPossessionChallenge(UUIDStampedModel):
+    """One-use proof for a pending credential, not operator approval or MFA."""
+
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_operator_possession_proofs",
+    )
+    credential = models.ForeignKey(
+        "OperatorWebAuthnCredential", on_delete=models.PROTECT,
+        related_name="jireh_possession_proofs",
+    )
+    challenge = models.CharField(max_length=128, unique=True)
+    expires_at = models.DateTimeField()
+    closed_at = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_sign_count = models.PositiveBigIntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["operator"], condition=Q(closed_at__isnull=True),
+                name="jireh_one_open_possession_proof",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(verified_at__isnull=True, verified_sign_count__isnull=True)
+                    | Q(verified_at__isnull=False, closed_at__isnull=False,
+                        verified_sign_count__isnull=False)
+                ),
+                name="jireh_possession_proof_verified_closed",
+            ),
+            models.CheckConstraint(
+                condition=Q(verified_sign_count__isnull=True)
+                | Q(verified_sign_count__lte=4294967295),
+                name="jireh_possession_proof_counter32",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.credential_id is not None and self.operator_id is not None:
+            if self.credential.operator_id != self.operator_id:
+                raise ValidationError("Proof operator and credential mismatch.")
+        if (self.verified_at is None) != (self.verified_sign_count is None):
+            raise ValidationError("Proof and counter must be recorded together.")
+        if self.verified_at is not None and self.closed_at is None:
+            raise ValidationError("Verified proof must be closed.")
+        if not self._state.adding:
+            before = type(self).objects.filter(pk=self.pk).values(
+                "operator_id", "credential_id", "challenge", "expires_at",
+                "closed_at", "verified_at", "verified_sign_count",
+            ).first()
+            if before:
+                for name in ("operator_id", "credential_id", "challenge", "expires_at"):
+                    if getattr(self, name) != before[name]:
+                        raise ValidationError("Proof identity is immutable.")
+                if before["closed_at"] is not None:
+                    raise ValidationError("Closed proof is immutable.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Proof evidence cannot be deleted.")
