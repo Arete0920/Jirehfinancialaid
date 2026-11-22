@@ -90,6 +90,37 @@ def validate_flow(
     )
 
 
+def validate_calendar_year_flow(
+    *,
+    reporting_year: object,
+    amount_cents: object,
+    period_start: object,
+    period_end: object,
+    min_cents: int,
+    max_cents: int,
+) -> ValidatedFlow:
+    """Validate a flow against a caller-selected, separately authorized year.
+
+    Does not choose the applicable school tax year, split crossing periods,
+    annualize, authorize households, or persist financial answers.
+    """
+    if type(reporting_year) is not int or not 1 <= reporting_year <= 9999:
+        raise QuestionnaireValidationError("reporting_year_invalid")
+    flow = validate_flow(
+        amount_cents=amount_cents,
+        period_start=period_start,
+        period_end=period_end,
+        min_cents=min_cents,
+        max_cents=max_cents,
+    )
+    if (
+        flow.period_start.year != reporting_year
+        or flow.period_end.year != reporting_year
+    ):
+        raise QuestionnaireValidationError("flow_outside_reporting_year")
+    return flow
+
+
 def validate_balance(
     *,
     balance_cents: object,
