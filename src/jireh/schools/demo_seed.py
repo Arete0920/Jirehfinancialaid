@@ -1,5 +1,6 @@
 """Synthetic-only browser demo fixtures. Never provision actual schools here."""
 
+import secrets
 from datetime import date
 
 from django.contrib.auth import get_user_model
@@ -21,7 +22,7 @@ DEMO_SCHOOL_B_CODE = "local-jireh-school-b"
 DEMO_PARENT = "local-demo-family"
 DEMO_DIRECTOR_A = "local-demo-director-a"
 DEMO_DIRECTOR_B = "local-demo-director-b"
-DEMO_PASSWORD = "Local-Synthetic-Demo-2026-Only!"
+DEMO_PASSWORD = secrets.token_urlsafe(32)
 
 
 @transaction.atomic
