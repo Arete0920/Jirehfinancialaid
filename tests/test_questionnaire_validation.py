@@ -14,6 +14,7 @@ from jireh.financial_aid.questionnaire_validation import (
     validate_calendar_year_flow,
     validate_flow,
     validate_optional_consent,
+    validate_typed_question_answer,
 )
 
 
@@ -154,6 +155,85 @@ class QuestionnaireValidationTests(unittest.TestCase):
         self.assertNotIn("76543", repr(row))
         with self.assertRaises(FrozenInstanceError):
             row.balance_cents = 0
+
+    def test_typed_question_boolean_keeps_no_distinct_from_yes(self):
+        self.assertIs(
+            validate_typed_question_answer(value=False, answer_type="boolean"),
+            False,
+        )
+        self.assertIs(
+            validate_typed_question_answer(value=True, answer_type="boolean"),
+            True,
+        )
+
+    def test_typed_question_boolean_rejects_missing_and_coercion(self):
+        for bad in (None, 0, 1, "false", "true", [], {}, (False,)):
+            with self.subTest(value=bad):
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^question_answer_type_invalid$"
+                ):
+                    validate_typed_question_answer(
+                        value=bad, answer_type="boolean",
+                    )
+
+    def test_typed_question_enum_requires_exact_trusted_options(self):
+        options = ("CHOICE_A", "CHOICE_B")
+        self.assertEqual(
+            validate_typed_question_answer(
+                value="CHOICE_A", answer_type="enum", enum_options=options,
+            ),
+            "CHOICE_A",
+        )
+        for value in ("choice_a", "CHOICE_A ", "SYNTHETIC_PRIVATE_VALUE"):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^question_answer_not_allowed$"
+                ) as error:
+                    validate_typed_question_answer(
+                        value=value, answer_type="enum", enum_options=options,
+                    )
+                self.assertNotIn(value, str(error.exception))
+        for value in (None, False, True, 1, [], {}, ["CHOICE_A"]):
+            with self.subTest(value=value):
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^question_answer_type_invalid$"
+                ):
+                    validate_typed_question_answer(
+                        value=value, answer_type="enum", enum_options=options,
+                    )
+
+    def test_typed_question_definition_must_be_explicit_and_unique(self):
+        for options in (None, (), [], ["CHOICE_A"], (1,), (True,),
+                        ("",), (" CHOICE_A",), ("CHOICE_A ",),
+                        ("CHOICE_A", "CHOICE_A")):
+            with self.subTest(options=options):
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^question_definition_invalid$"
+                ):
+                    validate_typed_question_answer(
+                        value="CHOICE_A", answer_type="enum",
+                        enum_options=options,
+                    )
+        with self.assertRaisesRegex(
+            QuestionnaireValidationError, "^question_definition_invalid$"
+        ):
+            validate_typed_question_answer(
+                value=False, answer_type="boolean", enum_options=("ANY",),
+            )
+
+    def test_typed_question_rejects_unapproved_free_text_or_json_types(self):
+        for answer_type in (
+            None, True, "", "text", "json", "number", "money",
+            "boolean ", [], {},
+        ):
+            with self.subTest(answer_type=answer_type):
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^question_type_unsupported$"
+                ):
+                    validate_typed_question_answer(
+                        value={"private": "never-accept"},
+                        answer_type=answer_type,
+                    )
 
     def test_consent_distinguishes_unknown_no_and_yes(self):
         self.assertIsNone(validate_optional_consent(None))
