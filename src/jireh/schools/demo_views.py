@@ -1,5 +1,7 @@
 """Local synthetic-only page and authenticated demo routing metadata."""
 
+import json
+import secrets
 from pathlib import Path
 
 from django.http import HttpResponse, JsonResponse
@@ -7,6 +9,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
 from .demo_seed import (
+    DEMO_PASSWORD,
     DEMO_PARENT,
     DEMO_DIRECTOR_A,
     DEMO_DIRECTOR_B,
@@ -19,17 +22,24 @@ from .models import AcademicYear, Household, School
 @never_cache
 @require_GET
 def demo_page(request):
+    # The password is random per local process, never committed to this public
+    # repository. This is not a production sign-in protocol.
+    nonce = secrets.token_urlsafe(16)
     template = Path(__file__).with_name("demo_page.html").read_text(encoding="utf-8")
+    template = template.replace(
+        "__JIREH_BROWSER_DEMO_PASSWORD__", json.dumps(DEMO_PASSWORD),
+    )
+    template = template.replace("<style>", f'<style nonce="{nonce}">')
+    template = template.replace("<script>", f'<script nonce="{nonce}">')
     response = HttpResponse(template, content_type="text/html; charset=utf-8")
     response["Content-Security-Policy"] = (
-        "default-src 'none'; style-src 'unsafe-inline'; script-src 'unsafe-inline'; "
-        "connect-src 'self'; img-src 'self' data:; form-action 'self'; "
-        "base-uri 'none'; frame-ancestors 'none'"
+        f"default-src 'none'; style-src 'nonce-{nonce}'; "
+        f"script-src 'nonce-{nonce}'; connect-src 'self'; img-src 'self' data:; "
+        "form-action 'self'; base-uri 'none'; frame-ancestors 'none'"
     )
     response["X-Content-Type-Options"] = "nosniff"
     response["X-Frame-Options"] = "DENY"
     return response
-
 
 @never_cache
 @require_GET
