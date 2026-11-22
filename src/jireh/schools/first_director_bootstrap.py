@@ -13,10 +13,11 @@ from datetime import timedelta
 from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
-from django.db import transaction
+from django.db import DatabaseError, transaction
 from django.http import Http404
 from django.utils import timezone
 
+from .login_budget import charge_bootstrap_operator_attempt
 from .models import (
     FirstDirectorBootstrapRequest, School, SchoolGrantDecisionEvent,
     SchoolStaffAccess, VerifiedRecoveryContact,
@@ -25,6 +26,25 @@ from .models import (
 
 BOOTSTRAP_LIFETIME = timedelta(minutes=15)
 REFERENCE_RE = re.compile(r"\A[A-Z0-9][A-Z0-9-]{7,119}\Z")
+
+
+def _charge_operator_attempt(operator):
+    """Commit an attempt before the grant transaction; reject outer rollback."""
+    if getattr(settings, "JIREH_FIRST_DIRECTOR_BOOTSTRAP_ENABLED", False) is not True:
+        raise PermissionDenied("Initial director bootstrap disabled.")
+    allowlist = getattr(settings, "JIREH_BOOTSTRAP_OPERATOR_IDS", ())
+    if (not isinstance(allowlist, (tuple, frozenset))
+            or len(allowlist) < 2
+            or len(set(allowlist)) != len(allowlist)
+            or getattr(operator, "pk", None) not in allowlist):
+        raise PermissionDenied("Operator authentication required.")
+    try:
+        with transaction.atomic(durable=True):
+            allowed, _ = charge_bootstrap_operator_attempt(operator_id=operator.pk)
+    except (DatabaseError, RuntimeError):
+        raise PermissionDenied("Operator attempt control unavailable.") from None
+    if not allowed:
+        raise PermissionDenied("Operator attempt limit exceeded.")
 
 
 def _operator(*, user, password):
@@ -63,8 +83,21 @@ def _available_school(*, school_id):
     return school
 
 
-@transaction.atomic
 def propose_first_director(
+    *, operator, operator_password, school_id, subject_user_id,
+    authorization_reference,
+):
+    """Debit operator budget independently before starting grant work."""
+    _charge_operator_attempt(operator)
+    return _propose_first_director(
+        operator=operator, operator_password=operator_password,
+        school_id=school_id, subject_user_id=subject_user_id,
+        authorization_reference=authorization_reference,
+    )
+
+
+@transaction.atomic
+def _propose_first_director(
     *, operator, operator_password, school_id, subject_user_id,
     authorization_reference,
 ):
@@ -106,8 +139,19 @@ def propose_first_director(
     )
 
 
-@transaction.atomic
 def approve_first_director(
+    *, operator, operator_password, request_id, authorization_reference,
+):
+    """Independently debit the approving operator's attempt budget."""
+    _charge_operator_attempt(operator)
+    return _approve_first_director(
+        operator=operator, operator_password=operator_password,
+        request_id=request_id, authorization_reference=authorization_reference,
+    )
+
+
+@transaction.atomic
+def _approve_first_director(
     *, operator, operator_password, request_id, authorization_reference,
 ):
     """Confirm with a *different* operator and atomically grant and audit.
