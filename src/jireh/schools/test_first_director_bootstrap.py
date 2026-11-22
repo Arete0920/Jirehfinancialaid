@@ -63,6 +63,14 @@ class FirstDirectorBootstrapTests(TestCase):
         )
         settings_context.enable()
         self.addCleanup(settings_context.disable)
+        # Legacy tests isolate school/dual-control rules. The real synthetic
+        # cryptographic MFA boundary is tested in test_first_director_mfa.py.
+        mfa_patch = patch(
+            "jireh.schools.first_director_bootstrap.consume_director_action_proof",
+            return_value=None,
+        )
+        mfa_patch.start()
+        self.addCleanup(mfa_patch.stop)
 
     def verify(self, user=None):
         user = user or self.subject

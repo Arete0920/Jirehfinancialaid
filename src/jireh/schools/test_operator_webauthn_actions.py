@@ -209,6 +209,15 @@ class OperatorActionWebAuthnTests(TransactionTestCase):
                     pk=intent_id,
                 ).delete()
 
+    def test_integer_django_subject_ids_bind_to_exact_action(self):
+        first = self.proposal(subject_user_id=17)
+        second = self.proposal(subject_user_id=18)
+        self.assertNotEqual(
+            director_action_digest(**first), director_action_digest(**second),
+        )
+        with self.assertRaises(PermissionDenied):
+            director_action_digest(**self.proposal(subject_user_id=True))
+
     def test_invalid_scope_rejected_before_issuing_credential_challenge(self):
         for scope in (
             self.proposal(request_id=uuid4()),

@@ -18,6 +18,8 @@ from django.http import Http404
 from django.utils import timezone
 
 from .login_budget import charge_bootstrap_operator_attempt
+from .operator_webauthn_actions import consume_director_action_proof
+from .models import OperatorWebAuthnActionIntent
 from .models import (
     FirstDirectorBootstrapRequest, School, SchoolGrantDecisionEvent,
     SchoolStaffAccess, VerifiedRecoveryContact,
@@ -85,7 +87,7 @@ def _available_school(*, school_id):
 
 def propose_first_director(
     *, operator, operator_password, school_id, subject_user_id,
-    authorization_reference,
+    authorization_reference, mfa_intent_id=None,
 ):
     """Debit operator budget independently before starting grant work."""
     _charge_operator_attempt(operator)
@@ -93,13 +95,14 @@ def propose_first_director(
         operator=operator, operator_password=operator_password,
         school_id=school_id, subject_user_id=subject_user_id,
         authorization_reference=authorization_reference,
+        mfa_intent_id=mfa_intent_id,
     )
 
 
 @transaction.atomic
 def _propose_first_director(
     *, operator, operator_password, school_id, subject_user_id,
-    authorization_reference,
+    authorization_reference, mfa_intent_id=None,
 ):
     """Prepare a short-lived, actor-attributed request; never grant access."""
     if not isinstance(authorization_reference, str) or not REFERENCE_RE.fullmatch(
@@ -130,6 +133,12 @@ def _propose_first_director(
         prior.closed_at = now
         prior.save(update_fields=["closed_at", "updated_at"])
 
+    consume_director_action_proof(
+        operator=actor, intent_id=mfa_intent_id,
+        action=OperatorWebAuthnActionIntent.ACTION_DIRECTOR_PROPOSE,
+        authorization_reference=authorization_reference,
+        school_id=school.pk, subject_user_id=subject.pk,
+    )
     return FirstDirectorBootstrapRequest.objects.create(
         school=school,
         subject=subject,
@@ -141,18 +150,21 @@ def _propose_first_director(
 
 def approve_first_director(
     *, operator, operator_password, request_id, authorization_reference,
+    mfa_intent_id=None,
 ):
     """Independently debit the approving operator's attempt budget."""
     _charge_operator_attempt(operator)
     return _approve_first_director(
         operator=operator, operator_password=operator_password,
         request_id=request_id, authorization_reference=authorization_reference,
+        mfa_intent_id=mfa_intent_id,
     )
 
 
 @transaction.atomic
 def _approve_first_director(
     *, operator, operator_password, request_id, authorization_reference,
+    mfa_intent_id=None,
 ):
     """Confirm with a *different* operator and atomically grant and audit.
 
@@ -193,6 +205,12 @@ def _approve_first_director(
     if SchoolStaffAccess.objects.for_school(school.pk).exists():
         raise ValidationError("Director grant already exists.")
 
+    consume_director_action_proof(
+        operator=actor, intent_id=mfa_intent_id,
+        action=OperatorWebAuthnActionIntent.ACTION_DIRECTOR_APPROVE,
+        authorization_reference=authorization_reference,
+        request_id=locked.pk,
+    )
     grant = SchoolStaffAccess.objects.create(
         school=school,
         user=subject,

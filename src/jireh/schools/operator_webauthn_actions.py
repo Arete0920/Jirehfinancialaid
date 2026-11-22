@@ -44,6 +44,14 @@ def _uuid(value):
         raise PermissionDenied("Action context identifier invalid.") from None
 
 
+def _subject_identifier(value):
+    # Current Django auth PKs are positive integers; support canonical UUID
+    # subject identities as well without equating numeric and UUID strings.
+    if type(value) is int and 0 < value <= 9223372036854775807:
+        return "int:" + str(value)
+    return "uuid:" + _uuid(value)
+
+
 def director_action_digest(
     *, action, authorization_reference,
     school_id=None, subject_user_id=None, request_id=None,
@@ -57,7 +65,7 @@ def director_action_digest(
             raise PermissionDenied("Director proposal scope invalid.")
         context = {
             "action": action, "school_id": _uuid(school_id),
-            "subject_user_id": _uuid(subject_user_id),
+            "subject_user_id": _subject_identifier(subject_user_id),
             "authorization_reference": authorization_reference,
         }
     elif action == OperatorWebAuthnActionIntent.ACTION_DIRECTOR_APPROVE:
