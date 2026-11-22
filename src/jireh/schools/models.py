@@ -884,3 +884,64 @@ class FirstDirectorBootstrapRequest(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Initial director approvals cannot be deleted.")
+
+
+
+class OperatorWebAuthnChallenge(UUIDStampedModel):
+    """Internal-only, single-use challenge bound to one privileged operator.
+
+    No browser route, enrolled-credential storage, session, or privilege grant
+    is provided. On PostgreSQL, migration 0015 forbids rewriting or deleting
+    finalized rows even through QuerySet.update()/raw SQL.
+    """
+
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_operator_webauthn_challenges",
+    )
+    rp_id = models.CharField(max_length=253)
+    origin = models.CharField(max_length=261)
+    credential_id_digest = models.CharField(max_length=64)
+    challenge = models.CharField(max_length=128, unique=True)
+    expires_at = models.DateTimeField()
+    closed_at = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["operator"],
+                condition=Q(closed_at__isnull=True),
+                name="jireh_one_open_webauthn_operator",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(verified_at__isnull=True) | Q(closed_at__isnull=False)
+                ),
+                name="jireh_webauthn_verified_closed",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.origin != f"https://{self.rp_id}":
+            raise ValidationError("WebAuthn relying-party origin mismatch.")
+        if self.verified_at is not None and self.closed_at is None:
+            raise ValidationError("Verified challenges must be closed.")
+        if not self._state.adding:
+            before = type(self).objects.filter(pk=self.pk).values(
+                "operator_id", "rp_id", "origin", "credential_id_digest",
+                "challenge", "expires_at", "closed_at", "verified_at",
+            ).first()
+            if before:
+                immutable = (
+                    "operator_id", "rp_id", "origin",
+                    "credential_id_digest", "challenge", "expires_at",
+                )
+                if any(getattr(self, field) != before[field] for field in immutable):
+                    raise ValidationError("Operator challenge identity is immutable.")
+                if before["closed_at"] is not None:
+                    raise ValidationError("Closed operator challenges are immutable.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Operator challenges cannot be deleted.")

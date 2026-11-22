@@ -613,3 +613,25 @@ authorization, recovery policy, UI or public endpoint. Bootstrap remains
 disabled by default and is not wired to this verifier. Production packaging
 (including Windows/macOS), identity authorization and complete end-to-end
 security testing require separate acceptance.
+
+
+
+### Durable WebAuthn challenge lifecycle (internal-only, inactive)
+
+The separate `operator_webauthn_challenges` service maintains a PostgreSQL-
+guarded, five-minute, one-use assertion challenge bound to one allowlisted
+operator, exact HTTPS RP/origin, and enrolled credential fingerprint. It
+serializes calls on the operator row, closes expired or rejected challenges,
+and prevents challenge reuse. Invalid cryptographic assertions consume the
+pending challenge rather than returning a privilege or session. The feature
+flag `JIREH_OPERATOR_WEBAUTHN_CHALLENGES_ENABLED` is **false by default**.
+This module has no HTTP route and is not called by first-director bootstrap.
+
+**Explicit limitations:** The caller must already authenticate the operator
+and supply a trusted enrolled credential. There is no certified enrollment
+or credential registry, no atomic long-term signature-counter update, no
+operator session, no password-plus-FIDO2 enforcement, no real-world MFA
+activation and no production packaging acceptance. The returned counter
+is evidence for a future registry, NOT authorization. A legitimate
+authenticator must not be given privileges until the complete integrated
+transaction and recovery flow have been independently verified.
