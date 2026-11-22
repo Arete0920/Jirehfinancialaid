@@ -774,3 +774,36 @@ hardware backup-state policy are still required before real-school use.
 Synthetic cryptographic integration tests exercise both operator signatures,
 wrong scope, replay, revocation, and transactional rollback. A verified proof
 does not itself grant login or an operator session.
+
+### Independent operator WebAuthn lost-key recovery (internal, disabled)
+
+The recovery service uses a separate default-OFF gate,
+`JIREH_OPERATOR_CREDENTIAL_RECOVERY_ENABLED`. The explicitly configured
+owner or integration manager must independently check the affected
+operator's identity and institutional authority, supply a recorded
+verification reference, and reauthenticate with their own password.
+Self-recovery, unconfigured authorities and already revoked credentials
+are rejected. Owner/manager attempts consume the existing durable
+privileged-operation attempt budget.
+
+An approved LOST/COMPROMISED recovery **revokes the old verified
+credential permanently**, preserving an immutable, independent recovery
+audit record in the same durable transaction. An inactive affected
+operator's credential can still be revoked. All normal WebAuthn assertions
+and privileged actions fail closed for revoked credentials.
+
+Replacement cannot reactivate the old credential or bypass enrollment.
+It must be a **different credential registered after the recovery**,
+bound to the same operator and RP/origin, with successful WebAuthn proof
+of possession and independently authorized owner/manager approval through
+the ordinary credential-approval service. Separate recovery confirmation
+then records an immutable linkage without granting any new privilege.
+PostgreSQL protects both recovery and confirmation records from mutation
+and deletion and verifies their credential/evidence relationships.
+
+**Not production ready:** Real-world identity and institutional authority
+verification remains a human responsibility outside Jireh. No operator
+recovery UI, authenticated session, public endpoint, incident notification,
+live credential onboarding, backup-authenticator policy, or production
+deployment is created or enabled. Neither owner nor manager IDs are
+configured here. All verification uses synthetic keys and identities.

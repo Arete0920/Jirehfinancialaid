@@ -1258,3 +1258,114 @@ class OperatorWebAuthnActionIntent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Action intent evidence cannot be deleted.")
+
+
+class OperatorWebAuthnRecovery(UUIDStampedModel):
+    """Immutable owner/manager authorization and revocation of a lost key.
+
+    Revocation does not enroll a replacement, create a session, or reinstate
+    an operator. This is an internal audit record; no recovery HTTP endpoint.
+    """
+
+    REASON_LOST = "LOST"
+    REASON_COMPROMISED = "COMPROMISED"
+    REASON_CHOICES = (
+        (REASON_LOST, "Lost credential"),
+        (REASON_COMPROMISED, "Compromised credential"),
+    )
+
+    credential = models.OneToOneField(
+        "OperatorWebAuthnCredential", on_delete=models.PROTECT,
+        related_name="jireh_recovery",
+    )
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_operator_recoveries",
+    )
+    authorized_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_authorized_operator_recoveries",
+    )
+    approver_role = models.CharField(
+        max_length=20,
+        choices=OperatorWebAuthnEnrollmentApproval.ROLE_CHOICES,
+    )
+    reason = models.CharField(max_length=12, choices=REASON_CHOICES)
+    identity_verification_reference = models.CharField(max_length=120)
+    authorized_at = models.DateTimeField()
+
+    def clean(self):
+        super().clean()
+        if not self._state.adding:
+            raise ValidationError("Operator recovery evidence is immutable.")
+        if not all((self.credential_id, self.operator_id,
+                    self.authorized_by_id, self.authorized_at)):
+            return
+        if self.authorized_by_id == self.operator_id:
+            raise ValidationError("Self-recovery is forbidden.")
+        if self.credential.operator_id != self.operator_id:
+            raise ValidationError("Recovered credential has a different owner.")
+        if self.credential.revoked_at != self.authorized_at:
+            raise ValidationError("Recovery must atomically revoke the original key.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Operator recovery evidence cannot be deleted.")
+
+
+class OperatorWebAuthnRecoveryReplacement(UUIDStampedModel):
+    """Immutable completion record for a distinct, fully approved new key.
+
+    Replacement is separately registered and approved using the ordinary
+    identity/possession flow. This record never activates any credential.
+    """
+
+    recovery = models.OneToOneField(
+        "OperatorWebAuthnRecovery", on_delete=models.PROTECT,
+        related_name="jireh_replacement",
+    )
+    replacement_credential = models.OneToOneField(
+        "OperatorWebAuthnCredential", on_delete=models.PROTECT,
+        related_name="jireh_recovery_replacement",
+    )
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_operator_recovery_replacements",
+    )
+    confirmed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_confirmed_recovery_replacements",
+    )
+    approver_role = models.CharField(
+        max_length=20,
+        choices=OperatorWebAuthnEnrollmentApproval.ROLE_CHOICES,
+    )
+    confirmation_reference = models.CharField(max_length=120)
+    confirmed_at = models.DateTimeField()
+
+    def clean(self):
+        super().clean()
+        if not self._state.adding:
+            raise ValidationError("Recovery replacement evidence is immutable.")
+        if not all((self.recovery_id, self.replacement_credential_id,
+                    self.operator_id, self.confirmed_by_id, self.confirmed_at)):
+            return
+        if self.operator_id == self.confirmed_by_id:
+            raise ValidationError("Self-confirmed recovery is forbidden.")
+        if self.recovery.operator_id != self.operator_id:
+            raise ValidationError("Recovery operator mismatch.")
+        if self.recovery.credential_id == self.replacement_credential_id:
+            raise ValidationError("Lost credential cannot be its own replacement.")
+        credential = self.replacement_credential
+        old = self.recovery.credential
+        if (credential.operator_id != self.operator_id
+                or credential.rp_id != old.rp_id
+                or credential.origin != old.origin
+                or credential.enrollment_verified_at is None
+                or credential.created_at <= self.recovery.authorized_at
+                or credential.enrollment_verified_at <= self.recovery.authorized_at
+                or credential.revoked_at is not None
+                or self.confirmed_at < credential.enrollment_verified_at):
+            raise ValidationError("A separate, newly approved active key is required.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Recovery replacement evidence cannot be deleted.")
