@@ -635,3 +635,30 @@ activation and no production packaging acceptance. The returned counter
 is evidence for a future registry, NOT authorization. A legitimate
 authenticator must not be given privileges until the complete integrated
 transaction and recovery flow have been independently verified.
+
+### Internal operator credential registry (not activated)
+
+The `OperatorWebAuthnCredential` registry stores a bound WebAuthn public key,
+credential-ID digest, relying-party origin, a nullable independently verified
+enrollment timestamp, a persistent signature counter, and irreversible
+revocation evidence. PostgreSQL guards enforce immutable credential identity
+and key material, non-regressing counters, and one-way revocation. An unverified
+or revoked credential cannot be used through the new registry-backed service.
+
+`operator_webauthn_registry` issues challenges only from an **already verified,
+active registry record**. It consumes the challenge and writes the resulting
+counter in the same durable transaction, serializing access to the operator
+and credential records. Rejected signatures consume the challenge but do not
+advance the counter. This service returns a counter, **not authentication or
+authorization**. Existing prototype helpers remain internal and must never be
+connected to privileged or public paths.
+
+**Enrollment is not implemented:** `enrollment_verified_at` is deliberately
+nullable. Only synthetic tests insert verified registry records. There is no
+real attestation/registration ceremony, enrollment approval, trusted registrar,
+credential recovery, full authenticator policy, protected operator session, or
+password-plus-FIDO2 integration. The operator challenge feature remains
+disabled by default; no customer accounts or production resources are touched.
+The strict-increasing-counter prototype intentionally excludes devices that
+always return zero. A documented backup-state and counter policy is still
+required before production rollout.
