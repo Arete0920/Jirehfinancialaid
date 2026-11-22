@@ -18,7 +18,17 @@ from jireh.schools.demo_seed import (
 )
 
 
-@override_settings(ROOT_URLCONF="jireh.schools.demo_urls")
+@override_settings(
+    ROOT_URLCONF="jireh.schools.demo_urls",
+    TEMPLATES=[
+        {
+            "BACKEND": "django.template.backends.django.DjangoTemplates",
+            "DIRS": [],
+            "APP_DIRS": True,
+            "OPTIONS": {},
+        }
+    ],
+)
 class SyntheticBrowserDemoHTTPTests(TestCase):
     @classmethod
     def setUpTestData(cls):
