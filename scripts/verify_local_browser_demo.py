@@ -53,17 +53,26 @@ def main():
             page = context.new_page()
             page.goto(BASE + "/local-demo/", wait_until="networkidle")
             expect(page.get_by_text("LOCAL SYNTHETIC DEMO")).to_be_visible()
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("Choose a persona")
             page.get_by_role("button", name="Family applicant").click()
             expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             expect(page.locator("#school-name")).to_have_text("Synthetic Christian Academy")
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("View household")
             page.get_by_role("button", name="Create / resume annual draft").click()
             expect(page.locator("#draft-status")).to_have_text("DRAFT")
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("Create annual draft")
             for selected_count in range(2):
                 page.locator("#children button").filter(has_text="Select child").first.click()
                 # Wait for each async POST and UI refresh before the next click.
                 expect(
                     page.locator("#children button").filter(has_text="Selected")
                 ).to_have_count(selected_count + 1)
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("Select children")
+            # Reauthentication must restore selected children from the existing draft.
+            page.get_by_role("button", name="Family applicant").click()
+            expect(page.locator("#draft-status")).to_have_text("DRAFT")
+            expect(page.locator("#children button").filter(has_text="Selected")).to_have_count(2)
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("Select children")
             page.get_by_role("button", name="Verify School B access is denied").click()
             expect(page.locator("#events")).to_contain_text("PASS: School B family draft denied (404)")
             page.get_by_role("button", name="Verify CSRF protection").click()
@@ -72,6 +81,7 @@ def main():
 
             page.get_by_role("button", name="School A director").click()
             expect(page.locator("#application-count")).to_have_text("1")
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
             page.get_by_role("button", name="Verify other school is denied").click()
             expect(page.locator("#events")).to_contain_text(
                 "PASS: Another school's director inventory denied (404)"
@@ -80,6 +90,7 @@ def main():
 
             page.get_by_role("button", name="School B director").click()
             expect(page.locator("#application-count")).to_have_text("0")
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
             page.get_by_role("button", name="Verify other school is denied").click()
             expect(page.locator("#events")).to_contain_text(
                 "PASS: Another school's director inventory denied (404)"
