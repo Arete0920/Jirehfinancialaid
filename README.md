@@ -586,3 +586,30 @@ proof of institutional approval by itself. External institutional approval,
 operator identity management, secret storage, and production certification
 must precede any real provisioning. No real school, account, or cloud
 resource is modified by this feature.
+
+
+
+## Internal WebAuthn operator assertion verifier (not activated)
+
+The internal-only `jireh.schools.operator_webauthn` module provides an
+isolated WebAuthn assertion verifier using Yubico `python-fido2==2.2.1`,
+with hash-pinned **Ubuntu 24.04/Python 3.12 CI-only** dependencies in
+`requirements-webauthn-ci.txt`. Synthetic signing-key tests cover successful
+signature verification and negative controls for origin, challenge, relying
+party, credential identity, user verification, cross-origin assertions and
+non-increasing signature counters. No custom signature cryptography is used.
+
+The verifier requires an exact lowercase HTTPS relying-party origin, a
+trusted previously enrolled credential, required user verification and an
+advancing positive signature counter. Authenticators that do not advance
+counters are deliberately unsupported by this initial contract.
+
+**Do not activate for real operators.** There is no verified registration
+workflow, trusted attestation/enrollment store, persistent operator-key
+binding, durable single-use challenge store, expiration or atomic signature
+counter update; therefore full replay prevention is **not established**.
+Nor is there a password-plus-FIDO2 gate, operator session, privileged action
+authorization, recovery policy, UI or public endpoint. Bootstrap remains
+disabled by default and is not wired to this verifier. Production packaging
+(including Windows/macOS), identity authorization and complete end-to-end
+security testing require separate acceptance.
