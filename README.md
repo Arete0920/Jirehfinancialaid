@@ -702,3 +702,33 @@ identity attestation or school-role grant**. Critically, a successful proof
 authorized identity and enrollment approval process remains mandatory.
 This prototype intentionally excludes authenticators with non-increasing
 signature counters until a reviewed backup/counter policy exists.
+
+### Owner or integration manager credential approval (internal, disabled)
+
+The internal `operator_webauthn_approval` service provides the final,
+explicit, human-authorized **credential enrollment** step. Only configured,
+distinct, active Jireh superuser identities in
+`JIREH_ENROLLMENT_OWNER_USER_ID` and `JIREH_ENROLLMENT_MANAGER_USER_ID`
+may act as owner or integration manager respectively. The separate
+`JIREH_OPERATOR_ENROLLMENT_APPROVAL_ENABLED` gate is false by default.
+Approvers must re-enter their own current password, are subject to
+the existing durable operator-attempt budget, and cannot approve their
+own credentials.
+
+An owner or integration manager must independently verify the prospective
+operator's identity and authorization **outside the application** before
+submitting a bounded external identity-verification reference. The service
+requires an existing closed registration, a fresh successful cryptographic
+proof-of-possession record for that exact key, a matching stored counter,
+and an unrevoked, still-unverified credential. The approval and credential
+activation commit atomically. An append-only, role-attributed approval
+record identifies who approved whom, the registration, possession proof,
+reference, and approval time. PostgreSQL rejects SQL modification/deletion
+of recorded approvals.
+
+**Limits:** a reference is evidence of the designated human's attestation,
+not automatic identity verification. No identity service, authenticated
+operator console, credential recovery, real operator provisioning, or
+WebAuthn MFA enforcement for first-director bootstrap is created. The
+other underlying WebAuthn feature flags remain disabled. No production
+credentials are enrolled or activated by this code change.

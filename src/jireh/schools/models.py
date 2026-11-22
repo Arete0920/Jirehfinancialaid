@@ -1139,3 +1139,70 @@ class OperatorWebAuthnPossessionChallenge(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Proof evidence cannot be deleted.")
+
+
+class OperatorWebAuthnEnrollmentApproval(UUIDStampedModel):
+    """Append-only owner/manager identity attestation for one pending key.
+
+    A completed WebAuthn possession proof and an independently checked
+    identity reference must precede activation. Only the internal gated
+    approval service may produce these records. No public activation route.
+    """
+
+    ROLE_OWNER = "OWNER"
+    ROLE_INTEGRATION_MANAGER = "INTEGRATION_MANAGER"
+    ROLE_CHOICES = (
+        (ROLE_OWNER, "Owner"),
+        (ROLE_INTEGRATION_MANAGER, "Integration manager"),
+    )
+
+    credential = models.OneToOneField(
+        "OperatorWebAuthnCredential", on_delete=models.PROTECT,
+        related_name="jireh_enrollment_approval",
+    )
+    operator = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_approved_enrollments",
+    )
+    approver = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_operator_enrollment_approvals",
+    )
+    approver_role = models.CharField(max_length=20, choices=ROLE_CHOICES)
+    registration = models.ForeignKey(
+        "OperatorWebAuthnRegistration", on_delete=models.PROTECT,
+        related_name="jireh_enrollment_approvals",
+    )
+    possession_proof = models.OneToOneField(
+        "OperatorWebAuthnPossessionChallenge", on_delete=models.PROTECT,
+        related_name="jireh_enrollment_approval",
+    )
+    identity_verification_reference = models.CharField(max_length=120)
+    approved_at = models.DateTimeField()
+
+    def clean(self):
+        super().clean()
+        if not self._state.adding:
+            raise ValidationError("Credential approval evidence is immutable.")
+        if not all((
+            self.credential_id, self.operator_id, self.approver_id,
+            self.possession_proof_id, self.registration_id,
+        )):
+            return
+        if self.approver_id == self.operator_id:
+            raise ValidationError("Self-approval is forbidden.")
+        if self.credential.operator_id != self.operator_id:
+            raise ValidationError("Credential owner mismatch.")
+        if (self.possession_proof.operator_id != self.operator_id
+                or self.possession_proof.credential_id != self.credential_id
+                or self.possession_proof.verified_at is None
+                or self.possession_proof.verified_sign_count is None):
+            raise ValidationError("A verified possession proof is required.")
+        if (self.registration.operator_id != self.operator_id
+                or self.registration.credential_id_digest
+                != self.credential.credential_id_digest
+                or self.registration.closed_at is None):
+            raise ValidationError("A completed registration is required.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Credential approval evidence cannot be deleted.")
