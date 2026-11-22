@@ -70,7 +70,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div id="director" class="hidden"><h3>School financial aid director</h3><p>View a read-only list of annual draft applications within this school. No financial assessment or award is shown.</p>
 <div class="grid"><div class="metric"><strong id="director-school">—</strong><span>Assigned school</span></div><div class="metric"><strong id="application-count">—</strong><span>Drafts visible</span></div></div>
 <div class="actions"><button class="button" id="load-inventory" type="button">Load school drafts</button><button class="button secondary" id="verify-director" type="button">Verify other school is denied</button></div>
-<div id="inventory"></div></div>
+<div id="inventory"></div><div id="case-detail" role="region" aria-label="Selected case detail"></div></div>
 <div class="separator"></div><h3>Test activity</h3><div id="events" role="log" aria-label="Synthetic demonstration activity log"><div>Choose a persona to begin. No real data is used.</div></div>
 </section></div>
 </main><footer>Jireh Financial Aid · Standalone development prototype · Local synthetic data only · Production release: NO-GO</footer>
@@ -112,6 +112,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("authstatus").textContent="Signing in";
       $("family").classList.add("hidden");
       $("director").classList.add("hidden");
+      $("case-detail").replaceChildren();
       await logout();
       await api("/test-auth/login/");
       const r=await fetch("/test-auth/login/",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRFToken":decodeURIComponent(cookie("csrftoken"))},body:JSON.stringify({username:role,password:PASSWORD})});
@@ -187,17 +188,46 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("create-draft").disabled=false;
     }
   }
+  async function loadCase(school, applicationId, originalRole){
+    const r=await api(staffPath(school)+applicationId+"/");
+    if(state.role!==originalRole)return;
+    $("case-detail").replaceChildren();
+    if(!r.ok){
+      log("Selected case access denied HTTP "+r.status,false);
+      return;
+    }
+    if(r.data.school_id!==school.id || r.data.application_id!==applicationId){
+      log("Selected case scope mismatch; response rejected",false);
+      return;
+    }
+    const count=r.data.selected_student_count;
+    const p=document.createElement("p");
+    p.textContent="Read-only draft "+applicationId.slice(0,8)+"… — selected children: "+count;
+    $("case-detail").append(p);
+    log("Authorized school draft case detail: "+count+" selected children");
+  }
   async function loadInventory(){
     if(!state.config||state.role==="local-demo-family")return;
+    const originalRole=state.role;
     const school=state.role==="local-demo-director-a"?primary():secondary();
     const r=await api(staffPath(school));
+    if(originalRole!==state.role)return;
     if(!r.ok){log("Inventory request failed HTTP "+r.status,false);return;}
     $("application-count").textContent=r.data.applications.length;
     $("inventory").replaceChildren();
+    $("case-detail").replaceChildren();
     const p=document.createElement("p");p.textContent=r.data.applications.length?
       "Authorized school drafts: "+r.data.applications.map(a=>a.status+" #"+a.id.slice(0,8)).join(", "):
       "No drafts have been created for this school.";
     $("inventory").append(p);
+    for(const application of r.data.applications){
+      const button=document.createElement("button");
+      button.type="button";
+      button.className="button secondary";
+      button.textContent="View selected children";
+      button.addEventListener("click",()=>loadCase(school,application.id,originalRole));
+      $("inventory").append(button);
+    }
     setActiveStep(5);
     log("School-specific director inventory returned HTTP 200");
   }
