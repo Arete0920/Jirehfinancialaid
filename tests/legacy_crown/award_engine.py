@@ -1,3 +1,5 @@
+from __future__ import annotations
+
 """Historical CROWN award calculation REFERENCE ONLY, not standalone product logic.
 
 Exact calculation implementation sourced from Arete0920/Crown-CSMS
