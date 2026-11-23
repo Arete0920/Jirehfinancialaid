@@ -26,8 +26,8 @@ DEMO_PASSWORD = secrets.token_urlsafe(32)
 
 
 @transaction.atomic
-def seed_synthetic_browser_demo(*, grant_family_access=True):
-    """Seed a disposable database, optionally starting the family without access."""
+def seed_synthetic_browser_demo(*, grant_family_access=True, grant_first_director_access=True):
+    """Seed the two fictional schools, with optional School A access grants."""
     if School.objects.filter(
         code__in=[DEMO_SCHOOL_A_CODE, DEMO_SCHOOL_B_CODE]
     ).exists():
@@ -84,12 +84,17 @@ def seed_synthetic_browser_demo(*, grant_family_access=True):
 
     if grant_family_access:
         HouseholdAccess.objects.create(household=household_a, user=parent)
-    for school, director in ((school_a, director_a), (school_b, director_b)):
+    if grant_first_director_access:
         SchoolStaffAccess.objects.create(
-            school=school,
-            user=director,
+            school=school_a,
+            user=director_a,
             role=SchoolStaffAccess.ROLE_AID_DIRECTOR,
         )
+    SchoolStaffAccess.objects.create(
+        school=school_b,
+        user=director_b,
+        role=SchoolStaffAccess.ROLE_AID_DIRECTOR,
+    )
     return {
         "school_a": school_a,
         "school_b": school_b,
