@@ -6,12 +6,12 @@ from uuid import UUID
 
 from django.db import DatabaseError
 from django.http import HttpResponse
-from django.test import RequestFactory, SimpleTestCase, override_settings
+from django.test import RequestFactory, TestCase, override_settings
 
 from jireh.runtime.telemetry import RuntimeRequestCorrelationMiddleware
 
 
-class RuntimeCorrelationTests(SimpleTestCase):
+class RuntimeCorrelationTests(TestCase):
     @override_settings(
         ROOT_URLCONF="jireh.runtime.urls",
         MIDDLEWARE=["jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware"],
