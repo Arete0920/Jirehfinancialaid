@@ -1,7 +1,7 @@
 # Standalone Jireh production readiness — NO-GO
 
 **Status:** NO-GO. **Scope:** `Arete0920/Jirehfinancialaid`, not CROWN.
-**Source/CI baseline verified:** `27c7edbacd151a21298fcc9b0ec21b5db44dee71`
+**Source/CI baseline verified:** `e7dbfa885f19d3af6e959e4b4f2a6fd6c09a83dd`
 (2026-11-23; GitHub protected `main`).
 Keep `JIREH_OPERATOR_CREDENTIAL_RECOVERY_ENABLED` false,
 the other privileged WebAuthn gates disabled, and customer routes unexposed.
@@ -11,14 +11,16 @@ processing payments, collecting real family data, or initiating real recovery.
 ## Evidence classification
 
 - **Source/CI evidence (verified):** protected `main` commit
-  `27c7edbacd151a21298fcc9b0ec21b5db44dee71` has five completed,
-  successful GitHub check runs: Python 3.12 contracts and repository hygiene;
-  Django 5.2 school/household database tests; PostgreSQL 16 migrations and
-  integrity; SonarCloud code analysis; and repository presentation/attribution.
-  [Foundation workflow run 45238380504](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45238380504)
-  and [presentation workflow run 45238380263](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45238380263)
-  both completed successfully on that SHA. These are source/CI results;
-  they do not show a deployed product.
+  `e7dbfa885f19d3af6e959e4b4f2a6fd6c09a83dd` has **six completed,
+  successful exact-SHA checks**: Python 3.12 contracts/repository hygiene;
+  Django 5.2 school/household tests; PostgreSQL 16 migrations/integrity;
+  SonarCloud code analysis; repository presentation/attribution; and
+  synthetic localhost Chromium browser E2E.
+  [Foundation run 45271109750](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109750),
+  [presentation run 45271109797](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109797),
+  and [browser run 45271109852](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109852)
+  completed successfully on that commit. They certify neither hosted runtime
+  acceptance nor operation with real customer data.
 - **Synthetic tenant acceptance (verified as test coverage, not production):**
   `src/jireh/financial_aid/test_tenant_http_acceptance.py` is included in
   the Django/PostgreSQL source test suite. It exercises synthetic authenticated
@@ -27,28 +29,39 @@ processing payments, collecting real family data, or initiating real recovery.
   its included tests did not fail; it is not evidence of deployed tenant
   isolation or approved live authentication.
 - **Standalone runtime exposure (source only):** `src/jireh/runtime/urls.py`
-  defines only `GET/HEAD /healthz/`. Test/demo routes are in a separate
-  URLConf; no hosted runtime has been accepted.
-- **Browser acceptance limitation:** the latest retrieved successful
-  protected-main synthetic Chromium run was
-  [45206475831](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45206475831)
-  on `74448053613868a1ba0ba2c95361e40cf766477c`, not on the current
-  main SHA. The later run
-  [45208619489](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45208619489)
-  on `b2daa374c8b8b8302c724830c2148fbdaeef9a57` was cancelled.
-  Passing browser E2E evidence on open PR branches is candidate evidence only,
-  and must not be called exact-current-main acceptance.
-- **Parallel work (not merged or credited to main):** open feature PRs
-  #65 (wizard; two unresolved SonarCloud dependency-risk records),
-  #84 (director workload), #86 (fixed fictional financial preview),
-  #88 (offline fee reconciliation), and #89 (fictional onboarding rehearsal)
-  require separate exact-head reviews/acceptance. Their passing checks do not
-  add working production features to main. This paragraph is a
-  2026-11-23 snapshot; recheck PR state before using it for a release decision.
-- **Not established:** live hosting, deployed configuration, authenticated
-  production APIs, database read isolation, observability, incident response,
-  production backups, restore drills, real operator identity verification,
-  WebAuthn hardware backup/counter policy, and security operations acceptance.
+  exposes only `GET/HEAD /healthz/` for liveness and `GET/HEAD /readyz/`
+  for a read-only database connectivity probe. The latter returns generic
+  HTTP 503 on a failed database check, not SQL or credential details.
+  Request correlation IDs and bounded, sanitized server-side request events
+  are a source logging foundation, **not** verified alert delivery or an
+  accepted operations deployment. Test/demo financial-aid, login and staff
+  routes remain in a separate URLConf; no hosted runtime is accepted.
+- **Browser acceptance scope:** the synthetic localhost Chromium workflow
+  [45271109852](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109852)
+  completed successfully on exact protected `main`
+  `e7dbfa885f19d3af6e959e4b4f2a6fd6c09a83dd`. This closes the
+  prior exact-main browser evidence gap **for synthetic tests only**; it is
+  not deployed browser acceptance, real-school onboarding or payment evidence.
+- **Parallel work (not merged or credited to main):** at this checkpoint
+  the only open PR is [#65](https://github.com/Arete0920/Jirehfinancialaid/pull/65)
+  (CROWN wizard primitives). Its two unresolved SonarCloud SCA dependency-risk
+  records prevent treating the PR as accepted or its frontend as released.
+  Recheck live PR state before subsequent decisions.
+- **Payment and first-client acceptance:** the owner approved **$55
+  family-paid per household annual application**, initiated at proposed
+  submission, but final `SUBMITTED` status and award-queue entry require
+  trusted server-side payment verification. No payment initiation, callback,
+  settlement or paid final submission is active. Under the owner's
+  [November 23 provider hold](https://github.com/Arete0920/Jirehfinancialaid/issues/50#issuecomment-7103729979),
+  all CompuWerx-specific activity is deferred pending a clean independent
+  candidate and separate authorization. The paid first-client transaction
+  gate is **BLOCKED — provider stage deferred by owner**. A nonpayment
+  release candidate can be tested without claiming this gate passed.
+- **Not established:** approved hosting and its configuration, authenticated
+  live customer routes, deployed tenant read isolation, alert delivery and
+  monitoring operations, incident response drills, backups/restores, real
+  operator identity verification, authenticator recovery/counter policy, and
+  operations/security acceptance.
 
 Passing a unit/integration suite or a 200 from `/healthz/` is never a
 production acceptance decision.
@@ -73,6 +86,20 @@ NOT TESTED and blocks release.
 | M2: resilience | Readiness distinct from liveness, alert routing and escalation, on-call coverage, backup verification, restore time objectives, recovery drills and safe rollback exercised | NOT TESTED |
 | I1: incident exercise | Tabletop and technical drill for lost/compromised key, unauthorized cross-tenant access, credential or secret exposure and database outage; record timestamps, decisions, notifications and immutable evidence | NOT TESTED |
 | A1: final approval | All gates PASS for the same release candidate and environment; documented product-owner/integration-manager authorization and security/operations review before activation | NOT TESTED |
+
+## Commercial transaction gate (additional to the 11 operations/security gates)
+
+**Disposition: BLOCKED — provider stage deferred by owner.** The December 1,
+2026 first-client target does not override the latest owner hold or authorize
+unverified payments. The approved policy requires one $55 family-paid fee
+per household annual application, initiated at submission; the application
+must remain pending until correct, authoritative server-side confirmation.
+A checkout initiation, client response or asserted callback is not proof
+of payment. No unpaid-submission bypass, invented paid state, default waiver
+or substitute processor is approved. Merchant, refund, waiver, chargeback
+and multi-school treatment are unresolved. The independently buildable
+**nonpayment release candidate** and a **paid first-client launch GO** are
+different decisions. [Owner decision and hold](https://github.com/Arete0920/Jirehfinancialaid/issues/50#issuecomment-7103729979).
 
 ## Monitoring and escalation contract (not implemented)
 
@@ -138,6 +165,8 @@ operational.
 
 ## Release decision
 
-**NO-GO** until every gate has immutable PASS evidence and designated
-human approval. The candidate test suite and this runbook are development
-artifacts only. No automatic GO is implied by merging or passing CI.
+**NO-GO** for customer use until every applicable operational gate has immutable
+PASS evidence and designated human approval, and the first-client payment gate
+has independently verified acceptance following separate provider-stage
+and release authorizations. The candidate test suite and this runbook are
+development artifacts only. No automatic GO is implied by merging or passing CI.
