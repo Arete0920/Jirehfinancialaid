@@ -91,7 +91,7 @@ def audit_release_evidence(packet: object) -> ReleaseEvidenceAudit:
             reasons.append("record_schema_invalid")
             entry = entry if type(entry) is dict else {}
         status = entry.get("status")
-        if status not in RECORD_STATUSES or type(status) is not str:
+        if type(status) is not str or status not in RECORD_STATUSES:
             reasons.append("status_invalid")
             status = "NOT_TESTED"
         if status != "PASS":
