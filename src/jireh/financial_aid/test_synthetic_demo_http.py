@@ -197,9 +197,9 @@ class FictionalOfferHTTPTests(TestCase):
         family = self.client_as(self.parent)
         self.select_child()
         for url in (
-            self.url_receipt(school=self.other_school),
-            self.url_receipt(household=self.other_house),
-            self.url_receipt(year=self.other_year),
+            self.url_receipt(school=self.other_school.pk),
+            self.url_receipt(household=self.other_house.pk),
+            self.url_receipt(year=self.other_year.pk),
         ):
             result = family.post(
                 url, data=json.dumps({"accuracy_attested": True}),
@@ -208,9 +208,9 @@ class FictionalOfferHTTPTests(TestCase):
             )
             self.assertEqual(result.status_code, 404)
         for url in (
-            self.url_family_offers(school=self.other_school),
-            self.url_family_offers(household=self.other_house),
-            self.url_family_offers(year=self.other_year),
+            self.url_family_offers(school=self.other_school.pk),
+            self.url_family_offers(household=self.other_house.pk),
+            self.url_family_offers(year=self.other_year.pk),
         ):
             self.assertEqual(family.get(url).status_code, 404)
         self.assertFalse(SyntheticAidSubmission.objects.exists())
@@ -220,11 +220,11 @@ class FictionalOfferHTTPTests(TestCase):
         self.assertEqual(self.post_officer(foreign).status_code, 404)
         director = self.client_as(self.director)
         self.assertEqual(
-            self.post_officer(director, self.url_director(school=self.other_school)).status_code,
+            self.post_officer(director, self.url_director(school=self.other_school.pk)).status_code,
             404,
         )
         self.assertEqual(
-            self.post_officer(director, self.url_director(student=self.other_child)).status_code,
+            self.post_officer(director, self.url_director(student=self.other_child.pk)).status_code,
             404,
         )
         self.assertFalse(SyntheticAidOffer.objects.exists())
