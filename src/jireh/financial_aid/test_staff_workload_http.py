@@ -72,11 +72,11 @@ class DirectorWorkloadHTTPTests(TestCase):
 
     def test_school_b_and_future_year_independent(self):
         self.client.force_login(self.director_b)
-        result=self.client.get(self.url(self.school_b,self.year_b))
+        result=self.client.get(self.url(self.school_b.pk,self.year_b.pk))
         self.assertEqual(result.status_code,200)
         self.assertEqual(result.json()["draft_application_records"],1)
         self.client.force_login(self.director_a)
-        result=self.client.get(self.url(year=self.year_future))
+        result=self.client.get(self.url(year=self.year_future.pk))
         self.assertEqual(result.status_code,200)
         self.assertEqual(result.json()["draft_application_records"],0)
 
@@ -91,7 +91,7 @@ class DirectorWorkloadHTTPTests(TestCase):
 
     def test_cross_school_year_and_revocation_denied(self):
         self.client.force_login(self.director_a)
-        for url in (self.url(self.school_b,self.year_b),self.url(self.school_a,self.year_b),self.url(year=uuid4())):
+        for url in (self.url(self.school_b.pk,self.year_b.pk),self.url(self.school_a.pk,self.year_b.pk),self.url(year=uuid4())):
             with self.subTest(url=url):
                 self.assertEqual(self.client.get(url,HTTP_X_SCHOOL_ID=str(self.school_a.pk)).status_code,404)
         SchoolStaffAccess.objects.filter(school=self.school_a,user=self.director_a).update(is_active=False)
