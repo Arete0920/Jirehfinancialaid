@@ -36,7 +36,7 @@ def _uuid(value: object, *, error_code: str) -> UUID:
         parsed = UUID(value)
     except (ValueError, TypeError, AttributeError):
         _reject(error_code)
-    if str(parsed) != value:
+    if str(parsed) != value or parsed.int == 0:
         _reject(error_code)
     return parsed
 
