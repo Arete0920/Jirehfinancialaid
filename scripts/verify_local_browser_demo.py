@@ -106,6 +106,17 @@ def main():
                     page.locator("#children button").filter(has_text="Selected")
                 ).to_have_count(selected_count + 1)
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Select children")
+            # Test-only family financial shapes are validated, never stored.
+            preview_result = page.get_by_role("status", name="Fictional questionnaire result")
+            preview_button = page.get_by_role("button", name="Validate fictional questionnaire")
+            preview_button.click()
+            expect(preview_result).to_have_text(
+                "Fictional income, assets and liabilities validated; no answers saved. Questionnaire incomplete."
+            )
+            page.get_by_label("Example scenario").select_option("fictional_moderate")
+            expect(preview_result).to_be_empty()
+            preview_button.click()
+            expect(preview_result).to_contain_text("no answers saved")
             # Wait for the new session, not stale text from the previous persona.
             page.get_by_role("button", name="Family applicant").click()
             expect(page.locator("#family")).to_be_visible()
