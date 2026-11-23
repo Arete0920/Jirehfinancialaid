@@ -174,6 +174,13 @@ def main():
             page.get_by_role("button", name="View selected children").click()
             expect(page.locator("#case-detail")).to_contain_text("selected children: 2")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
+            page.get_by_role("button", name="Preview fictional assessment").click()
+            expect(page.get_by_role("status", name="Fictional assessment result")).to_contain_text(
+                "Fictional preview total: $92.00"
+            )
+            expect(page.get_by_role("list", name="Fictional bucket recommendations")).to_contain_text(
+                "hardship: $50.00 (test cap applied)"
+            )
             page.get_by_role("button", name="Record fictional $250 need offer").click()
             expect(page.locator("#case-detail")).to_contain_text(
                 "Fictional $250 need offer recorded"

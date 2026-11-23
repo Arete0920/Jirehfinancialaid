@@ -4,7 +4,8 @@ Adapt CROWN's two hardcoded family-demo scenarios from
 Arete0920/Crown-CSMS@46b56609fe18360299b08eabaa8bccdffb356a0e
 backend/aid/family_demo_intake.py. Validate their shapes using the standalone
 31-field candidate guard. No HTTP route, questionnaire storage, consent,
-submission, scoring, payment, or school-facing financial result is created.
+submission, payment, or school-facing financial result is created by the
+family preview.
 """
 
 from types import MappingProxyType
@@ -17,7 +18,7 @@ from .questionnaire_validation import QuestionnaireValidationError
 from .services import selected_student_ids_for_draft
 
 
-# These three tuples are invented CROWN demo values (income, assets, debt),
+# These two tuples are invented CROWN demo values (income, assets, debt),
 # in integer USD cents. They are not financial policy or real family data.
 _SCENARIOS = MappingProxyType({
     "fictional_modest": (4_800_000, 200_000, 800_000),
@@ -32,30 +33,21 @@ _ALLOWED_TEST_URLCONFS = frozenset((
 ))
 
 
-def preview_fictional_financial_structure(
-    *, user, school_id, household_id, academic_year_id, scenario_id, catalog
-):
-    """Return a value-free summary after current grant/draft authorization.
+class FictionalScenarioNotFound(QuestionnaireValidationError):
+    """The requested ID is outside the fixed scenario fixtures."""
 
-    A future HTTP adapter MUST NOT pass client-supplied catalog, policies or
-    financial values. This function accepts only two fixed fictional cases,
-    cannot save a profile, and remains disabled under production settings.
-    """
+
+def require_synthetic_questionnaire_preview():
     if (
         getattr(settings, "JIREH_SYNTHETIC_SUBMISSION_ONLY", False) is not True
         or settings.ROOT_URLCONF not in _ALLOWED_TEST_URLCONFS
     ):
         raise PermissionDenied("Synthetic preview unavailable.")
 
-    # Existing Jireh service checks an active authenticated household grant,
-    # matching school/year, and an already-persisted DRAFT; it performs no write.
-    selected_student_ids_for_draft(
-        user=user, school_id=school_id, household_id=household_id,
-        academic_year_id=academic_year_id,
-    )
-
+def validate_fictional_scenario(*, scenario_id, catalog):
+    """Return validated rows from the fixed fixtures for trusted demo code."""
     if type(scenario_id) is not str or scenario_id not in _SCENARIOS:
-        raise QuestionnaireValidationError("synthetic_scenario_unavailable")
+        raise FictionalScenarioNotFound("synthetic_scenario_unavailable")
     income, assets, liabilities = _SCENARIOS[scenario_id]
 
     rows = (
@@ -73,22 +65,36 @@ def preview_fictional_financial_structure(
             "as_of_date": "2026-06-30", "responsible_member_id": _SYNTHETIC_MEMBER,
         }, ("MORTGAGE",)),
     )
-    for section, record, categories in rows:
-        validate_v1_financial_candidate(
+    return {
+        section: validate_v1_financial_candidate(
             catalog=catalog, section=section, record=record,
             approved_categories=categories,
             min_cents=_SYNTHETIC_MIN_CENTS,
             max_cents=_SYNTHETIC_MAX_CENTS,
             reporting_year=_SYNTHETIC_YEAR if section == "income" else None,
             authorized_member_ids=(_SYNTHETIC_MEMBER,),
-        )
+        ).value
+        for section, record, categories in rows
+    }
+
+
+def preview_fictional_financial_structure(
+    *, user, school_id, household_id, academic_year_id, scenario_id, catalog
+):
+    """Return a value-free summary after current grant/draft authorization."""
+    require_synthetic_questionnaire_preview()
+    selected_student_ids_for_draft(
+        user=user, school_id=school_id, household_id=household_id,
+        academic_year_id=academic_year_id,
+    )
+    validated = validate_fictional_scenario(scenario_id=scenario_id, catalog=catalog)
 
     # Deliberately never expose amounts, member ID, household/student names,
     # document metadata or 'verified/submitted/awarded' status to a caller.
     return {
         "scenario_id": scenario_id,
         "demo_only": True,
-        "validated_candidate_sections": ["income", "assets", "liabilities"],
+        "validated_candidate_sections": list(validated),
         "full_questionnaire_complete": False,
         "financial_answers_stored": False,
         "consent_captured": False,
