@@ -19,3 +19,7 @@ DATABASES = {"default": {"ENGINE": "django.db.backends.sqlite3", "NAME": ":memor
 TIME_ZONE = "UTC"
 USE_TZ = True
 DEFAULT_AUTO_FIELD = "django.db.models.BigAutoField"
+
+# Enables a fictional submission-receipt fixture in disposable test/demo settings only.
+# The standalone runtime does not set this switch and exposes no such endpoint.
+JIREH_SYNTHETIC_SUBMISSION_ONLY = True
