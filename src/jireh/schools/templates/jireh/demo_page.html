@@ -39,7 +39,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <body>
 <header><div><div class="overline">Independent financial aid platform</div><div class="brand">JIREH<span>.</span></div></div><div class="pill">LOCAL SYNTHETIC DEMO · NOT LIVE</div></header>
 <main>
-<div class="intro"><div><div class="overline" style="color:#4d7965">Financial aid · 2026–27</div><h1>Family application walkthrough</h1><p>Experience the verified draft and school-access workflow with fictional people and institutions.</p></div><div class="notice"><strong>Demonstration limits:</strong> Financial questions, uploads, submission, assessment, awards and payments are not implemented in this demo. This page is loopback-only, uses disposable data, and must not be deployed.</div></div>
+<div class="intro"><div><div class="overline" style="color:#4d7965">Financial aid · 2026–27</div><h1>Family application walkthrough</h1><p>Experience the verified draft and school-access workflow with fictional people and institutions.</p></div><div class="notice"><strong>Demonstration limits:</strong> Real financial questions, uploads, legally submitted applications, assessment, binding awards and payments are not implemented. Fictional submission receipts and $250 offers are test-only, not funding promises. This page is loopback-only, disposable, and must not be deployed.</div></div>
 <div class="layout">
 <aside class="panel sidebar" aria-label="Journey navigation">
 <div class="small" style="font-weight:750;letter-spacing:.1em;text-transform:uppercase">Walkthrough</div>
@@ -48,6 +48,8 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div class="step" data-step="3"><span class="num">3</span> Create annual draft</div>
 <div class="step" data-step="4"><span class="num">4</span> Select children</div>
 <div class="step" data-step="5"><span class="num">5</span> Director review</div>
+<div class="step" data-step="6"><span class="num">6</span> Fictional receipt</div>
+<div class="step" data-step="7"><span class="num">7</span> Fictional $250 offer</div>
 <div class="separator"></div>
 <p class="small">Every action below calls the actual test-only Django API. The second synthetic school demonstrates that permissions cannot cross tenant boundaries.</p>
 </aside>
@@ -66,8 +68,13 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div class="actions"><button class="button secondary" id="load-household" type="button">Refresh household</button><button class="button" id="create-draft" type="button" disabled>Create / resume annual draft</button></div>
 <h3>Children in household</h3><div id="children"><p>Load your household to see children.</p></div>
 <div class="actions"><button class="button secondary" id="verify-tenant" type="button">Verify School B access is denied</button><button class="button secondary" id="verify-csrf" type="button">Verify CSRF protection</button></div>
+<div class="separator"></div><h3>Fictional submission receipt</h3>
+<p>Records a synthetic milestone only. The real application remains a DRAFT; no financial answers, legal consent or payment is collected.</p>
+<label class="small"><input type="checkbox" id="synthetic-attestation"> I understand this is a fictional example, not an actual financial aid submission.</label>
+<div class="actions"><button class="button" id="record-synthetic-receipt" type="button" disabled>Record fictional receipt</button><button class="button secondary" id="read-synthetic-offers" type="button">Read fictional offered aid</button></div>
+<div id="synthetic-family-result" role="region" aria-label="Fictional aid result"></div>
 </div>
-<div id="director" class="hidden"><h3>School financial aid director</h3><p>View a read-only list of annual draft applications within this school. No financial assessment or award is shown.</p>
+<div id="director" class="hidden"><h3>School financial aid director</h3><p>Review your own school only. A fictional $250 offer may be recorded for a synthetic receipt; no real financial award, ledger entry or payment occurs.</p>
 <div class="grid"><div class="metric"><strong id="director-school">—</strong><span>Assigned school</span></div><div class="metric"><strong id="application-count">—</strong><span>Drafts visible</span></div></div>
 <div class="actions"><button class="button" id="load-inventory" type="button">Load school drafts</button><button class="button secondary" id="verify-director" type="button">Verify other school is denied</button></div>
 <div id="inventory"></div><div id="case-detail" role="region" aria-label="Selected case detail"></div></div>
@@ -90,9 +97,10 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   };
   const cookie = name => (document.cookie.split("; ").find(v=>v.startsWith(name+"="))||"").split("=").slice(1).join("=");
   const log = (msg, good=true) => { const d=document.createElement("div"); d.className=good?"good":"bad";d.textContent=new Date().toLocaleTimeString()+"  "+msg;$("events").prepend(d); };
-  const api = async (path, method="GET", csrf=true) => {
+  const api = async (path, method="GET", csrf=true, payload=null) => {
     const options={method, credentials:"same-origin", headers:{}};
     if(method!=="GET"&&csrf)options.headers["X-CSRFToken"]=decodeURIComponent(cookie("csrftoken"));
+    if(payload!==null){options.headers["Content-Type"]="application/json";options.body=JSON.stringify(payload);}
     const r=await fetch(path,options);
     const data=await r.json().catch(()=>({detail:"Unexpected response"}));
     return {status:r.status,ok:r.ok,data};
@@ -105,6 +113,9 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     if(!state.role)return;
     await api("/test-auth/logout/","POST");
     state.role=null;state.config=null;state.students=[];state.draft=null;
+    $("synthetic-attestation").checked=false;
+    $("synthetic-family-result").replaceChildren();
+    $("record-synthetic-receipt").disabled=true;
   }
   async function login(role){
     try{
@@ -172,6 +183,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       const chosen=r.data.student_ids.includes(state.students[index].id);
       const btn=item.querySelector("button");btn.textContent=chosen?"Selected ✓":"Select child";btn.disabled=chosen;
     });
+    $("record-synthetic-receipt").disabled=!r.data.student_ids.length;
     if(r.data.student_ids.length) setActiveStep(4);
   }
   async function createDraft(){
@@ -187,6 +199,35 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     }finally{
       $("create-draft").disabled=false;
     }
+  }
+  async function recordSyntheticReceipt(){
+    if(state.role!=="local-demo-family"||!state.draft)return;
+    if(!$("synthetic-attestation").checked){
+      log("Check the explicit fictional-attestation box first",false);
+      return;
+    }
+    const a=primary(),r=await api(
+      path(a,a.household_id,a.year_id)+"synthetic/receipt/",
+      "POST",true,{"accuracy_attested":true}
+    );
+    if(!r.ok){log("Fictional receipt unavailable HTTP "+r.status,false);return;}
+    $("synthetic-family-result").textContent="Fictional receipt recorded. Application remains DRAFT.";
+    log("Fictional submission receipt saved and replay-safe; no legal submission");
+    setActiveStep(6);
+  }
+  async function readSyntheticOffers(){
+    if(state.role!=="local-demo-family"||!state.config)return;
+    const a=primary(),r=await api(path(a,a.household_id,a.year_id)+"synthetic/offers/");
+    if(!r.ok||r.data.synthetic!==true){
+      log("Fictional offered-aid readback denied HTTP "+r.status,false);
+      return;
+    }
+    const labels=r.data.offers.map(o=>"$"+(o.amount_cents/100).toFixed(2)+" "+o.bucket);
+    $("synthetic-family-result").textContent=labels.length?
+      "Fictional offered aid: "+labels.join(", ")+" — not a payment or binding award":
+      "No fictional offer has been recorded yet.";
+    log("Family readback returned "+r.data.offers.length+" school-bound fictional offers");
+    if(labels.length)setActiveStep(7);
   }
   async function loadCase(school, applicationId, originalRole){
     const r=await api(staffPath(school)+applicationId+"/");
@@ -204,6 +245,24 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     const p=document.createElement("p");
     p.textContent="Read-only draft "+applicationId.slice(0,8)+"… — selected children: "+count;
     $("case-detail").append(p);
+    if(originalRole==="local-demo-director-a" && count>0){
+      const button=document.createElement("button");
+      button.type="button";button.className="button";
+      button.textContent="Record fictional $250 need offer";
+      button.addEventListener("click",async()=>{
+        if(state.role!==originalRole)return;
+        const selected=r.data.selected_student_ids[0];
+        const result=await api(staffPath(school)+applicationId+
+          "/synthetic/offers/"+selected+"/","POST");
+        if(!result.ok){log("Fictional offer unavailable HTTP "+result.status,false);return;}
+        const message=document.createElement("p");
+        message.textContent="Fictional $250 need offer recorded for one selected child. No funds committed.";
+        $("case-detail").append(message);
+        log("Synthetic officer offer recorded; amount $250; no ledger or payment");
+        setActiveStep(7);
+      });
+      $("case-detail").append(button);
+    }
     log("Authorized school draft case detail: "+count+" selected children");
   }
   async function loadInventory(){
@@ -254,6 +313,8 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   $("verify-tenant").addEventListener("click",verifyFamilyTenant);
   $("verify-csrf").addEventListener("click",verifyCSRF);
   $("verify-director").addEventListener("click",verifyDirector);
+  $("record-synthetic-receipt").addEventListener("click",recordSyntheticReceipt);
+  $("read-synthetic-offers").addEventListener("click",readSyntheticOffers);
 })();
 </script>
 </body></html>
