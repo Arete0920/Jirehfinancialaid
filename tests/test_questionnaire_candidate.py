@@ -64,8 +64,7 @@ class CandidateCatalogContractTests(unittest.TestCase):
         self.assertEqual({field["type"] for field in result.values()}, set(V1_FIELD_TYPES.values()))
         self.assertEqual(set(result), set(V1_FIELD_TYPES))
         self.assertEqual({section["id"] for section in catalog()["sections"]}, set(V1_SECTIONS))
-        self.assertTrue(all(field_id.endswith(tuple([".member_id", ".category"])) or field_id
-                            for field_id in result))  # all nonblank identifiers
+        self.assertTrue(all(isinstance(field_id, str) and field_id for field_id in result))
         self.assertEqual(catalog()["schema_version"], "0.1.0")
 
     def test_catalog_drift_or_missing_approvals_fail_closed(self):
@@ -80,6 +79,9 @@ class CandidateCatalogContractTests(unittest.TestCase):
             lambda c: c["sections"][0]["fields"][0].update(type="unrestricted_json"),
             lambda c: c["sections"][1]["fields"][0].update(id="income.items[].unknown"),
             lambda c: c["sections"][1]["fields"][0].update(choices=[]),
+            lambda c: c["sections"][1]["fields"][0].update(
+                choices=["EMPLOYMENT", "OTHER_APPROVED"]
+            ),
             lambda c: c["sections"][1]["fields"][0].update(
                 choices=["EMPLOYMENT", "EMPLOYMENT"]
             ),
