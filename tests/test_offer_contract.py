@@ -60,6 +60,11 @@ class SyntheticOfferIntentTests(unittest.TestCase):
                 with self.subTest(field=field, value=value):
                     self.assert_rejected("offer_uuid_invalid", **{field: value})
 
+    def test_nil_uuid_is_not_a_valid_application_or_student(self):
+        nil_id = "00000000-0000-0000-0000-000000000000"
+        self.assert_rejected("offer_uuid_invalid", application_id=nil_id)
+        self.assert_rejected("offer_uuid_invalid", student_id=nil_id)
+
     def test_only_five_existing_buckets_are_accepted(self):
         for bucket in (None, "", "Need", "scholarship", True, 1, {}, []):
             with self.subTest(bucket=bucket):

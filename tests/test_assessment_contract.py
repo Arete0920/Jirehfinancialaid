@@ -135,6 +135,13 @@ class CandidateAssessmentTests(unittest.TestCase):
             "candidate_policy_year_invalid", given_policy=policy(academic_year_id="bogus")
         )
 
+    def test_nil_uuid_is_not_a_valid_school_or_year_scope(self):
+        nil_id = "00000000-0000-0000-0000-000000000000"
+        self.assert_rejected("candidate_policy_school_invalid", given_policy=policy(school_id=nil_id))
+        self.assert_rejected("candidate_policy_year_invalid", given_policy=policy(academic_year_id=nil_id))
+        self.assert_rejected("candidate_scope_school_invalid", school_id=nil_id)
+        self.assert_rejected("candidate_scope_year_invalid", year_id=nil_id)
+
     def test_missing_policy_or_version_is_rejected_without_default(self):
         self.assert_rejected(
             "candidate_policy_missing",
