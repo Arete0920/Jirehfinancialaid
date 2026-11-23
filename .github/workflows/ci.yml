@@ -344,13 +344,24 @@ jobs:
           assert settings.SECURE_SSL_REDIRECT is True
           assert settings.SESSION_COOKIE_SECURE and settings.CSRF_COOKIE_SECURE
           assert settings.DATABASES['default']['OPTIONS']['sslmode'] == 'verify-full'
-          assert len(get_resolver().url_patterns) == 1, 'Only liveness may be routed'
+          assert len(get_resolver().url_patterns) == 2, 'Only liveness and readiness may be routed'
           assert resolve('/healthz/').url_name == 'jireh_health'
+          assert resolve('/readyz/').url_name == 'jireh_database_readiness'
+          from unittest.mock import patch
+          from django.db import DatabaseError
           client = Client()
           response = client.get('/healthz/', secure=True, HTTP_HOST='jireh.example.invalid')
           assert response.status_code == 200, response.status_code
           assert response.json() == {'status': 'alive'}
           assert response['Cache-Control'].find('no-cache') >= 0
+          # Runtime TLS/host certificate validation is environment-specific:
+          # do not claim a real database roundtrip in this config-only check.
+          with patch('jireh.runtime.urls.connection.cursor', side_effect=DatabaseError('secret')):
+              denied = client.get('/readyz/', secure=True, HTTP_HOST='jireh.example.invalid')
+          assert denied.status_code == 503, denied.status_code
+          assert denied.json() == {'status': 'unavailable'}
+          assert 'secret' not in denied.content.decode()
+          assert 'no-store' in denied['Cache-Control'].lower()
           for path in ('/api/v1/', '/api/v1/schools/', '/admin/', '/login/'):
               try:
                   resolve(path)
