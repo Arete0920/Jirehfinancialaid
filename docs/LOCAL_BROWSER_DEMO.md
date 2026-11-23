@@ -124,8 +124,8 @@ demo URL. Do not imply that a viewer can sign into a hosted product.
 ### Required closing disclosure
 
 > "Financial questions and documents, legally binding consent and submission,
-> financial need calculations, real award decisions, payments, real-school
-> onboarding, and hosted customer access are **not implemented**. The
+> financial need calculations for real families, real award decisions, payments,
+> real-school onboarding, and hosted customer access are **not implemented**. The
 > fictional $250 offer is synthetic test evidence only, not a funding promise.
 > Production acceptance is incomplete. No real family data may be entered."
 
@@ -161,9 +161,14 @@ packet is intentionally distinct from the eleven production release gates in
 - **Working:** Test-only family sign-in, household/child listing, annual draft
   creation and resume, child selection, authorized director inventory,
   cross-school denial, and CSRF checks.
+- **Fictional assessment preview:** As the School A director, open the selected
+  draft and choose a scenario. The versioned test policy shows **$92.00** for
+  Modest, including a **$50.00** capped hardship line, and **$159.67** for Moderate.
+  These read-only results use fixed fictional inputs. The separate $250 offer in
+  the walkthrough uses its own fixed example amount.
 - **Not implemented here:** Financial questionnaire, tax document upload,
-  legal consent/final submission, automated assessment, binding school award
-  decisions, fees/payment, real onboarding, SIS integrations or production.
+  legal consent/final submission, assessment of real families, binding school
+  award decisions, fees/payment, real onboarding, SIS integrations or production.
 - **Synthetic-only expansion under verification:** Immutable fictional receipt,
   director-authorized fixed $250 example and family-scoped metadata readback;
   not a financial aid award, ledger posting or actual application submission.

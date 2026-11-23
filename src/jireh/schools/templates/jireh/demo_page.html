@@ -279,6 +279,18 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     log("Family readback returned "+r.data.offers.length+" school-bound fictional offers");
     if(labels.length)setActiveStep(7);
   }
+  function isAssessmentPreview(data){
+    const expectedBuckets=["need","mission","marketing","merit","hardship"];
+    const isAmount=cents=>Number.isSafeInteger(cents)&&cents>=0;
+    return data?.demo_only===true && data.requires_school_authorization===true &&
+      typeof data.policy_version==="string" && data.policy_version.trim()!=="" &&
+      typeof data.calculation_version==="string" && data.calculation_version.trim()!=="" &&
+      isAmount(data.total_recommendation_cents) && Array.isArray(data.buckets) &&
+      data.buckets.length===expectedBuckets.length &&
+      data.buckets.every((line,index)=>line?.bucket===expectedBuckets[index] &&
+        isAmount(line.recommendation_cents) && typeof line.cap_applied==="boolean") &&
+      data.buckets.reduce((sum,line)=>sum+line.recommendation_cents,0)===data.total_recommendation_cents;
+  }
   function showAssessmentPreview(school, applicationId){
     const panel=$("assessment-preview-template").content.firstElementChild.cloneNode(true);
     const scenario=panel.querySelector("select");
@@ -302,7 +314,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
         const url=staffPath(school)+applicationId+"/synthetic/assessment/"+encodeURIComponent(scenarioId)+"/";
         const {ok,data}=await api(url);
         if(!panel.isConnected)return;
-        if(!ok||data.demo_only!==true||data.school_id!==school.id||data.academic_year_id!==school.year_id||
+        if(!ok||!isAssessmentPreview(data)||data.school_id!==school.id||data.academic_year_id!==school.year_id||
           data.application_id!==applicationId||data.scenario_id!==scenarioId){
           throw new Error("Preview unavailable");
         }

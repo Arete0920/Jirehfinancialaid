@@ -174,13 +174,30 @@ def main():
             page.get_by_role("button", name="View selected children").click()
             expect(page.locator("#case-detail")).to_contain_text("selected children: 2")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
-            page.get_by_role("button", name="Preview fictional assessment").click()
-            expect(page.get_by_role("status", name="Fictional assessment result")).to_contain_text(
-                "Fictional preview total: $92.00"
-            )
-            expect(page.get_by_role("list", name="Fictional bucket recommendations")).to_contain_text(
-                "hardship: $50.00 (test cap applied)"
-            )
+            assessment_button = page.get_by_role("button", name="Preview fictional assessment")
+            assessment_result = page.get_by_role("status", name="Fictional assessment result")
+            assessment_buckets = page.get_by_role("list", name="Fictional bucket recommendations")
+
+            def missing_assessment_total(route):
+                response = route.fetch()
+                assert response.ok, "Expected a valid assessment before altering the response"
+                payload = response.json()
+                del payload["total_recommendation_cents"]
+                route.fulfill(response=response, json=payload)
+
+            assessment_path = "**/synthetic/assessment/*/"
+            page.route(assessment_path, missing_assessment_total)
+            assessment_button.click()
+            expect(assessment_result).to_have_text("Fictional assessment unavailable.")
+            expect(assessment_buckets).to_be_hidden()
+            page.unroute(assessment_path, missing_assessment_total)
+            assessment_button.click()
+            expect(assessment_result).to_contain_text("Fictional preview total: $92.00")
+            expect(assessment_buckets).to_contain_text("hardship: $50.00 (test cap applied)")
+            page.get_by_label("Fictional scenario").select_option("fictional_moderate")
+            expect(assessment_result).to_be_empty()
+            assessment_button.click()
+            expect(assessment_result).to_contain_text("Fictional preview total: $159.67")
             page.get_by_role("button", name="Record fictional $250 need offer").click()
             expect(page.locator("#case-detail")).to_contain_text(
                 "Fictional $250 need offer recorded"
