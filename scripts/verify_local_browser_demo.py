@@ -79,6 +79,23 @@ def main():
             expect(page.locator("#draft-status")).to_have_text("Not created")
             expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_enabled()
 
+            # HTTP 503 after dispatch is ambiguous: the server might have
+            # committed. The page may not enable an immediate duplicate POST.
+            def uncertain_write(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=503, content_type="application/json",
+                                  body='{"detail":"Unavailable."}')
+                else:
+                    route.continue_()
+            page.route("**/aid-application/draft/", uncertain_write)
+            page.get_by_role("button", name="Create / resume annual draft").click()
+            expect(page.locator("#draft-status")).to_have_text("Verification required")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_disabled()
+            page.unroute("**/aid-application/draft/", uncertain_write)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(page.locator("#draft-status")).to_have_text("Not created")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_enabled()
+
             page.get_by_role("button", name="Create / resume annual draft").click()
             expect(page.locator("#draft-status")).to_have_text("DRAFT")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Create annual draft")
