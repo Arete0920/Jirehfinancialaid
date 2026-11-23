@@ -45,7 +45,7 @@ test('wrong-household children record denied',async()=>{
  await assert.rejects(c.readChildren(),/scope mismatch/);
 });
 test('client surface contains no mutation capability',()=>{
- assert.deepEqual(Object.keys(client(async()=>ok({}))).sort(),['readChildren','readDraft','readHousehold','readSelectedChildren']);
+ assert.deepEqual(Object.keys(client(async()=>ok({}))).sort((a,b)=>a.localeCompare(b)),['readChildren','readDraft','readHousehold','readSelectedChildren']);
 });
 
 test('non-string scoped identifiers fail with normalized rejection', async()=>{
