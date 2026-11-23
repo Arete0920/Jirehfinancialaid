@@ -35,10 +35,10 @@ test('403 and 404 both hide server errors',async()=>{
  for(const status of [403,404]){const c=client(async()=>({ok:false,status,json:async()=>({detail:'sensitive'})}));await assert.rejects(c.readDraft(),e=>e.message==='Family record unavailable');}
 });
 test('read children and selected students using exact read-only routes',async()=>{
- const calls=[];const c=client(async url=>{calls.push(url);return ok(url.endsWith('draft/students/')?{application_id:ids.application_id,student_ids:[ids.child_id]}:{household_id:ids.household_id,students:[{id:ids.child_id,first_name:'Fictional',last_name:'Child'}]})});
+ const calls=[];const c=client(async url=>{calls.push(url);return ok(url.endsWith('draft/students/')?{application_id:ids.application_id,student_ids:[ids.child_id]}:url.endsWith('aid-application/draft/')?draft:{household_id:ids.household_id,students:[{id:ids.child_id,first_name:'Fictional',last_name:'Child'}]})});
  assert.equal((await c.readChildren()).students[0].id,ids.child_id);
  assert.equal((await c.readSelectedChildren()).student_ids[0],ids.child_id);
- assert.equal(calls.length,2);
+ assert.equal(calls.length,3);
 });
 test('wrong-household children record denied',async()=>{
  const c=client(async()=>ok({household_id:'88888888-8888-4888-8888-888888888888',students:[]}));
@@ -46,4 +46,31 @@ test('wrong-household children record denied',async()=>{
 });
 test('client surface contains no mutation capability',()=>{
  assert.deepEqual(Object.keys(client(async()=>ok({}))).sort(),['readChildren','readDraft','readHousehold','readSelectedChildren']);
+});
+
+test('non-string scoped identifiers fail with normalized rejection', async()=>{
+ const wrongSchool=client(async()=>ok({...draft,school_id:123}));
+ await assert.rejects(wrongSchool.readDraft(),e=>e.message==='Family readback scope mismatch');
+ const wrongHousehold=client(async()=>ok({id:42,name:'Other household'}));
+ await assert.rejects(wrongHousehold.readHousehold(),e=>e.message==='Family readback scope mismatch');
+ const wrongChildren=client(async()=>ok({household_id:123,students:[]}));
+ await assert.rejects(wrongChildren.readChildren(),e=>e.message==='Family readback scope mismatch');
+});
+
+test('selected children must belong to the exact current annual draft', async()=>{
+ const foreign='66666666-6666-4666-8666-666666666666';
+ const c=client(async url=>ok(url.endsWith('aid-application/draft/')?draft:{application_id:foreign,student_ids:[ids.child_id]}));
+ await assert.rejects(c.readSelectedChildren(),e=>e.message==='Family readback scope mismatch');
+});
+
+test('scope switch between selected-children readbacks denies the combined result', async()=>{
+ let current={...ids};
+ const c=client(async url=>{
+   if(url.endsWith('aid-application/draft/')) {
+     current={...current,household_id:'88888888-8888-4888-8888-888888888888'};
+     return ok(draft);
+   }
+   return ok({application_id:ids.application_id,student_ids:[ids.child_id]});
+ },()=>current);
+ await assert.rejects(c.readSelectedChildren(),/context changed/);
 });
