@@ -5,6 +5,8 @@ the *only* valid lifecycle state until an authorized submission workflow,
 consent, payment policy and audit semantics are specified and tested.
 """
 
+import uuid
+
 from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.db import models
@@ -391,7 +393,7 @@ class FinancialDocument(UUIDStampedModel):
     household = models.ForeignKey(Household, on_delete=models.PROTECT)
     application = models.ForeignKey(AidApplication, on_delete=models.PROTECT, related_name="document_records")
     created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
-    object_key = models.UUIDField(default=__import__("uuid").uuid4, unique=True, editable=False)
+    object_key = models.UUIDField(default=uuid.uuid4, unique=True, editable=False)
     request_key = models.UUIDField(unique=True, editable=False)
     version = models.PositiveIntegerField()
     category = models.CharField(max_length=48)
