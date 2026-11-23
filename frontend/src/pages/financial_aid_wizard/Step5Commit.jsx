@@ -9,7 +9,7 @@ export default function Step5Commit({ context, setContext, goNext, goPrev, stepI
   const [error, setError] = useState(null);
 
   const awards = context.awards || [];
-  const totalAmount = awards.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
+  const totalAmount = awards.reduce((s, a) => s + (Number.parseFloat(a.amount) || 0), 0);
 
   async function handleCommit() {
     if (!confirmed) { setError("Please confirm before committing."); return; }
