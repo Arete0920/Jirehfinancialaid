@@ -31,7 +31,7 @@ def _strict_uuid(value: object) -> UUID:
         parsed = UUID(value)
     except (ValueError, AttributeError, TypeError):
         raise OfferContractError("offer_uuid_invalid") from None
-    if str(parsed) != value:
+    if str(parsed) != value or parsed.int == 0:
         raise OfferContractError("offer_uuid_invalid")
     return parsed
 
