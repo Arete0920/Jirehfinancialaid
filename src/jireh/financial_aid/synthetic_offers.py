@@ -12,6 +12,7 @@ from django.db import transaction
 from django.http import Http404
 
 from jireh.schools.access import require_aid_director_access, require_household_access
+from jireh.schools.models import AcademicYear
 from .models import (
     AidApplication, AidApplicationStudent,
     SyntheticAidOffer, SyntheticAidSubmission,
@@ -104,6 +105,10 @@ def read_synthetic_family_offers(
     household = require_household_access(
         user, school_id=school_id, household_id=household_id
     )
+    if not AcademicYear.objects.for_school(household.school_id).filter(
+        pk=academic_year_id
+    ).exists():
+        raise Http404("Synthetic year not found.")
     offers = (
         SyntheticAidOffer.objects.filter(
             application__school_id=household.school_id,
