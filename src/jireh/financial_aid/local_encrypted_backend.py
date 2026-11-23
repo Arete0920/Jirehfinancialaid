@@ -47,7 +47,7 @@ class LocalEncryptedClamdBackend:
     def __init__(self, *, root, encryption_key, scanner, max_bytes=10 * 1024 * 1024):
         if os.name != "posix" or not hasattr(os, "O_NOFOLLOW"):
             _reject("private_storage_platform_unsupported")
-        if type(root) not in (str, Path):
+        if not isinstance(root, (str, Path)):
             _reject("private_storage_root_invalid")
         if type(encryption_key) is not bytes or len(encryption_key) != 32:
             _reject("private_storage_key_invalid")
