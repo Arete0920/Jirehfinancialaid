@@ -1,8 +1,13 @@
 # Standalone Jireh production readiness — NO-GO
 
 **Status:** NO-GO. **Scope:** `Arete0920/Jirehfinancialaid`, not CROWN.
-**Source/CI baseline verified:** `27c7edbacd151a21298fcc9b0ec21b5db44dee71`
-(2026-11-23; GitHub protected `main`).
+**Latest exact-main source verification (2026-11-23):**
+`e7dbfa885f19d3af6e959e4b4f2a6fd6c09a83dd` — six completed SUCCESS checks:
+Python, Django, PostgreSQL 16, synthetic Chromium, SonarCloud and repository presentation.
+[Foundation 45271109750](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109750),
+[browser 45271109852](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109852),
+[presentation 45271109797](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109797).
+Historical snapshot statements below are updated where obsolete; this document remains **NO-GO**.
 Keep `JIREH_OPERATOR_CREDENTIAL_RECOVERY_ENABLED` false,
 the other privileged WebAuthn gates disabled, and customer routes unexposed.
 This document does not authorize creating cloud resources, enabling runtime,
@@ -10,15 +15,11 @@ processing payments, collecting real family data, or initiating real recovery.
 
 ## Evidence classification
 
-- **Source/CI evidence (verified):** protected `main` commit
-  `27c7edbacd151a21298fcc9b0ec21b5db44dee71` has five completed,
-  successful GitHub check runs: Python 3.12 contracts and repository hygiene;
-  Django 5.2 school/household database tests; PostgreSQL 16 migrations and
-  integrity; SonarCloud code analysis; and repository presentation/attribution.
-  [Foundation workflow run 45238380504](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45238380504)
-  and [presentation workflow run 45238380263](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45238380263)
-  both completed successfully on that SHA. These are source/CI results;
-  they do not show a deployed product.
+- **Source/CI evidence (verified):** the latest protected-main revision listed
+  above has six successful check contexts, including the exact-SHA localhost
+  browser and disposable PostgreSQL suites. This is evidence for repository
+  source and synthetic acceptance only; no deployed customer journey, target
+  TLS/DB trust chain, monitored service or live tenant isolation was tested.
 - **Synthetic tenant acceptance (verified as test coverage, not production):**
   `src/jireh/financial_aid/test_tenant_http_acceptance.py` is included in
   the Django/PostgreSQL source test suite. It exercises synthetic authenticated
@@ -27,31 +28,32 @@ processing payments, collecting real family data, or initiating real recovery.
   its included tests did not fail; it is not evidence of deployed tenant
   isolation or approved live authentication.
 - **Standalone runtime exposure (source only):** `src/jireh/runtime/urls.py`
-  defines only `GET/HEAD /healthz/`. Test/demo routes are in a separate
-  URLConf; no hosted runtime has been accepted.
-- **Browser acceptance limitation:** the latest retrieved successful
-  protected-main synthetic Chromium run was
-  [45206475831](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45206475831)
-  on `74448053613868a1ba0ba2c95361e40cf766477c`, not on the current
-  main SHA. The later run
-  [45208619489](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45208619489)
-  on `b2daa374c8b8b8302c724830c2148fbdaeef9a57` was cancelled.
-  Passing browser E2E evidence on open PR branches is candidate evidence only,
-  and must not be called exact-current-main acceptance.
-- **Parallel work (not merged or credited to main):** open feature PRs
-  #65 (wizard; two unresolved SonarCloud dependency-risk records),
-  #84 (director workload), #86 (fixed fictional financial preview),
-  #88 (offline fee reconciliation), and #89 (fictional onboarding rehearsal)
-  require separate exact-head reviews/acceptance. Their passing checks do not
-  add working production features to main. This paragraph is a
-  2026-11-23 snapshot; recheck PR state before using it for a release decision.
+  defines only `GET/HEAD /healthz/` (process liveness) and `GET/HEAD /readyz/`
+  (one read-only PostgreSQL `SELECT 1`; generic 503 on database failure).
+  Server-generated privacy-minimized correlation IDs/logging are wired in the
+  closed runtime. These do not establish schema/migration parity, alert
+  delivery or customer routes; test/demo URL routing remains separate.
+- **Browser acceptance (source only):** the protected-main synthetic
+  Chromium [run 45271109852](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109852)
+  concluded SUCCESS on this exact source SHA. The browser exercises fictional
+  localhost workflows only, including the encrypted sample-PDF path; it is not
+  a deployable customer browser, real upload or operational security PASS.
+- **Parallel work (not merged or credited to main):** only feature
+  [PR #65](https://github.com/Arete0920/Jirehfinancialaid/pull/65)
+  remains open in the checked repository snapshot. It contains CROWN-derived
+  officer wizard work and two unresolved authenticated SonarCloud SCA records.
+  PRs #84, #86, #88, #89, #96, #97 and #98 are already merged and must not be
+  counted as open or ported again. Recheck before acting.
 - **Not established:** live hosting, deployed configuration, authenticated
   production APIs, database read isolation, observability, incident response,
   production backups, restore drills, real operator identity verification,
   WebAuthn hardware backup/counter policy, and security operations acceptance.
 
-Passing a unit/integration suite or a 200 from `/healthz/` is never a
-production acceptance decision.
+Passing source CI or a 200 from `/healthz/` or `/readyz/` is never a
+production acceptance decision. The owner expressly defers CompuWerx activity;
+$55 household submission must remain nonfinal until authoritative payment
+reconciliation. No fake paid status, alternate processor or waived payment may
+substitute for this mandatory future acceptance stage.
 
 ## Release-blocking acceptance matrix
 
