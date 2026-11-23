@@ -6,7 +6,8 @@ Jireh is being developed as an independent financial-aid product for **Christian
 
 ## Approved product boundaries
 
-- One financial-aid application fee of **$55 per household**, paid by the family, regardless of the number of children. Payment timing, refunds, and processing details are undecided; no payments are enabled.
+- The approved future fee is **$55 paid by the family once per household annual application**, not per child. Collection would begin at submission, but the application must remain pending until the correct payment is independently verified server-side; initiation, a browser redirect or an unverified callback cannot make it finally `SUBMITTED`. No payment, final paid submission or award-queue entry is enabled. Waivers, refunds, chargebacks, merchant-of-record and multi-school charging rules remain undecided. [Owner fee and settlement decision](https://github.com/Arete0920/Jirehfinancialaid/issues/50#issuecomment-7103352770).
+- **Provider hold:** The owner has deferred all CompuWerx-specific work, contact, credentials, sandbox access, SDK/adapters, API/webhook setup and transactions until Jireh has a clean independent release candidate and the owner separately authorizes that stage. A **nonpayment** release candidate may be prepared; the paid first-client submission remains **NO-GO**, with payment verification **BLOCKED — provider stage deferred by owner**. [Latest owner hold](https://github.com/Arete0920/Jirehfinancialaid/issues/50#issuecomment-7103729979).
 - Five financial-aid buckets: need, mission, marketing/enrollment, merit, and hardship. This initial package defines their identifiers only; it does **not** implement financial need analysis or award decisions.
 - Jireh SGO is excluded. CROWN and other student information systems may become optional integrations; none may be required for Jireh to operate.
 - Hosting is not selected. No Azure services or deployment configuration are required or enabled.
@@ -427,8 +428,7 @@ fail without issuing a grant. Success returns only the household ID and
 non-cacheable, and the existing redemption service owns the atomic grant
 and audit transaction.
 
-**Explicitly not enabled:** \`jireh.runtime.urls\` still exposes liveness
-only. The test endpoint is neither a public API nor a complete account login,
+**Explicitly not enabled:** \`jireh.runtime.urls\` exposes only `GET/HEAD /healthz/` for process liveness and `GET/HEAD /readyz/` for database connectivity. The test endpoint is neither a public API nor a complete account login,
 identity recovery, rate-limiting, CAPTCHA, abuse monitoring or production
 onboarding solution. Do not route it into the deployable runtime before
 authentication, operational rate limiting and provider-delivery controls
@@ -455,8 +455,7 @@ An account's budget resets on its next request after 15 minutes.
 CAPTCHA, distributed abuse monitor, incident logging system, lockout recovery
 flow, or security-certified sign-in system. It must remain test-only until
 trusted login, session policy, host-level protections and operations monitoring
-are separately implemented and verified. The standalone runtime still routes
-only \`/healthz/\`.
+are separately implemented and verified. The standalone runtime exposes only \`/healthz/\` and \`/readyz/\`.
 
 
 ## Disposable family session sign-in and logout prototype (not deployed)
@@ -481,8 +480,8 @@ abuse monitoring. Limiting an identifier can itself allow targeted
 denial-of-service; no customer-facing authentication is authorized until
 those additional protections have been independently reviewed.
 
-**No production exposure:** \`jireh.runtime.urls\` continues to expose only
-\`/healthz/\`. Self-registration, account recovery, password reset,
+**No customer-route exposure:** \`jireh.runtime.urls\` exposes only
+\`/healthz/\` and \`/readyz/\`. Self-registration, account recovery, password reset,
 external identity providers, live email, SMS, hosting, payments and
 customer data remain out of scope. Tests use synthetic Django users only.
 
