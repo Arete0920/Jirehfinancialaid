@@ -58,6 +58,44 @@ def main():
             expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             expect(page.locator("#school-name")).to_have_text("Synthetic Christian Academy")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("View household")
+            # CROWN saved-record truth: a successful POST is not proof that
+            # the annual draft was persisted. A fictional forged response must
+            # never unlock child selection or duplicate POST retries.
+            forged_body = '{"id":"00000000-0000-4000-8000-000000000001","status":"DRAFT"}'
+            def phantom_draft(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=200, content_type="application/json", body=forged_body)
+                else:
+                    route.continue_()
+            page.route("**/aid-application/draft/", phantom_draft)
+            page.get_by_role("button", name="Create / resume annual draft").click()
+            expect(page.locator("#draft-status")).to_have_text("Verification required")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_disabled()
+            expect(page.locator("#events")).to_contain_text("independent saved-record verification")
+            # A separate GET confirms no annual draft was created. Only then
+            # may the family attempt the actual write again.
+            page.unroute("**/aid-application/draft/", phantom_draft)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(page.locator("#draft-status")).to_have_text("Not created")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_enabled()
+
+            # HTTP 503 after dispatch is ambiguous: the server might have
+            # committed. The page may not enable an immediate duplicate POST.
+            def uncertain_write(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=503, content_type="application/json",
+                                  body='{"detail":"Unavailable."}')
+                else:
+                    route.continue_()
+            page.route("**/aid-application/draft/", uncertain_write)
+            page.get_by_role("button", name="Create / resume annual draft").click()
+            expect(page.locator("#draft-status")).to_have_text("Verification required")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_disabled()
+            page.unroute("**/aid-application/draft/", uncertain_write)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(page.locator("#draft-status")).to_have_text("Not created")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_enabled()
+
             page.get_by_role("button", name="Create / resume annual draft").click()
             expect(page.locator("#draft-status")).to_have_text("DRAFT")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Create annual draft")
