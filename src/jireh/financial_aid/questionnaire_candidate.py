@@ -57,6 +57,32 @@ V1_FIELD_TYPES = {
     "consent.attestation_actor_id": "identifier",
     "consent.attestation_timestamp": "timestamp",
 }
+V1_ENUM_CHOICES = {
+    "household.members[].role": (
+        "ADULT", "STUDENT", "DEPENDENT", "CONTRIBUTOR",
+    ),
+    "household.members[].relationship": (
+        "PARENT_GUARDIAN", "SPOUSE_PARTNER", "CHILD_DEPENDENT",
+        "OTHER_APPROVED",
+    ),
+    "income.items[].category": (
+        "EMPLOYMENT", "SELF_EMPLOYMENT", "BENEFITS", "SUPPORT",
+        "OTHER_APPROVED",
+    ),
+    "income.items[].source_type": (
+        "APPLICANT", "PRIOR_YEAR", "DOCUMENT", "AUTHORIZED_STAFF",
+    ),
+    "assets.items[].category": (
+        "CASH", "INVESTMENTS", "PROPERTY", "OTHER_APPROVED",
+    ),
+    "liabilities.items[].category": (
+        "MORTGAGE", "EDUCATION_DEBT", "OTHER_DEBT", "OTHER_APPROVED",
+    ),
+    "expenses.items[].category": (
+        "HOUSING", "UTILITIES", "CHILDCARE", "MEDICAL",
+        "OTHER_APPROVED",
+    ),
+}
 V1_SECTIONS = frozenset(
     ("household", "income", "assets", "liabilities", "expenses",
      "school_questions", "consent")
@@ -161,6 +187,7 @@ def validate_v1_field_catalog(catalog: object) -> dict:
                 choices = field.get("choices")
                 if (
                     type(choices) is not list
+                    or tuple(choices) != V1_ENUM_CHOICES.get(field_id)
                     or not choices
                     or any(type(choice) is not str or not choice
                            or choice.strip() != choice for choice in choices)
