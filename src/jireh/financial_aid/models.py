@@ -224,3 +224,73 @@ class AidAuditEvent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Audit records cannot be deleted through instances.")
+
+
+# This is a *synthetic demonstration receipt*, not the annual application's
+# legally accepted SUBMITTED state. It does not authorize financial collection.
+SYNTHETIC_DISCLOSURE_VERSION = "synthetic-demo-v1"
+
+
+class SyntheticAidSubmission(UUIDStampedModel):
+    """Immutable, one-per-application evidence for a fictional submission.
+
+    Real AidApplication.status remains DRAFT; production routing never includes
+    this workflow. Only actor, a fixed fictional disclosure version, and UTC
+    creation time are retained; no financial answers or private child details.
+    """
+
+    application = models.OneToOneField(
+        AidApplication, on_delete=models.PROTECT,
+        related_name="synthetic_submission",
+    )
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_synthetic_submissions",
+    )
+    consent_version = models.CharField(max_length=64)
+    accuracy_attested = models.BooleanField(default=False)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(accuracy_attested=True),
+                name="jireh_synthetic_attested_true",
+            ),
+            models.CheckConstraint(
+                condition=Q(consent_version="synthetic-demo-v1"),
+                name="jireh_synthetic_disclosure_v1",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.consent_version != SYNTHETIC_DISCLOSURE_VERSION:
+            raise ValidationError("Only the fixed synthetic disclosure is supported.")
+        if self.accuracy_attested is not True:
+            raise ValidationError("Explicit synthetic attestation is required.")
+        if not self.application_id or not self.actor_user_id:
+            return
+        from jireh.schools.models import HouseholdAccess
+
+        app = self.application
+        if (
+            app.status != AidApplication.STATUS_DRAFT
+            or not app.school.is_active
+            or not app.household.is_active
+            or not app.student_selections.exists()
+            or not self.actor_user.is_active
+            or not HouseholdAccess.objects.filter(
+                household_id=app.household_id,
+                user_id=self.actor_user_id,
+                is_active=True,
+            ).exists()
+        ):
+            raise ValidationError("Synthetic submission requires an authorized draft.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Synthetic submission evidence is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Synthetic submission evidence cannot be deleted.")
