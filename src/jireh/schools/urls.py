@@ -7,6 +7,9 @@ from .redemption_views import test_household_redemption
 from .session_views import test_family_login, test_family_logout
 from jireh.financial_aid.views import staff_application_index, staff_application_detail, staff_draft_workload
 from jireh.financial_aid.family_views import family_annual_draft
+from jireh.financial_aid.synthetic_questionnaire_views import (
+    read_synthetic_family_questionnaire_preview,
+)
 from jireh.financial_aid.student_views import selected_students, select_student
 from jireh.financial_aid.synthetic_demo_views import (
     record_synthetic_family_receipt, read_synthetic_family_receipt,
@@ -75,6 +78,14 @@ urlpatterns = [
         "<uuid:student_id>/",
         select_student,
         name="jireh_aid_select_student",
+    ),
+    # Fixed fictional financial rows only; no answers accepted or persisted.
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/"
+        "synthetic/questionnaire/<slug:scenario_id>/",
+        read_synthetic_family_questionnaire_preview,
+        name="jireh_test_synthetic_family_questionnaire_preview",
     ),
     # Disposable synthetic workflow only; production runtime never imports this URLConf.
     path(
