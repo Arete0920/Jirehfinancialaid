@@ -72,6 +72,14 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <p class="small">Validates fixed example income, asset and liability row formats. Does not accept, collect, save or verify actual household financial information. The questionnaire remains incomplete.</p>
 <div class="actions"><label>Example scenario <select id="family-questionnaire-scenario"><option value="fictional_modest">Modest</option><option value="fictional_moderate">Moderate</option></select></label><button class="button secondary" id="preview-family-questionnaire" type="button" disabled>Validate fictional questionnaire</button></div>
 <p id="family-questionnaire-result" role="status" aria-label="Fictional questionnaire result"></p>
+<div class="separator"></div><h3>Fictional supporting document</h3>
+<p class="small">Creates, independently reads and securely deletes one fixed sample PDF using local encrypted storage. No upload control exists, and no real documents, financial amounts or client files are accepted. Fictional scanner fixture only.</p>
+<div class="actions">
+<button class="button secondary" id="add-fictional-document" type="button" disabled>Add fictional sample PDF</button>
+<button class="button secondary" id="read-fictional-document" type="button" disabled>Read encrypted sample PDF</button>
+<button class="button secondary" id="remove-fictional-document" type="button" disabled>Delete fictional sample PDF</button>
+</div>
+<p id="family-document-result" role="status" aria-label="Fictional document result">No fictional document created.</p>
 <div class="separator"></div><h3>Fictional submission receipt</h3>
 <p>Records a synthetic milestone only. The real application remains a DRAFT; no financial answers, legal consent or payment is collected.</p>
 <label class="small"><input type="checkbox" id="synthetic-attestation"> I understand this is a fictional example, not an actual financial aid submission.</label>
@@ -99,7 +107,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 "use strict";
 (() => {
   const PASSWORD = "{{ demo_password|escapejs }}";
-  const state = {role: null, config: null, students: [], draft: null, needsReconciliation: false};
+  const state = {role: null, config: null, students: [], draft: null, needsReconciliation: false, documentId: null};
   const $ = id => document.getElementById(id);
   const setActiveStep = step => {
     document.querySelectorAll(".step[data-step]").forEach(node => {
@@ -137,6 +145,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     $("record-synthetic-receipt").disabled = true;
     $("preview-family-questionnaire").disabled = true;
     $("family-questionnaire-result").textContent = "";
+    state.documentId = null;setFictionalDocumentState(null);
     renderStudents();
     log("Draft independent saved-record verification failed; refresh household before retry", false);
   }
@@ -145,7 +154,8 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   async function logout(){
     if(!state.role)return;
     await api("/test-auth/logout/","POST");
-    state.role=null;state.config=null;state.students=[];state.draft=null;state.needsReconciliation=false;
+    state.role=null;state.config=null;state.students=[];state.draft=null;state.needsReconciliation=false;state.documentId=null;
+    setFictionalDocumentState(null);
     $("synthetic-attestation").checked=false;
     $("synthetic-family-result").replaceChildren();
     $("record-synthetic-receipt").disabled=true;
@@ -197,7 +207,8 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     $("draft-status").textContent=draft.ok?draft.data.status:"Not created";
     renderStudents();
     setActiveStep(state.draft ? 3 : 2);
-    if(state.draft)await refreshSelections();
+    if(state.draft){await refreshSelections();await refreshFictionalDocuments();}
+    else{state.documentId=null;setFictionalDocumentState(null);}
     $("create-draft").disabled=false;
     $("preview-family-questionnaire").disabled=!state.draft;
     $("family-questionnaire-result").textContent="";
@@ -254,7 +265,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("draft-status").textContent=saved.data.status;
       setActiveStep(3);
       log("Annual draft active: "+saved.data.id.slice(0,8)+"… — independently verified saved record");
-      renderStudents();await refreshSelections();
+      renderStudents();await refreshSelections();await refreshFictionalDocuments();
     }catch(error){
       // Ambiguous writes cannot be retried until an independent read verifies.
       requireDraftReadback();
@@ -294,6 +305,87 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       log("Fictional financial preview request failed",false);
     }finally{
       control.disabled=state.role!=="local-demo-family"||!state.draft||state.needsReconciliation;
+    }
+  }
+  const fictionalDocumentBase=()=>{
+    const a=primary();
+    return path(a,a.household_id,a.year_id)+"synthetic/documents/";
+  };
+  function setFictionalDocumentState(documentId,message=null){
+    const eligible=state.role==="local-demo-family"&&!!state.draft&&!state.needsReconciliation;
+    $("add-fictional-document").disabled=!eligible||!!documentId;
+    $("read-fictional-document").disabled=!eligible||!documentId;
+    $("remove-fictional-document").disabled=!eligible||!documentId;
+    $("family-document-result").textContent=message||(
+      documentId?"Encrypted fictional sample available; no actual records uploaded.":
+      "No fictional document created."
+    );
+  }
+  async function refreshFictionalDocuments(){
+    if(state.role!=="local-demo-family"||!state.draft||state.needsReconciliation){
+      state.documentId=null;setFictionalDocumentState(null);return;
+    }
+    const {ok,data}=await api(fictionalDocumentBase());
+    const rows=data?.documents;
+    if(!ok||data.demo_only!==true||!Array.isArray(rows)||data.has_more!==false||
+       rows.length>1||rows.some(row=>
+         typeof row.document_id!=="string"||row.category!=="FICTIONAL_TAX")){
+      state.documentId=null;setFictionalDocumentState(null,"Fictional document verification unavailable.");
+      $("add-fictional-document").disabled=true;return;
+    }
+    state.documentId=rows.length?rows[0].document_id:null;
+    setFictionalDocumentState(state.documentId);
+  }
+  async function addFictionalDocument(){
+    if(state.role!=="local-demo-family"||!state.draft||state.documentId||state.needsReconciliation)return;
+    $("add-fictional-document").disabled=true;
+    const key=crypto.randomUUID();
+    const {ok,data}=await api(fictionalDocumentBase()+"create/","POST",true,{request_key:key});
+    if(!ok||data.demo_only!==true||data.status!=="FICTIONAL_DOCUMENT_ACTIVE"){
+      log("Fictional PDF creation unavailable; refresh before retry",false);
+      $("family-document-result").textContent="Verification required; refresh household.";
+      return;
+    }
+    await refreshFictionalDocuments();
+    if(state.documentId===data.document_id){
+      log("Fixed fictional PDF encrypted and scoped to family draft");
+      $("family-document-result").textContent="Encrypted fictional sample created and independently verified.";
+    }else{
+      $("family-document-result").textContent="Verification required; refresh household.";
+      $("add-fictional-document").disabled=true;
+    }
+  }
+  async function readFictionalDocument(){
+    if(!state.documentId||state.role!=="local-demo-family")return;
+    const id=state.documentId;
+    $("read-fictional-document").disabled=true;
+    try{
+      const response=await fetch(fictionalDocumentBase()+id+"/read/",{credentials:"same-origin",cache:"no-store"});
+      const payload=await response.arrayBuffer();
+      if(response.ok&&response.headers.get("Content-Type")?.startsWith("application/pdf")&&
+         payload.byteLength>=5&&new TextDecoder().decode(payload.slice(0,5))==="%PDF-"&&
+         state.documentId===id&&state.role==="local-demo-family"){
+        $("family-document-result").textContent="Encrypted fictional sample read and verified. No financial record displayed.";
+        log("Scoped encrypted sample PDF readback succeeded");
+      }else throw new Error("Readback invalid");
+    }catch{
+      $("family-document-result").textContent="Fictional document readback unavailable.";
+      log("Fictional PDF readback denied",false);
+    }finally{setFictionalDocumentState(state.documentId,$("family-document-result").textContent);}
+  }
+  async function removeFictionalDocument(){
+    if(!state.documentId||state.role!=="local-demo-family")return;
+    const id=state.documentId;
+    $("remove-fictional-document").disabled=true;
+    const {ok,data}=await api(fictionalDocumentBase()+id+"/remove/","DELETE");
+    if(!ok||data.status!=="FICTIONAL_DOCUMENT_DELETED"){
+      $("family-document-result").textContent="Deletion status uncertain; refresh household.";
+      return;
+    }
+    await refreshFictionalDocuments();
+    if(!state.documentId){
+      $("family-document-result").textContent="Fictional encrypted sample deleted; readback unavailable.";
+      log("Fictional sample deleted and independently verified");
     }
   }
   async function recordSyntheticReceipt(){
@@ -468,6 +560,9 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   $("verify-csrf").addEventListener("click",verifyCSRF);
   $("verify-director").addEventListener("click",verifyDirector);
   $("preview-family-questionnaire").addEventListener("click",previewFamilyQuestionnaire);
+  $("add-fictional-document").addEventListener("click",addFictionalDocument);
+  $("read-fictional-document").addEventListener("click",readFictionalDocument);
+  $("remove-fictional-document").addEventListener("click",removeFictionalDocument);
   $("family-questionnaire-scenario").addEventListener("change",()=>{$("family-questionnaire-result").textContent="";});
   $("record-synthetic-receipt").addEventListener("click",recordSyntheticReceipt);
   $("read-synthetic-offers").addEventListener("click",readSyntheticOffers);
