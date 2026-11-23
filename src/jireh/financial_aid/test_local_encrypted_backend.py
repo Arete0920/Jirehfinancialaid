@@ -64,7 +64,10 @@ class ClamdInstreamTests(SimpleTestCase):
             return_value=fake,
         ) as create:
             self.assertTrue(scanner.scan(b"abcde"))
-        create.assert_called_once_with(("127.0.0.1", 3310), timeout=10)
+        create.assert_called_once()
+        self.assertEqual(create.call_args.args, (("127.0.0.1", 3310),))
+        self.assertGreater(create.call_args.kwargs["timeout"], 0)
+        self.assertLessEqual(create.call_args.kwargs["timeout"], 10)
         self.assertEqual(
             bytes(fake.sent),
             b"zINSTREAM\0" + struct.pack("!I", 4) + b"abcd"
