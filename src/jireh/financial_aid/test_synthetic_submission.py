@@ -20,7 +20,7 @@ from jireh.schools.models import (
 from jireh.schools.services import link_student_to_household
 from .models import AidApplication, AidApplicationStudent, SyntheticAidSubmission
 from .services import get_or_create_annual_draft, select_student_for_draft
-from .synthetic_submission import record_synthetic_demo_submission
+from .synthetic_submission import record_synthetic_demo_submission, read_synthetic_demo_submission
 
 
 class SyntheticReceiptTests(TestCase):
@@ -136,6 +136,38 @@ class SyntheticReceiptTests(TestCase):
         with self.assertRaises(Http404):
             self.submit(user=self.foreign)
         self.assertFalse(SyntheticAidSubmission.objects.exists())
+
+    def test_readback_is_household_scoped_and_revocation_fails_closed(self):
+        self.selected()
+        record = self.submit()
+        view = read_synthetic_demo_submission(
+            user=self.coparent, school_id=self.school.pk,
+            household_id=self.household.pk, academic_year_id=self.year.pk,
+        )
+        self.assertEqual(view.pk, record.pk)
+        for kw in (
+            {"user": self.foreign},
+            {"school_id": self.other_school.pk},
+            {"household_id": self.other_household.pk},
+            {"academic_year_id": self.other_year.pk},
+        ):
+            params = dict(
+                user=self.parent, school_id=self.school.pk,
+                household_id=self.household.pk, academic_year_id=self.year.pk,
+            )
+            params.update(kw)
+            with self.subTest(kw=kw):
+                with self.assertRaises((Http404, PermissionDenied)):
+                    read_synthetic_demo_submission(**params)
+        HouseholdAccess.objects.filter(
+            household=self.household, user=self.parent
+        ).update(is_active=False)
+        with self.assertRaises(Http404):
+            read_synthetic_demo_submission(
+                user=self.parent, school_id=self.school.pk,
+                household_id=self.household.pk, academic_year_id=self.year.pk,
+            )
+        self.assertEqual(SyntheticAidSubmission.objects.count(), 1)
 
     def test_child_selection_frozen_after_receipt(self):
         self.selected()
