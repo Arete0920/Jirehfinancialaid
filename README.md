@@ -32,7 +32,9 @@ python -m compileall -q src tests
 
 **Data boundary:** An academic year, household and student belong to one school. A student may be linked to more than one household (such as separated parents), but that relationship **does not grant access to another household's financial records**. The current `for_school` ORM helpers and school-checked linking service are internal safeguards, **not authentication or complete database-enforced tenant isolation**. A later authenticated API must enforce school and household authorization independently; no public or production endpoint is enabled by these models. Never use bulk or raw writes to bypass the link service.
 
-All changes should use a narrow, reversible pull request (normally fewer than 20 changed files), targeted tests, and evidence for the exact commit. The product owner is a solo developer: automated checks and Copilot feedback are useful, but must not be misrepresented as independent human approval.
+All changes should use a narrow, reversible pull request (normally fewer than 20 changed files), targeted tests, and evidence for the exact commit. The product owner is a solo developer: automated checks and advisory engineering feedback are useful, but must not be misrepresented as independent human approval.
+
+Repository presentation and attribution follow [the Jireh policy](docs/REPOSITORY_PRESENTATION_AND_ATTRIBUTION_POLICY.md). Required factual disclosures, legal attribution, and authentic historical records are preserved.
 
 Commercial launch, hosting, live data, external integrations, and payment activation require separate approval and verified acceptance.
 
