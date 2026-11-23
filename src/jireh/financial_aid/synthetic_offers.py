@@ -99,7 +99,7 @@ class SyntheticOfferReadback:
 
 def read_synthetic_director_offer(
     *, user, school_id, academic_year_id, application_id, student_id
-) -> SyntheticOfferReadback:
+) -> "SyntheticOfferReadback":
     """Independently read one saved fictional offer under an active school grant.
 
     Never infer a real submitted case, award or payment from this test record.

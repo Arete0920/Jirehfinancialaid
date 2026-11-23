@@ -161,7 +161,9 @@ class FictionalOfferHTTPTests(TestCase):
         self.assertEqual(family.get(read_url).status_code, 404)
         self.assertEqual(other_director.get(read_url).status_code, 404)
         self.assertEqual(director.get(read_url + "?debug=true").status_code, 400)
-        self.assertEqual(director.post(read_url).status_code, 405)
+        self.assertEqual(director.post(
+            read_url, HTTP_X_CSRFTOKEN=director.cookies["csrftoken"].value
+        ).status_code, 405)
         self.assertEqual(self.post_attestation(family).status_code, 200)
         self.assertEqual(director.get(read_url).status_code, 404)
         self.assertEqual(self.post_officer(director).status_code, 200)
