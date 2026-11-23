@@ -65,3 +65,22 @@ def record_synthetic_demo_submission(
         },
     )
     return receipt
+
+
+def read_synthetic_demo_submission(
+    *, user, school_id, household_id, academic_year_id
+):
+    """Read back only the metadata of this household's fictional receipt."""
+    if getattr(settings, "JIREH_SYNTHETIC_SUBMISSION_ONLY", False) is not True:
+        raise PermissionDenied("Synthetic submissions are disabled.")
+    household = require_household_access(
+        user, school_id=school_id, household_id=household_id
+    )
+    receipt = SyntheticAidSubmission.objects.filter(
+        application__school_id=household.school_id,
+        application__household_id=household.pk,
+        application__academic_year_id=academic_year_id,
+    ).select_related("application").first()
+    if receipt is None:
+        raise Http404("Synthetic receipt not found.")
+    return receipt
