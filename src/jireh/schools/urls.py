@@ -8,6 +8,10 @@ from .session_views import test_family_login, test_family_logout
 from jireh.financial_aid.views import staff_application_index, staff_application_detail
 from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import selected_students, select_student
+from jireh.financial_aid.synthetic_demo_views import (
+    record_synthetic_family_receipt, read_synthetic_family_receipt,
+    record_synthetic_staff_offer, read_synthetic_family_offer_list,
+)
 
 
 urlpatterns = [
@@ -63,5 +67,30 @@ urlpatterns = [
         "<uuid:student_id>/",
         select_student,
         name="jireh_aid_select_student",
+    ),
+    # Disposable synthetic workflow only; production runtime never imports this URLConf.
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/"
+        "synthetic/receipt/",
+        record_synthetic_family_receipt, name="jireh_test_synthetic_receipt_create",
+    ),
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/"
+        "synthetic/receipt/read/",
+        read_synthetic_family_receipt, name="jireh_test_synthetic_receipt_read",
+    ),
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/"
+        "synthetic/offers/",
+        read_synthetic_family_offer_list, name="jireh_test_synthetic_family_offers",
+    ),
+    path(
+        "api/v1/schools/<uuid:school_id>/academic-years/<uuid:academic_year_id>/"
+        "aid-applications/<uuid:application_id>/synthetic/offers/"
+        "<uuid:student_id>/",
+        record_synthetic_staff_offer, name="jireh_test_synthetic_officer_offer",
     ),
 ]

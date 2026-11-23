@@ -79,6 +79,15 @@ def main():
             expect(page.locator("#events")).to_contain_text("PASS: School B family draft denied (404)")
             page.get_by_role("button", name="Verify CSRF protection").click()
             expect(page.locator("#events")).to_contain_text("PASS: Missing CSRF header rejected (403)")
+            page.locator("#synthetic-attestation").check()
+            page.get_by_role("button", name="Record fictional receipt").click()
+            expect(page.locator("#synthetic-family-result")).to_contain_text(
+                "Fictional receipt recorded"
+            )
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text(
+                "Fictional receipt"
+            )
+            page.wait_for_timeout(900)  # readable owner-preview pacing
             page.screenshot(path=str(output / "family-journey.png"), full_page=True)
 
             page.get_by_role("button", name="School A director").click()
@@ -86,11 +95,33 @@ def main():
             page.get_by_role("button", name="View selected children").click()
             expect(page.locator("#case-detail")).to_contain_text("selected children: 2")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
+            page.get_by_role("button", name="Record fictional $250 need offer").click()
+            expect(page.locator("#case-detail")).to_contain_text(
+                "Fictional $250 need offer recorded"
+            )
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text(
+                "Fictional $250 offer"
+            )
+            page.wait_for_timeout(900)  # readable owner-preview pacing
             page.get_by_role("button", name="Verify other school is denied").click()
             expect(page.locator("#events")).to_contain_text(
                 "PASS: Another school's director inventory denied (404)"
             )
             page.screenshot(path=str(output / "director-journey.png"), full_page=True)
+            page.get_by_role("button", name="Family applicant").click()
+            expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
+            page.get_by_role("button", name="Read fictional offered aid").click()
+            expect(page.locator("#synthetic-family-result")).to_contain_text(
+                "Fictional offered aid: $250.00 need"
+            )
+            expect(page.locator("#synthetic-family-result")).to_contain_text(
+                "not a payment or binding award"
+            )
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text(
+                "Fictional $250 offer"
+            )
+            page.wait_for_timeout(900)  # readable owner-preview pacing
+            page.screenshot(path=str(output / "family-offer-readback.png"), full_page=True)
 
             page.get_by_role("button", name="School B director").click()
             expect(page.locator("#application-count")).to_have_text("0")
