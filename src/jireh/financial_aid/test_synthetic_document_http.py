@@ -167,8 +167,9 @@ class FictionalDocumentHTTPTests(TestCase):
         client = self.family()
         self.assertEqual(self.create(client, str(uuid.uuid4()), csrf=False).status_code, 403)
         self.assertEqual(client.get(create).status_code, 405)
+        # CSRF middleware rejects the mutation before the GET-only handler.
         self.assertEqual(client.post(root, data=b"{}",
-                                     content_type="application/json").status_code, 405)
+                                     content_type="application/json").status_code, 403)
         with override_settings(JIREH_SYNTHETIC_DOCUMENTS_ONLY=False):
             self.assertEqual(client.get(root).status_code, 403)
             self.assertEqual(self.create(client, str(uuid.uuid4())).status_code, 403)
