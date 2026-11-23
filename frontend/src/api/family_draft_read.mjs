@@ -41,23 +41,27 @@ function hasValidId(value) {
   return typeof value === 'string' && UUID.test(value);
 }
 
+function matchesId(value, expected) {
+  return hasValidId(value) && value.toLowerCase() === expected;
+}
+
 function validateResult(kind, data, scope) {
   if (!data || typeof data !== 'object' || Array.isArray(data)) {
     throw new Error('Family readback contract invalid');
   }
   if (kind === 'draft') {
     if (!hasValidId(data.id) || data.status !== 'DRAFT' ||
-        data.school_id?.toLowerCase() !== scope.school_id ||
-        data.household_id?.toLowerCase() !== scope.household_id ||
-        data.academic_year_id?.toLowerCase() !== scope.academic_year_id) {
+        !matchesId(data.school_id, scope.school_id) ||
+        !matchesId(data.household_id, scope.household_id) ||
+        !matchesId(data.academic_year_id, scope.academic_year_id)) {
       throw new Error('Family readback scope mismatch');
     }
   } else if (kind === 'household') {
-    if (data.id?.toLowerCase() !== scope.household_id || typeof data.name !== 'string') {
+    if (!matchesId(data.id, scope.household_id) || typeof data.name !== 'string') {
       throw new Error('Family readback scope mismatch');
     }
   } else if (kind === 'children') {
-    if (data.household_id?.toLowerCase() !== scope.household_id ||
+    if (!matchesId(data.household_id, scope.household_id) ||
         !Array.isArray(data.students) ||
         !data.students.every(item => hasValidId(item?.id) &&
           typeof item.first_name === 'string' && typeof item.last_name === 'string')) {
@@ -109,6 +113,17 @@ export function createFamilyDraftReadClient({fetcher, currentScope, syntheticOnl
     readHousehold: () => read('household'),
     readChildren: () => read('children'),
     readDraft: () => read('draft'),
-    readSelectedChildren: () => read('selected'),
+    readSelectedChildren: async () => {
+      const originalScope = snapshot(currentScope);
+      const draft = await read('draft');
+      const selected = await read('selected');
+      if (!sameScope(originalScope, snapshot(currentScope))) {
+        throw new Error('Family context changed');
+      }
+      if (!matchesId(selected.application_id, draft.id.toLowerCase())) {
+        throw new Error('Family readback scope mismatch');
+      }
+      return selected;
+    },
   });
 }
