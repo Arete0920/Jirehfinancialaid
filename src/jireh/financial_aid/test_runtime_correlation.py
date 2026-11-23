@@ -11,11 +11,11 @@ from django.test import RequestFactory, SimpleTestCase, override_settings
 from jireh.runtime.telemetry import RuntimeRequestCorrelationMiddleware
 
 
-@override_settings(
-    ROOT_URLCONF="jireh.runtime.urls",
-    MIDDLEWARE=["jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware"],
-)
 class RuntimeCorrelationTests(SimpleTestCase):
+    @override_settings(
+        ROOT_URLCONF="jireh.runtime.urls",
+        MIDDLEWARE=["jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware"],
+    )
     def test_liveness_generates_new_server_ids_and_minimal_events(self):
         supplied = "UNTRUSTED-TOKEN-DO-NOT-LOG"
         with patch("jireh.runtime.telemetry.logger.info") as info:
@@ -49,6 +49,10 @@ class RuntimeCorrelationTests(SimpleTestCase):
         self.assertNotIn("tenant_id", str(info.call_args_list))
         self.assertNotIn("user_id", str(info.call_args_list))
 
+    @override_settings(
+        ROOT_URLCONF="jireh.runtime.urls",
+        MIDDLEWARE=["jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware"],
+    )
     def test_closed_routes_never_log_raw_path_or_query(self):
         secret = "SECRET-SCHOOL-HOUSEHOLD-ID"
         with patch("jireh.runtime.telemetry.logger.info") as info:
@@ -64,6 +68,10 @@ class RuntimeCorrelationTests(SimpleTestCase):
         self.assertNotIn("private", info.call_args.args[0])
         self.assertNotIn("access_token", info.call_args.args[0])
 
+    @override_settings(
+        ROOT_URLCONF="jireh.runtime.urls",
+        MIDDLEWARE=["jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware"],
+    )
     def test_readiness_database_failure_uses_fixed_event_without_exception_text(self):
         with patch(
             "jireh.runtime.urls.connection.cursor",
@@ -81,6 +89,10 @@ class RuntimeCorrelationTests(SimpleTestCase):
         self.assertNotIn("password", warning.call_args.args[0])
         self.assertNotIn("UNTRUSTED", warning.call_args.args[0])
 
+    @override_settings(
+        ROOT_URLCONF="jireh.runtime.urls",
+        MIDDLEWARE=["jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware"],
+    )
     def test_post_is_still_disallowed_and_has_correlation(self):
         with patch("jireh.runtime.telemetry.logger.info") as info:
             response = self.client.post("/healthz/", data={"secret": "DO-NOT-LOG"})
