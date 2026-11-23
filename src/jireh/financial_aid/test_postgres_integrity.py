@@ -175,13 +175,30 @@ class PostgreSQLIntegrityTests(TransactionTestCase):
                 )
 
     def test_postgres_relationship_triggers_installed(self):
+        # Check exact legacy tenant triggers and new document triggers by table.
+        # A wildcard total becomes brittle as unrelated safeguards are added.
+        expected = {
+            ("jireh_tenant_link_guard", "schools_householdstudent"),
+            ("jireh_tenant_app_guard", "financial_aid_aidapplication"),
+            ("jireh_tenant_selection_guard", "financial_aid_aidapplicationstudent"),
+            ("jireh_tenant_audit_guard", "financial_aid_aidauditevent"),
+            ("jireh_school_guard", "schools_household"),
+            ("jireh_school_guard", "schools_student"),
+            ("jireh_school_guard", "schools_academicyear"),
+            ("jireh_document_metadata_guard", "financial_aid_financialdocument"),
+            ("jireh_document_event_guard", "financial_aid_financialdocumentevent"),
+        }
         with connection.cursor() as cursor:
             cursor.execute(
-                "SELECT count(*) FROM pg_trigger "
-                "WHERE tgname LIKE 'jireh%guard' AND NOT tgisinternal"
+                "SELECT tgname, tgrelid::regclass::text FROM pg_trigger "
+                "WHERE NOT tgisinternal AND tgname IN ("
+                "'jireh_tenant_link_guard', 'jireh_tenant_app_guard', "
+                "'jireh_tenant_selection_guard', 'jireh_tenant_audit_guard', "
+                "'jireh_school_guard', 'jireh_document_metadata_guard', "
+                "'jireh_document_event_guard')"
             )
-            trigger_count = cursor.fetchone()[0]
-        self.assertEqual(trigger_count, 7)
+            installed = set(cursor.fetchall())
+        self.assertEqual(installed, expected)
 
     def test_raw_bulk_create_cross_school_household_student_rejected(self):
         with self.assertRaises(IntegrityError):
