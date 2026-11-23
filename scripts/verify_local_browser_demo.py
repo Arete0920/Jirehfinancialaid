@@ -117,6 +117,26 @@ def main():
             expect(preview_result).to_be_empty()
             preview_button.click()
             expect(preview_result).to_contain_text("no answers saved")
+            # Real local AES-GCM storage of a server-owned fictional PDF,
+            # scoped to the family draft; never a user-provided document.
+            add_document = page.get_by_role("button", name="Add fictional sample PDF")
+            read_document = page.get_by_role("button", name="Read encrypted sample PDF")
+            remove_document = page.get_by_role("button", name="Delete fictional sample PDF")
+            document_result = page.get_by_role("status", name="Fictional document result")
+            expect(add_document).to_be_enabled()
+            expect(read_document).to_be_disabled()
+            add_document.click()
+            expect(document_result).to_contain_text(
+                "Encrypted fictional sample created and independently verified."
+            )
+            expect(read_document).to_be_enabled()
+            read_document.click()
+            expect(document_result).to_contain_text("Encrypted fictional sample read and verified.")
+            page.screenshot(path=str(output / "fictional-encrypted-document.png"), full_page=True)
+            remove_document.click()
+            expect(document_result).to_contain_text("Fictional encrypted sample deleted")
+            expect(read_document).to_be_disabled()
+            expect(add_document).to_be_enabled()
             # Wait for the new session, not stale text from the previous persona.
             page.get_by_role("button", name="Family applicant").click()
             expect(page.locator("#family")).to_be_visible()
