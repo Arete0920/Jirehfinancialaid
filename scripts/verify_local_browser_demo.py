@@ -128,8 +128,49 @@ def main():
             page.wait_for_timeout(900)  # readable owner-preview pacing
             page.screenshot(path=str(output / "family-journey.png"), full_page=True)
 
+            # Exercise PR #84's actual read-only workload API from Chromium.
+            # Browser fetch preserves the current persona's session cookies.
+            config = page.evaluate("""async () => {
+                const response = await fetch("/local-demo/config/", {credentials: "same-origin"});
+                if (!response.ok) throw new Error("Synthetic config unavailable");
+                return response.json();
+            }""")
+            school_a, school_b = config["school_a"], config["school_b"]
+            def workload(school):
+                url = (
+                    f"/api/v1/schools/{school['id']}/academic-years/"
+                    f"{school['year_id']}/aid-applications/draft-workload/"
+                )
+                return page.evaluate("""async url => {
+                    const response = await fetch(url, {credentials: "same-origin"});
+                    return {
+                        status: response.status,
+                        cacheControl: response.headers.get("Cache-Control") || "",
+                        data: await response.json()
+                    };
+                }""", url)
+
+            family_workload = workload(school_a)
+            assert family_workload["status"] == 404, "Family must not see staff workload"
+            assert family_workload["data"] == {"detail": "Not found."}
+
             page.get_by_role("button", name="School A director").click()
             expect(page.locator("#application-count")).to_have_text("1")
+            school_a_workload = workload(school_a)
+            assert school_a_workload["status"] == 200, "Authorized director workload denied"
+            assert school_a_workload["data"] == {
+                "school_id": school_a["id"],
+                "academic_year_id": school_a["year_id"],
+                "draft_application_records": 1,
+                "distinct_draft_households": 1,
+                "selected_household_student_links": 2,
+                "application_unit": "household_application_not_student",
+                "selection_unit": "household_student_link_not_distinct_student",
+                "financial_submissions_or_awards_included": False,
+            }, "Director workload count/units differ from saved synthetic drafts"
+            assert "no-store" in school_a_workload["cacheControl"].lower()
+            assert workload(school_b)["status"] == 404, "Director A saw School B workload"
+            print("CHROMIUM WORKLOAD A: family denied, director scoped, count 1/1/2, cross-school denied", flush=True)
             page.get_by_role("button", name="View selected children").click()
             expect(page.locator("#case-detail")).to_contain_text("selected children: 2")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
@@ -163,6 +204,14 @@ def main():
 
             page.get_by_role("button", name="School B director").click()
             expect(page.locator("#application-count")).to_have_text("0")
+            school_b_workload = workload(school_b)
+            assert school_b_workload["status"] == 200, "School B director workload denied"
+            assert school_b_workload["data"]["draft_application_records"] == 0
+            assert school_b_workload["data"]["distinct_draft_households"] == 0
+            assert school_b_workload["data"]["selected_household_student_links"] == 0
+            assert school_b_workload["data"]["financial_submissions_or_awards_included"] is False
+            assert workload(school_a)["status"] == 404, "Director B saw School A workload"
+            print("CHROMIUM WORKLOAD B: empty school 0/0/0, cross-school denied", flush=True)
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
             page.get_by_role("button", name="Verify other school is denied").click()
             expect(page.locator("#events")).to_contain_text(
