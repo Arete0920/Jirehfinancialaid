@@ -7,6 +7,7 @@ An OK reply proves only that the configured daemon returned OK at scan time.
 import ipaddress
 import socket
 import struct
+import time
 
 
 class ClamdScanError(ValueError):
@@ -54,10 +55,20 @@ class ClamdInstreamScanner:
             or len(contents) > self._max_bytes
         ):
             raise ClamdScanError("scanner_input_rejected")
+        deadline = time.monotonic() + self._timeout
+
+        def remaining(connection=None):
+            left = deadline - time.monotonic()
+            if left <= 0:
+                raise ClamdScanError("scanner_unavailable")
+            if connection is not None:
+                connection.settimeout(left)
+            return left
+
         try:
             if self._unix_socket_path is not None:
                 connection = socket.socket(socket.AF_UNIX, socket.SOCK_STREAM)
-                connection.settimeout(self._timeout)
+                connection.settimeout(remaining())
                 try:
                     connection.connect(self._unix_socket_path)
                 except Exception:
@@ -65,19 +76,27 @@ class ClamdInstreamScanner:
                     raise
             else:
                 connection = socket.create_connection(
-                    (self._loopback_host, self._port), timeout=self._timeout
+                    (self._loopback_host, self._port), timeout=remaining()
                 )
             with connection:
-                connection.settimeout(self._timeout)
+                remaining(connection)
                 connection.sendall(b"zINSTREAM\0")
+                remaining()
                 for i in range(0, len(contents), self._chunk_bytes):
                     chunk = contents[i:i + self._chunk_bytes]
+                    remaining(connection)
                     connection.sendall(struct.pack("!I", len(chunk)))
+                    remaining(connection)
                     connection.sendall(chunk)
+                    remaining()
+                remaining(connection)
                 connection.sendall(struct.pack("!I", 0))
+                remaining()
                 reply = bytearray()
                 while b"\0" not in reply:
+                    remaining(connection)
                     chunk = connection.recv(256)
+                    remaining()
                     if not chunk:
                         raise ClamdScanError("scanner_result_incomplete")
                     reply.extend(chunk)
