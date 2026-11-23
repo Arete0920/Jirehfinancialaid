@@ -294,3 +294,78 @@ class SyntheticAidSubmission(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Synthetic submission evidence cannot be deleted.")
+
+
+SYNTHETIC_OFFER_AMOUNT_CENTS = 25_000
+SYNTHETIC_OFFER_BUCKET = "need"
+
+
+class SyntheticAidOffer(UUIDStampedModel):
+    """One fictional $250 offered-aid record per selected child.
+
+    NOT a real AidAward, allocation, award acceptance, tuition credit, payment,
+    ledger or commitment of school funds. Only used by synthetic test services.
+    """
+
+    application = models.ForeignKey(
+        AidApplication, on_delete=models.PROTECT, related_name="synthetic_offers",
+    )
+    student_selection = models.OneToOneField(
+        AidApplicationStudent, on_delete=models.PROTECT,
+        related_name="synthetic_offer",
+    )
+    actor_user = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_synthetic_offers_created",
+    )
+    bucket = models.CharField(max_length=16, default=SYNTHETIC_OFFER_BUCKET)
+    amount_cents = models.PositiveIntegerField(default=SYNTHETIC_OFFER_AMOUNT_CENTS)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(bucket="need"),
+                name="jireh_syn_offer_bucket",
+            ),
+            models.CheckConstraint(
+                condition=Q(amount_cents=25000),
+                name="jireh_syn_offer_fixed_amount",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if (
+            self.bucket != SYNTHETIC_OFFER_BUCKET
+            or type(self.amount_cents) is not int
+            or self.amount_cents != SYNTHETIC_OFFER_AMOUNT_CENTS
+        ):
+            raise ValidationError("Only the fixed $250 synthetic example is supported.")
+        if not self.application_id or not self.student_selection_id or not self.actor_user_id:
+            return
+        from jireh.schools.models import SchoolStaffAccess
+
+        app = self.application
+        selection = self.student_selection
+        if (
+            selection.application_id != app.pk
+            or app.status != AidApplication.STATUS_DRAFT
+            or not app.school.is_active
+            or not self.actor_user.is_active
+            or not SyntheticAidSubmission.objects.filter(application_id=app.pk).exists()
+            or not SchoolStaffAccess.objects.filter(
+                school_id=app.school_id,
+                user_id=self.actor_user_id,
+                role=SchoolStaffAccess.ROLE_AID_DIRECTOR,
+                is_active=True,
+            ).exists()
+        ):
+            raise ValidationError("Synthetic offer requires a submitted demo case and director.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Synthetic offer evidence is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Synthetic offered aid cannot be deleted.")
