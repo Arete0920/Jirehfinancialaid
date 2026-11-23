@@ -22,9 +22,17 @@ from .document_lifecycle import (
     DocumentLifecycleError, SyntheticDocumentPolicy, create_synthetic_document,
     read_synthetic_document, delete_synthetic_document,
 )
-from .local_encrypted_backend import (
-    LocalEncryptedClamdBackend, PrivateDocumentStorageError,
-)
+# Encrypted document support is optional in the existing localhost demo:
+# a missing preproduction cryptography wheel must not break other demo routes.
+try:
+    from .local_encrypted_backend import (
+        LocalEncryptedClamdBackend, PrivateDocumentStorageError,
+    )
+except ImportError:
+    LocalEncryptedClamdBackend = None
+
+    class PrivateDocumentStorageError(ValueError):
+        """Local fictional encrypted storage is unavailable (fail closed)."""
 from .models import FinancialDocument
 from .services import selected_student_ids_for_draft
 
@@ -78,6 +86,8 @@ class _FixtureOnlyScanner:
 @lru_cache(maxsize=1)
 def _local_backend():
     """Keep ephemeral encryption key and temporary root for this test process."""
+    if LocalEncryptedClamdBackend is None:
+        raise PrivateDocumentStorageError("fictional_storage_unavailable")
     temporary = tempfile.TemporaryDirectory(prefix="jireh-fictional-document-")
     backend = LocalEncryptedClamdBackend(
         root=temporary.name,
