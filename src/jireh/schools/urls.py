@@ -11,6 +11,10 @@ from jireh.financial_aid.synthetic_questionnaire_views import (
     read_synthetic_family_questionnaire_preview,
 )
 from jireh.financial_aid.student_views import selected_students, select_student
+from jireh.financial_aid.synthetic_document_views import (
+    list_fictional_documents, create_fictional_document, read_fictional_document,
+    remove_fictional_document,
+)
 from jireh.financial_aid.synthetic_demo_views import (
     record_synthetic_family_receipt, read_synthetic_family_receipt,
     record_synthetic_staff_offer, read_synthetic_family_offer_list,
@@ -86,6 +90,32 @@ urlpatterns = [
         "synthetic/questionnaire/<slug:scenario_id>/",
         read_synthetic_family_questionnaire_preview,
         name="jireh_test_synthetic_family_questionnaire_preview",
+    ),
+    # Fixed server-owned PDF fixture only. No user-uploaded bytes, production
+    # document routes or externally accessible storage are exposed here.
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/"
+        "synthetic/documents/",
+        list_fictional_documents, name="jireh_test_fictional_document_list",
+    ),
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/"
+        "synthetic/documents/create/",
+        create_fictional_document, name="jireh_test_fictional_document_create",
+    ),
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/"
+        "synthetic/documents/<uuid:document_id>/read/",
+        read_fictional_document, name="jireh_test_fictional_document_read",
+    ),
+    path(
+        "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
+        "academic-years/<uuid:academic_year_id>/aid-application/draft/"
+        "synthetic/documents/<uuid:document_id>/remove/",
+        remove_fictional_document, name="jireh_test_fictional_document_remove",
     ),
     # Disposable synthetic workflow only; production runtime never imports this URLConf.
     path(
