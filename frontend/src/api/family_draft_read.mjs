@@ -4,26 +4,31 @@
  * canonical-server-readback rules, adapted to Jireh's UUID household scoping.
  * The actual Django endpoints exist ONLY under disposable test/demo settings.
  * No CROWN auth, token storage, financial writes, or default live transport.
+ * Caller MUST increment auth_revision on every session/principal/access change;
+ * never pass a cookie, session key or secret as the revision.
  */
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
 function snapshot(provider) {
   const scope = provider?.();
   if (!scope || !['school_id', 'household_id', 'academic_year_id'].every(k =>
-    typeof scope[k] === 'string' && UUID.test(scope[k]))) {
+    typeof scope[k] === 'string' && UUID.test(scope[k])) ||
+      !Number.isSafeInteger(scope.auth_revision) || scope.auth_revision < 0) {
     throw new Error('Family scope unavailable');
   }
   return Object.freeze({
     school_id: scope.school_id.toLowerCase(),
     household_id: scope.household_id.toLowerCase(),
     academic_year_id: scope.academic_year_id.toLowerCase(),
+    auth_revision: scope.auth_revision,
   });
 }
 
 function sameScope(a, b) {
   return a.school_id === b.school_id &&
     a.household_id === b.household_id &&
-    a.academic_year_id === b.academic_year_id;
+    a.academic_year_id === b.academic_year_id &&
+    a.auth_revision === b.auth_revision;
 }
 
 function paths(s) {

@@ -1,7 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createFamilyDraftReadClient } from '../src/api/family_draft_read.mjs';
-const ids={school_id:'11111111-1111-4111-8111-111111111111',household_id:'22222222-2222-4222-8222-222222222222',academic_year_id:'33333333-3333-4333-8333-333333333333',application_id:'44444444-4444-4444-8444-444444444444',child_id:'55555555-5555-4555-8555-555555555555'};
+const ids={school_id:'11111111-1111-4111-8111-111111111111',household_id:'22222222-2222-4222-8222-222222222222',academic_year_id:'33333333-3333-4333-8333-333333333333',auth_revision:0,application_id:'44444444-4444-4444-8444-444444444444',child_id:'55555555-5555-4555-8555-555555555555'};
 const ok=body=>({ok:true,json:async()=>body});
 const client=(fetcher,currentScope=()=>ids,syntheticOnly=true)=>createFamilyDraftReadClient({fetcher,currentScope,syntheticOnly});
 const draft={id:ids.application_id,status:'DRAFT',school_id:ids.school_id,household_id:ids.household_id,academic_year_id:ids.academic_year_id};
@@ -73,4 +73,34 @@ test('scope switch between selected-children readbacks denies the combined resul
    return ok({application_id:ids.application_id,student_ids:[ids.child_id]});
  },()=>current);
  await assert.rejects(c.readSelectedChildren(),/context changed/);
+});
+
+// A new session can retain the same selected household and academic year.
+// Scope UUID equality must not authorize replaying a prior session's response.
+test('session change with identical school and household rejects stale response', async()=>{
+ let current={...ids};
+ const c=client(async()=>{
+   current={...current,auth_revision:current.auth_revision+1};
+   return ok(draft);
+ },()=>current);
+ await assert.rejects(c.readDraft(),/context changed/);
+});
+
+test('session change during JSON parsing rejects stale response', async()=>{
+ let current={...ids};
+ const c=client(async()=>({ok:true,json:async()=>{
+   current={...current,auth_revision:current.auth_revision+1};
+   return draft;
+ }}),()=>current);
+ await assert.rejects(c.readDraft(),/context changed/);
+});
+
+test('missing or malformed authentication revision is rejected before transport',async()=>{
+ let count=0;
+ const fetcher=async()=>{count++;return ok(draft)};
+ for (const invalid of [undefined,null,-1,1.1,'0',true,Number.MAX_SAFE_INTEGER+1]) {
+   const c=client(fetcher,()=>({...ids,auth_revision:invalid}));
+   await assert.rejects(c.readDraft(),/scope unavailable/);
+ }
+ assert.equal(count,0);
 });
