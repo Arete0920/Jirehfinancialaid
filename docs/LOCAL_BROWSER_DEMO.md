@@ -1,7 +1,7 @@
 # Jireh — localhost synthetic browser demonstration
 
 **Status:** Test-only, not a deployed or production-ready application.
-**Intended demo:** December 1, 2026 (guided preview of implemented capabilities).
+**Presentation:** Owner approved the original synthetic walkthrough on November 22, 2026. The expanded fictional $250 sequence requires its own exact-commit browser evidence and approval of updated claims.
 
 This prototype renders an actual local browser interface backed by the same
 Django household, annual draft, selected-student and school-director endpoints
@@ -41,11 +41,16 @@ over loopback HTTP. Do not use on untrusted workstations or with real data.
    to that family draft.
 4. **Cross-school and CSRF checks:** The UI deliberately exercises rejected
    School B access and rejects a request missing its CSRF header.
-5. **School A director:** Switch personas (logging out the prior account)
-   and see the school's read-only draft inventory.
-   Select **View selected children** to inspect the authorized draft's read-only
-   child-selection count. No financial information or award is exposed.
-6. **School B director:** See that this director cannot read School A's
+5. **Fictional receipt:** Check the explicit synthetic attestation and select
+   **Record fictional receipt**. The same receipt is returned on retry; the real
+   application still displays `DRAFT`.
+6. **School A director:** Switch personas and review the draft's selected children.
+   Select **Record fictional $250 need offer** to create a school-scoped,
+   idempotent, test-only offer. No school money is committed.
+7. **Family readback:** Switch back to **Family applicant** and select
+   **Read fictional offered aid**; the authorized family sees only its
+   synthetic $250 offer.
+8. **School B director:** See that this director cannot read School A's
    inventory and has no School B drafts.
 
 ## Optional Playwright screenshots and video
@@ -71,14 +76,13 @@ interface's HTTP routes, user-session separation, two-school boundary, CSRF
 and idempotency. Those automated HTTP tests are not substitutes for actual
 Playwright browser evidence.
 
-## December 1 guided technical-preview packet — owner approval pending
+## Owner-approved initial walkthrough — expanded scenario pending acceptance
 
-**Approval status: NOT APPROVED FOR PRESENTATION.** The product owner must approve the exact
-presenter language and audience before any buyer-facing use. The following script
+**Approval status:** The owner approved the initial fictional family/draft/director walkthrough and its laptop presentation on November 22, 2026 (Issue #42). **Approval of the expanded fictional $250 sequence and any particular buyer-facing audience must be separately recorded after exact-commit evidence is reviewed.** The following script
 describes only the already implemented, synthetic local browser journey; it
 does **not** authorize deployment, real-family intake, payment, or school onboarding.
 
-### Exact-commit engineering evidence (2026-11-22)
+### Historical baseline engineering evidence (not the expanded $250 scenario)
 
 - Verified protected `main` baseline: `730a1a5ac46b84be4b6795c55c664547a1fa51a4`.
 - [Foundation checks — run 45049851530](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45049851530):
@@ -96,7 +100,7 @@ does **not** authorize deployment, real-family intake, payment, or school onboar
   SHA changes, repeat and record the appropriate checks for the new SHA;
   never reuse this evidence to certify a different build.
 
-### Proposed opening and walkthrough (not owner-approved)
+### Original baseline opening and walkthrough (expanded steps separately reviewed)
 
 > "This is a local, synthetic technical preview of standalone Jireh Financial
 > Aid. The schools, people and records are fictional. You will see the working
@@ -119,11 +123,11 @@ demo URL. Do not imply that a viewer can sign into a hosted product.
 
 ### Required closing disclosure
 
-> "Financial questions and documents, final consent and submission,
-> financial need calculations, award decisions, payments, real-school
-> onboarding, and hosted customer access are **not implemented in this
-> demonstration**. These security and operational workflows have not received
-> production acceptance. No real family information may be entered."
+> "Financial questions and documents, legally binding consent and submission,
+> financial need calculations, real award decisions, payments, real-school
+> onboarding, and hosted customer access are **not implemented**. The
+> fictional $250 offer is synthetic test evidence only, not a funding promise.
+> Production acceptance is incomplete. No real family data may be entered."
 
 **No unverified claims:** Do not describe the financial aid form as completed,
 the award engine as operating, the synthetic login as production identity
@@ -158,13 +162,17 @@ packet is intentionally distinct from the eleven production release gates in
   creation and resume, child selection, authorized director inventory,
   cross-school denial, and CSRF checks.
 - **Not implemented here:** Financial questionnaire, tax document upload,
-  consent/final submission, automated assessment, school award decisions,
-  fees/payment, real onboarding, SIS integrations or a production service.
+  legal consent/final submission, automated assessment, binding school award
+  decisions, fees/payment, real onboarding, SIS integrations or production.
+- **Synthetic-only expansion under verification:** Immutable fictional receipt,
+  director-authorized fixed $250 example and family-scoped metadata readback;
+  not a financial aid award, ledger posting or actual application submission.
 - **Not represented:** Production security sign-off, real-world identity
   verification, monitoring, incident response, document protection, and
   recoverability.
 
 This browser implementation extends the backend rehearsal in PR #52 and is
 part of [issue #42](https://github.com/Arete0920/Jirehfinancialaid/issues/42).
-Issue #42 must stay open until the required actual browser acceptance evidence
-and owner-approved presentation claims are available.
+Issue #42 was closed for the previously approved synthetic walkthrough.
+The expanded family → officer → family flow remains tracked under #47 until
+its new browser evidence and presentation claims are separately accepted.
