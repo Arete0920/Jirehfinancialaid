@@ -97,6 +97,44 @@ class SyntheticOfferReadback:
     status: str
 
 
+def read_synthetic_director_offer(
+    *, user, school_id, academic_year_id, application_id, student_id
+) -> SyntheticOfferReadback:
+    """Independently read one saved fictional offer under an active school grant.
+
+    Never infer a real submitted case, award or payment from this test record.
+    Unknown cases, other schools, years, children and absent offers are 404.
+    """
+    _require_synthetic_mode()
+    school = require_aid_director_access(user, school_id=school_id)
+    application = (
+        AidApplication.objects.for_school(school.pk)
+        .filter(pk=application_id, academic_year_id=academic_year_id,
+                status=AidApplication.STATUS_DRAFT)
+        .first()
+    )
+    if application is None:
+        raise Http404("Fictional offer unavailable.")
+    offer = (
+        SyntheticAidOffer.objects.filter(
+            application_id=application.pk,
+            student_selection__application_id=application.pk,
+            student_selection__household_student__household_id=application.household_id,
+            student_selection__household_student__student_id=student_id,
+        )
+        .select_related("student_selection__household_student")
+        .first()
+    )
+    if offer is None:
+        raise Http404("Fictional offer unavailable.")
+    return SyntheticOfferReadback(
+        application_id=str(offer.application_id),
+        student_id=str(offer.student_selection.household_student.student_id),
+        bucket=offer.bucket, amount_cents=offer.amount_cents,
+        status="SYNTHETIC_OFFERED",
+    )
+
+
 def read_synthetic_family_offers(
     *, user, school_id, household_id, academic_year_id
 ) -> tuple[SyntheticOfferReadback, ...]:
