@@ -169,6 +169,15 @@ class FictionalOfferHTTPTests(TestCase):
         ):
             response = self.post_attestation(family, body)
             self.assertEqual(response.status_code, 400)
+        for raw in (
+            '{"accuracy_attested":false,"accuracy_attested":true}',
+            '{"accuracy_attested":true,"padding":"' + ("x" * 2048) + '"}',
+        ):
+            response = family.post(
+                self.url_receipt(), data=raw, content_type="application/json",
+                HTTP_X_CSRFTOKEN=family.cookies["csrftoken"].value,
+            )
+            self.assertEqual(response.status_code, 400)
         self.assertFalse(SyntheticAidSubmission.objects.exists())
 
     def test_no_selected_child_disallows_synthetic_submission(self):
