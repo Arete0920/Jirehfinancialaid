@@ -1,6 +1,6 @@
 {
   "schema_id": "jireh.financial_questionnaire.v1-design-candidate",
-  "schema_status": "DESIGN_ONLY_NOT_APPROVED_FOR_COLLECTION",
+  "schema_status": "FIELD_LIST_APPROVED_DESIGN_ONLY_NOT_COLLECTION",
   "schema_version": "0.1.0",
   "source": {
     "crown_repository": "Arete0920/Crown-CSMS",
@@ -85,7 +85,7 @@
     {
       "id": "household",
       "name": "Household members and financial contributors",
-      "lifecycle": "candidate",
+      "lifecycle": "approved_for_development",
       "fields": [
         {
           "id": "household.members[].member_id",
@@ -143,7 +143,7 @@
     {
       "id": "income",
       "name": "Income",
-      "lifecycle": "candidate",
+      "lifecycle": "approved_for_development",
       "fields": [
         {
           "id": "income.items[].category",
@@ -202,7 +202,7 @@
     {
       "id": "assets",
       "name": "Assets",
-      "lifecycle": "candidate",
+      "lifecycle": "approved_for_development",
       "fields": [
         {
           "id": "assets.items[].category",
@@ -240,7 +240,7 @@
     {
       "id": "liabilities",
       "name": "Liabilities",
-      "lifecycle": "candidate",
+      "lifecycle": "approved_for_development",
       "fields": [
         {
           "id": "liabilities.items[].category",
@@ -277,7 +277,7 @@
     {
       "id": "expenses",
       "name": "Recurring expenses",
-      "lifecycle": "candidate",
+      "lifecycle": "approved_for_development",
       "fields": [
         {
           "id": "expenses.items[].category",
@@ -316,7 +316,7 @@
     {
       "id": "school_questions",
       "name": "School-specific questions",
-      "lifecycle": "candidate",
+      "lifecycle": "approved_for_development",
       "fields": [
         {
           "id": "school_questions[].definition_id",
@@ -343,7 +343,7 @@
     {
       "id": "consent",
       "name": "Consent and attestation",
-      "lifecycle": "candidate",
+      "lifecycle": "approved_for_development",
       "fields": [
         {
           "id": "consent.current_year_accuracy",
@@ -550,5 +550,12 @@
         ]
       }
     }
+  },
+  "field_list_approval": {
+    "status": "OWNER_APPROVED_FOR_DEVELOPMENT",
+    "scope": "EXACT_31_CANDIDATE_FIELD_PATHS_IN_SEVEN_SECTIONS",
+    "approved_field_count": 31,
+    "source_issue": "https://github.com/Arete0920/Jirehfinancialaid/issues/43",
+    "note": "Product owner approved the 31 field identifiers for standalone development on 2026-11-22. Detailed Q01-Q10 validation, lawful consent, security, retention, financial methodology and live-data release gates remain separately outstanding. No collection routes, storage, payment or scoring enabled."
   }
 }
