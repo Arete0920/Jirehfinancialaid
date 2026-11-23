@@ -85,7 +85,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 "use strict";
 (() => {
   const PASSWORD = "{{ demo_password|escapejs }}";
-  const state = {role: null, config: null, students: [], draft: null};
+  const state = {role: null, config: null, students: [], draft: null, needsReconciliation: false};
   const $ = id => document.getElementById(id);
   const setActiveStep = step => {
     document.querySelectorAll(".step[data-step]").forEach(node => {
@@ -107,12 +107,29 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   };
   const path = (school, household, year) => "/api/v1/schools/"+school.id+"/households/"+household+"/academic-years/"+year+"/aid-application/draft/";
   const staffPath = school => "/api/v1/schools/"+school.id+"/academic-years/"+school.year_id+"/aid-applications/";
+  const isSavedDraft = (data, school, postedId = null) => (
+    data && typeof data.id === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id) &&
+    data.status === "DRAFT" && data.school_id === school.id &&
+    data.household_id === school.household_id &&
+    data.academic_year_id === school.year_id &&
+    (postedId === null || data.id === postedId)
+  );
+  function requireDraftReadback() {
+    state.draft = null;
+    state.needsReconciliation = true;
+    $("draft-status").textContent = "Verification required";
+    $("create-draft").disabled = true;
+    $("record-synthetic-receipt").disabled = true;
+    renderStudents();
+    log("Draft independent saved-record verification failed; refresh household before retry", false);
+  }
   const primary = () => state.config.school_a;
   const secondary = () => state.config.school_b;
   async function logout(){
     if(!state.role)return;
     await api("/test-auth/logout/","POST");
-    state.role=null;state.config=null;state.students=[];state.draft=null;
+    state.role=null;state.config=null;state.students=[];state.draft=null;state.needsReconciliation=false;
     $("synthetic-attestation").checked=false;
     $("synthetic-family-result").replaceChildren();
     $("record-synthetic-receipt").disabled=true;
@@ -151,7 +168,14 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     if(!h.ok||!s.ok){log("Household access denied ("+h.status+"/"+s.status+")",false);return;}
     state.students=s.data.students;
     const draft=await api(path(a,a.household_id,a.year_id));
+    // Only an independently scoped, saved GET may establish an active draft.
+    if((draft.ok && !isSavedDraft(draft.data,a)) ||
+       (!draft.ok && draft.status!==404)){
+      requireDraftReadback();
+      return;
+    }
     state.draft=draft.ok?draft.data:null;
+    state.needsReconciliation=false;
     $("draft-status").textContent=draft.ok?draft.data.status:"Not created";
     renderStudents();
     setActiveStep(state.draft ? 3 : 2);
@@ -187,17 +211,33 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     if(r.data.student_ids.length) setActiveStep(4);
   }
   async function createDraft(){
-    if(!state.config||state.role!=="local-demo-family")return;
+    if(!state.config||state.role!=="local-demo-family"||state.needsReconciliation)return;
     $("create-draft").disabled=true;
     try{
       const a=primary(),r=await api(path(a,a.household_id,a.year_id),"POST");
-      if(!r.ok){log("Draft request failed HTTP "+r.status,false);return;}
-      state.draft=r.data;$("draft-status").textContent=r.data.status;
+      if(!r.ok){
+        // A 5xx after POST may conceal a committed write; do not auto-retry.
+        if(r.status>=500)requireDraftReadback();
+        else log("Draft request failed HTTP "+r.status,false);
+        return;
+      }
+      // CROWN's canonical saved-record rule: POST alone is not persistence proof.
+      const saved=await api(path(a,a.household_id,a.year_id));
+      if(!saved.ok||!isSavedDraft(saved.data,a,r.data?.id)){
+        requireDraftReadback();
+        return;
+      }
+      state.draft=saved.data;
+      state.needsReconciliation=false;
+      $("draft-status").textContent=saved.data.status;
       setActiveStep(3);
-      log("Annual draft active: "+r.data.id.slice(0,8)+"… — repeated creation is idempotent");
+      log("Annual draft active: "+saved.data.id.slice(0,8)+"… — independently verified saved record");
       renderStudents();await refreshSelections();
+    }catch(error){
+      // Ambiguous writes cannot be retried until an independent read verifies.
+      requireDraftReadback();
     }finally{
-      $("create-draft").disabled=false;
+      $("create-draft").disabled=state.needsReconciliation;
     }
   }
   async function recordSyntheticReceipt(){
