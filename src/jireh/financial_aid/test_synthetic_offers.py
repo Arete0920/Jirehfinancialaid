@@ -163,6 +163,7 @@ class SyntheticOfficerOfferTests(TestCase):
             {"user": self.other_parent},
             {"school_id": self.other_school.pk},
             {"household_id": self.other_house.pk},
+            {"academic_year_id": self.other_year.pk},
         ):
             params = dict(
                 user=self.parent, school_id=self.school.pk,
