@@ -344,6 +344,12 @@ jobs:
           assert settings.SECURE_SSL_REDIRECT is True
           assert settings.SESSION_COOKIE_SECURE and settings.CSRF_COOKIE_SECURE
           assert settings.DATABASES['default']['OPTIONS']['sslmode'] == 'verify-full'
+          assert 'jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware' in settings.MIDDLEWARE
+          runtime_logger = settings.LOGGING['loggers']['jireh.runtime.request']
+          assert runtime_logger['level'] == 'INFO'
+          assert runtime_logger['propagate'] is False
+          assert settings.LOGGING['handlers']['runtime_request']['class'] == 'logging.StreamHandler'
+          assert settings.LOGGING['formatters']['runtime_json']['format'] == '%(message)s'
           assert len(get_resolver().url_patterns) == 2, 'Only liveness and readiness may be routed'
           assert resolve('/healthz/').url_name == 'jireh_health'
           assert resolve('/readyz/').url_name == 'jireh_database_readiness'
@@ -353,6 +359,10 @@ jobs:
           response = client.get('/healthz/', secure=True, HTTP_HOST='jireh.example.invalid')
           assert response.status_code == 200, response.status_code
           assert response.json() == {'status': 'alive'}
+          from uuid import UUID
+          cid = response['X-Correlation-ID']
+          assert str(UUID(cid)) == cid
+          assert response['X-Correlation-ID'] != 'UNTRUSTED'
           assert response['Cache-Control'].find('no-cache') >= 0
           # Runtime TLS/host certificate validation is environment-specific:
           # do not claim a real database roundtrip in this config-only check.

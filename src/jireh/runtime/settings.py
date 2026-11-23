@@ -24,11 +24,34 @@ INSTALLED_APPS = [
 ]
 MIDDLEWARE = [
     "django.middleware.security.SecurityMiddleware",
+    "jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware",
     "django.contrib.sessions.middleware.SessionMiddleware",
     "django.middleware.common.CommonMiddleware",
     "django.middleware.csrf.CsrfViewMiddleware",
     "django.contrib.auth.middleware.AuthenticationMiddleware",
 ]
+LOGGING = {
+    "version": 1,
+    "disable_existing_loggers": False,
+    "handlers": {
+        "runtime_request": {
+            "class": "logging.StreamHandler",
+            "level": "INFO",
+            "formatter": "runtime_json",
+        },
+    },
+    "formatters": {
+        "runtime_json": {"format": "%(message)s"},
+    },
+    "loggers": {
+        "jireh.runtime.request": {
+            "handlers": ["runtime_request"],
+            "level": "INFO",
+            "propagate": False,
+        },
+    },
+}
+
 ROOT_URLCONF = "jireh.runtime.urls"
 WSGI_APPLICATION = "jireh.runtime.wsgi.application"
 ASGI_APPLICATION = "jireh.runtime.asgi.application"

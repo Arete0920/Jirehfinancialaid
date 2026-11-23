@@ -296,7 +296,12 @@ liveness and `GET/HEAD /readyz/` for one read-only `SELECT 1` PostgreSQL
 connectivity check. A successful readiness probe is **not** proof of schema
 parity, financial-aid workflows, tenant isolation, security certification,
 provisioning or production GO. Failed database checks return generic HTTP 503
-without leaking connection errors. Test-only family/staff API routes stay
+without leaking connection errors. The runtime generates a new server-side
+`X-Correlation-ID` on each request and emits bounded, structured request
+metadata with fixed route classes, not paths, query strings, identifiers,
+financial content, request headers or exception messages. This is a source
+logging control, **not** configured alert delivery, retention or M1 security
+operations certification. Test-only family/staff API routes stay
 in `jireh.schools.test_settings` and are not included in runtime routing.
 
 Runtime startup requires explicit `JIREH_ENABLE_RUNTIME=1` and these values:
