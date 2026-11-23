@@ -1,5 +1,8 @@
 """Disposable scoped document lifecycle acceptance: never use customer bytes."""
+import os
+import tempfile
 import uuid
+from pathlib import Path
 from datetime import date
 
 from django.contrib.auth import get_user_model
@@ -246,6 +249,48 @@ class DocumentLifecycleTests(TestCase):
             event.delete()
         with self.assertRaises(ValidationError):
             doc.delete()
+
+
+    def test_encrypted_preproduction_backend_roundtrip_through_scoped_service(self):
+        from .local_encrypted_backend import LocalEncryptedClamdBackend
+
+        class VerifiedFakeScanner:
+            def scan(self, content):
+                return content.startswith(b"%PDF-") and b"%%EOF" in content[-1024:]
+
+        with tempfile.TemporaryDirectory() as directory:
+            os.chmod(directory, 0o700)
+            storage = LocalEncryptedClamdBackend(
+                root=Path(directory),
+                encryption_key=os.urandom(32),
+                scanner=VerifiedFakeScanner(),
+                max_bytes=4096,
+            )
+            doc = create_synthetic_document(**self.params(backend=storage))
+            files = list(Path(directory).iterdir())
+            self.assertEqual(len(files), 1)
+            self.assertNotIn(b"FICTIONAL RECORD", files[0].read_bytes())
+            self.assertEqual(
+                read_synthetic_document(
+                    **self.scope(backend=storage), document_id=doc.pk
+                ),
+                self.contents,
+            )
+            with self.assertRaises(Http404):
+                read_synthetic_document(
+                    **self.scope(backend=storage, user=self.foreign),
+                    document_id=doc.pk,
+                )
+            removed = delete_synthetic_document(
+                **self.scope(backend=storage), document_id=doc.pk,
+            )
+            self.assertEqual(removed.state, FinancialDocument.STATE_DELETED)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+            self.assertEqual(
+                list(FinancialDocumentEvent.objects.filter(document=doc)
+                     .order_by("created_at").values_list("action", flat=True)),
+                ["CREATED", "DELETED"],
+            )
 
 
 class DocumentPostgresGuardTests(TransactionTestCase):
