@@ -345,6 +345,11 @@ jobs:
           assert settings.SESSION_COOKIE_SECURE and settings.CSRF_COOKIE_SECURE
           assert settings.DATABASES['default']['OPTIONS']['sslmode'] == 'verify-full'
           assert 'jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware' in settings.MIDDLEWARE
+          runtime_logger = settings.LOGGING['loggers']['jireh.runtime.request']
+          assert runtime_logger['level'] == 'INFO'
+          assert runtime_logger['propagate'] is False
+          assert settings.LOGGING['handlers']['runtime_request']['class'] == 'logging.StreamHandler'
+          assert settings.LOGGING['formatters']['runtime_json']['format'] == '%(message)s'
           assert len(get_resolver().url_patterns) == 2, 'Only liveness and readiness may be routed'
           assert resolve('/healthz/').url_name == 'jireh_health'
           assert resolve('/readyz/').url_name == 'jireh_database_readiness'
