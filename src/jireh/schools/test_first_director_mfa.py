@@ -23,6 +23,7 @@ from fido2.webauthn import (
     AuthenticatorAssertionResponse, AuthenticatorData, CollectedClientData,
 )
 
+from .demo_seed import seed_synthetic_browser_demo
 from .first_director_bootstrap import propose_first_director, approve_first_director
 from .models import (
     OperatorWebAuthnCredential, OperatorWebAuthnActionIntent,
@@ -37,6 +38,7 @@ from .operator_webauthn_actions import (
 from .operator_webauthn_registry import revoke_registered_operator_credential
 from .password_recovery import enroll_verified_recovery_contact
 from .redemption import issue_mailbox_challenge
+from .test_onboarding_rehearsal import FictionalOnboardingRehearsal
 from .test_operator_webauthn_registry import (
     OperatorCredentialRegistryTests, RP, ORIGIN, CREDENTIAL_ID, PASSWORD,
 )
@@ -45,8 +47,9 @@ from .test_operator_webauthn_registry import (
 REFERENCE = "SCHOOL-AUTHORIZATION-2026-001"
 
 
-class FirstDirectorWithWebAuthnTests(TransactionTestCase):
+class FirstDirectorProofFixture:
     def setUp(self):
+        super().setUp()
         OperatorCredentialRegistryTests.setUp(self)
         flags = self.settings(
             JIREH_FIRST_DIRECTOR_BOOTSTRAP_ENABLED=True,
@@ -54,23 +57,6 @@ class FirstDirectorWithWebAuthnTests(TransactionTestCase):
         )
         flags.enable()
         self.addCleanup(flags.disable)
-        self.school = School.objects.create(
-            code="mfa-bootstrap-school", name="Synthetic MFA School",
-        )
-        self.second_school = School.objects.create(
-            code="other-mfa-bootstrap-school", name="Other Synthetic MFA School",
-        )
-        self.subject = get_user_model().objects.create_user(
-            username="mfa-director-subject",
-            password="Synthetic-Only-Director-Password-2026!",
-        )
-        _, token = issue_mailbox_challenge(
-            user=self.subject, email="mfa-subject@example.org",
-        )
-        enroll_verified_recovery_contact(
-            user=self.subject, email="mfa-subject@example.org",
-            mailbox_token=token,
-        )
         self.second_key = ec.generate_private_key(ec.SECP256R1())
         self.second_key_id = b"synthetic-second-mfa-operator-key-2026"
         self.second_digest = hashlib.sha256(self.second_key_id).hexdigest()
@@ -105,6 +91,14 @@ class FirstDirectorWithWebAuthnTests(TransactionTestCase):
         )
         cred.enrollment_verified_at = now
         cred.save(update_fields=["enrollment_verified_at", "updated_at"])
+
+    def verify_director_mailbox(self):
+        _, token = issue_mailbox_challenge(
+            user=self.subject, email="mfa-subject@example.org",
+        )
+        enroll_verified_recovery_contact(
+            user=self.subject, email="mfa-subject@example.org", mailbox_token=token,
+        )
 
     def signed(self, options, *, key, credential_id, count=1):
         client = CollectedClientData.create(
@@ -178,6 +172,22 @@ class FirstDirectorWithWebAuthnTests(TransactionTestCase):
             request_id=proposal.pk, authorization_reference=REFERENCE,
             mfa_intent_id=mfa_intent_id,
         )
+
+
+class FirstDirectorWithWebAuthnTests(FirstDirectorProofFixture, TransactionTestCase):
+    def setUp(self):
+        super().setUp()
+        self.school = School.objects.create(
+            code="mfa-bootstrap-school", name="Synthetic MFA School",
+        )
+        self.second_school = School.objects.create(
+            code="other-mfa-bootstrap-school", name="Other Synthetic MFA School",
+        )
+        self.subject = get_user_model().objects.create_user(
+            username="mfa-director-subject",
+            password="Synthetic-Only-Director-Password-2026!",
+        )
+        self.verify_director_mailbox()
 
     def test_two_distinct_real_crypto_assertions_required_for_grant(self):
         proposal_intent = self.proposal_proof()
@@ -262,3 +272,33 @@ class FirstDirectorWithWebAuthnTests(TransactionTestCase):
             with self.assertRaises(PermissionDenied):
                 self.propose(mfa_intent_id=proof_id)
         self.assertFalse(FirstDirectorBootstrapRequest.objects.exists())
+
+
+class FirstDirectorOnboardingTests(
+    FirstDirectorProofFixture, FictionalOnboardingRehearsal, TransactionTestCase,
+):
+    def test_two_operator_approval_enables_first_household_invitation(self):
+        demo = seed_synthetic_browser_demo(
+            grant_family_access=False, grant_first_director_access=False,
+        )
+        self.school = demo["school_a"]
+        self.subject = demo["director_a"]
+        self.verify_director_mailbox()
+
+        self.assert_fictional_invitation_denied(demo, actor=self.subject)
+        proposal_intent = self.proposal_proof()
+        proposal = self.propose(mfa_intent_id=proposal_intent)
+        self.assert_fictional_invitation_denied(demo, actor=self.subject)
+
+        approval_intent = self.approval_proof(proposal.pk)
+        self.assert_fictional_invitation_denied(demo, actor=self.subject)
+        grant = self.approve(proposal, mfa_intent_id=approval_intent)
+        self.assertEqual(grant.school_id, self.school.pk)
+        self.assertEqual(grant.user_id, self.subject.pk)
+        self.assertTrue(grant.is_active)
+        for intent_id in (proposal_intent, approval_intent):
+            self.assertIsNotNone(
+                OperatorWebAuthnActionIntent.objects.get(pk=intent_id).consumed_at
+            )
+
+        self.rehearse_household_onboarding(demo)

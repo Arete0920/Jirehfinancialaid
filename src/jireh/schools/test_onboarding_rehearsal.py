@@ -24,7 +24,7 @@ _SENDER = "fictional-school@example.invalid"
 _MAIL_CODE = re.compile(r"\n\n([A-Za-z0-9_-]{64})\n\n")
 
 
-@override_settings(
+_MAIL_SETTINGS = dict(
     JIREH_EMAIL_DELIVERY_ENABLED=True,
     EMAIL_BACKEND="django.core.mail.backends.smtp.EmailBackend",
     EMAIL_HOST="onboarding-mail.example.invalid",
@@ -36,7 +36,9 @@ _MAIL_CODE = re.compile(r"\n\n([A-Za-z0-9_-]{64})\n\n")
     EMAIL_TIMEOUT=5,
     JIREH_EMAIL_FROM=_SENDER,
 )
-class FictionalOnboardingRehearsalTests(TransactionTestCase):
+
+
+class FictionalOnboardingRehearsal:
     def _mailbox_code(self, message, subject):
         self.assertEqual(message.from_email, _SENDER)
         self.assertEqual(message.recipients(), [_RECIPIENT])
@@ -45,8 +47,25 @@ class FictionalOnboardingRehearsalTests(TransactionTestCase):
         self.assertIsNotNone(match, "Expected a code in the fictional mailbox message.")
         return match.group(1)
 
-    def test_director_invitation_through_revocation_of_a_signed_in_family(self):
-        demo = seed_synthetic_browser_demo(grant_family_access=False)
+    def _assert_invitation_denied(self, *, actor, school_id, household_id):
+        with self.assertRaises(Http404):
+            deliver_household_invitation(
+                actor=actor, school_id=school_id, household_id=household_id,
+                email=_RECIPIENT,
+            )
+        self.assertEqual(len(mail.outbox), 0)
+        self.assertFalse(HouseholdInvitation.objects.exists())
+
+    @override_settings(**_MAIL_SETTINGS)
+    def assert_fictional_invitation_denied(self, demo, *, actor):
+        with patch("django.core.mail.backends.smtp.EmailBackend", EmailBackend):
+            self._assert_invitation_denied(
+                actor=actor, school_id=demo["school_a"].pk,
+                household_id=demo["household_a"].pk,
+            )
+
+    @override_settings(**_MAIL_SETTINGS)
+    def rehearse_household_onboarding(self, demo):
         director = demo["director_a"]
         family = demo["parent"]
         scope = {
@@ -67,12 +86,7 @@ class FictionalOnboardingRehearsalTests(TransactionTestCase):
         # Keep Jireh's service policy and message construction in the path.
         # Substitute Django's transport so no SMTP socket or real mailbox is used.
         with patch("django.core.mail.backends.smtp.EmailBackend", EmailBackend):
-            with self.assertRaises(Http404):
-                deliver_household_invitation(
-                    actor=demo["director_b"], email=_RECIPIENT, **scope,
-                )
-            self.assertEqual(len(mail.outbox), 0)
-            self.assertFalse(HouseholdInvitation.objects.exists())
+            self._assert_invitation_denied(actor=demo["director_b"], **scope)
 
             invitation_id = deliver_household_invitation(
                 actor=director, email=_RECIPIENT, **scope,
@@ -154,3 +168,10 @@ class FictionalOnboardingRehearsalTests(TransactionTestCase):
         self.assertEqual(event.actor_user_id, director.pk)
         self.assertEqual(event.school_id, scope["school_id"])
         self.assertEqual(event.target_user_id, family.pk)
+
+
+class FictionalOnboardingRehearsalTests(FictionalOnboardingRehearsal, TransactionTestCase):
+    def test_director_invitation_through_revocation_of_a_signed_in_family(self):
+        self.rehearse_household_onboarding(
+            seed_synthetic_browser_demo(grant_family_access=False)
+        )
