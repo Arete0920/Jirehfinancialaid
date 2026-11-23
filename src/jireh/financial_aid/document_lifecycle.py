@@ -178,15 +178,16 @@ def create_synthetic_document(
     return document
 
 
+@transaction.atomic
 def read_synthetic_document(
     *, user, school_id, household_id, academic_year_id, document_id, backend
 ) -> bytes:
-    """Read only a currently active document for an authorized household."""
+    """Serialize protected reads with deletion's fail-closed tombstone."""
     _require_backend(backend)
     application = _authorized_draft(
-        user, school_id, household_id, academic_year_id, lock=False,
+        user, school_id, household_id, academic_year_id, lock=True,
     )
-    row = FinancialDocument.objects.for_school(application.school_id).filter(
+    row = FinancialDocument.objects.for_school(application.school_id).select_for_update().filter(
         application=application, household_id=application.household_id,
         pk=document_id, state=FinancialDocument.STATE_ACTIVE,
     ).first()
