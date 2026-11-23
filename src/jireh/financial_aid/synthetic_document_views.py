@@ -197,12 +197,13 @@ def create_fictional_document(request, school_id, household_id, academic_year_id
             category="FICTIONAL_TAX", data=_FIXTURE, policy=_POLICY,
             backend=_backend(),
         )
-    except (UnicodeDecodeError, json.JSONDecodeError, ValueError) as exc:
-        if isinstance(exc, DocumentLifecycleError):
-            return _error(exc)
-        return JsonResponse({"detail": "Invalid fictional request."}, status=400)
-    except (PermissionDenied, Http404, ValidationError, PrivateDocumentStorageError, OSError) as exc:
+    except (
+        PermissionDenied, Http404, ValidationError, DocumentLifecycleError,
+        PrivateDocumentStorageError, OSError,
+    ) as exc:
         return _error(exc)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
+        return JsonResponse({"detail": "Invalid fictional request."}, status=400)
     return JsonResponse({
         "demo_only": True, "document_id": str(record.pk),
         "version": record.version, "status": "FICTIONAL_DOCUMENT_ACTIVE",
