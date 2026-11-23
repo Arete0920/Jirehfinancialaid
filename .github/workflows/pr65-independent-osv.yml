@@ -1,0 +1,39 @@
+name: PR65 independent OSV and license diagnostics
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "scripts/audit_pr65_osv.py"
+      - ".github/workflows/pr65-independent-osv.yml"
+  push:
+    branches: [main]
+    paths:
+      - "scripts/audit_pr65_osv.py"
+      - ".github/workflows/pr65-independent-osv.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  independent-osv-audit:
+    name: Exact-commit PR65 public OSV dependency scan
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - name: Checkout audit code
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Setup Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5.6.0
+        with:
+          python-version: '3.12'
+      - name: Inspect exact PR65 npm lockfile through OSV
+        run: python scripts/audit_pr65_osv.py
+      - name: Retain independent findings and license inventory
+        if: always()
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: pr65-independent-osv-evidence
+          path: artifacts/pr65-osv-independent-audit.json
+          retention-days: 14
+          if-no-files-found: warn
