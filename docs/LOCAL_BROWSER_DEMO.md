@@ -71,7 +71,17 @@ The local AES-GCM backend requires a POSIX filesystem and OS protections
 (`O_NOFOLLOW`, owner-controlled mode `0700`). On a Windows developer laptop,
 run this particular document demo inside Linux/WSL2; native Windows Python
 cannot create the encrypted sample and should fail closed. No weaker Windows
-storage fallback is enabled.
+storage fallback is enabled. To exercise the encrypted fictional document
+on Linux/WSL2, install both existing hash-pinned dependency sets before running
+the demo:
+
+```sh
+python -m pip install --only-binary=:all: --require-hashes -r requirements.txt -r requirements-webauthn-ci.txt
+```
+
+If these optional preproduction crypto dependencies are not installed, the
+other fictional demo workflows remain available; the document create action
+returns an unavailable response without writing a document.
 No files are uploaded, customer routes activated or actual financial records
 persisted. The temporary files disappear when the local process exits.
 
