@@ -100,3 +100,54 @@ def staff_application_detail(request, school_id, academic_year_id, application_i
             "selected_student_ids": [str(student_id) for student_id in selected_ids],
         }
     )
+
+
+@never_cache
+@require_safe
+def staff_draft_workload(request, school_id, academic_year_id):
+    """Synthetic-only, read-only counts for a grant-authorized school director.
+
+    Never report draft counts as submitted applications or real awards.
+    This view is routed only through disposable school test settings.
+    """
+    from .workload import WorkloadIntegrityError, summarize_draft_workload
+
+    try:
+        school = require_aid_director_access(request.user, school_id=school_id)
+    except PermissionDenied:
+        return JsonResponse({"detail": "Forbidden."}, status=403)
+    except Http404:
+        return JsonResponse({"detail": "Not found."}, status=404)
+
+    year = get_object_or_404(
+        AcademicYear.objects.for_school(school.pk), pk=academic_year_id
+    )
+    application_rows = list(
+        AidApplication.objects.for_school(school.pk)
+        .filter(academic_year_id=year.pk)
+        .values("id", "school_id", "academic_year_id", "household_id", "status")
+    )
+    selection_rows = list(
+        AidApplicationStudent.objects.for_school(school.pk)
+        .filter(application__academic_year_id=year.pk)
+        .values(
+            "application_id", "application__school_id",
+            "application__academic_year_id", "application__household_id",
+            "household_student__household_id", "household_student__student_id",
+        )
+    )
+    try:
+        facts = summarize_draft_workload(
+            school_id=school.pk,
+            academic_year_id=year.pk,
+            applications=application_rows,
+            selections=selection_rows,
+        )
+    except WorkloadIntegrityError:
+        return JsonResponse({"detail": "Workload unavailable."}, status=503)
+
+    return JsonResponse({
+        "school_id": str(school.pk),
+        "academic_year_id": str(year.pk),
+        **facts,
+    })
