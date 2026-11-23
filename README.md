@@ -291,9 +291,12 @@ not a trusted provisioning workflow, RLS or launch authorization.
 The separate `jireh.runtime` Django settings, WSGI/ASGI entries and root
 `manage.py` establish a **fail-closed configuration foundation**. This is not
 an approved public service, a customer demo or a complete authentication stack.
-The runtime URL configuration exposes **only** `GET/HEAD /healthz/`: a
-process-liveness response, **not** proof of database, financial-aid workflow,
-provisioning or security readiness. Test-only family/staff API routes stay
+The runtime URL configuration exposes only `GET/HEAD /healthz/` for process
+liveness and `GET/HEAD /readyz/` for one read-only `SELECT 1` PostgreSQL
+connectivity check. A successful readiness probe is **not** proof of schema
+parity, financial-aid workflows, tenant isolation, security certification,
+provisioning or production GO. Failed database checks return generic HTTP 503
+without leaking connection errors. Test-only family/staff API routes stay
 in `jireh.schools.test_settings` and are not included in runtime routing.
 
 Runtime startup requires explicit `JIREH_ENABLE_RUNTIME=1` and these values:
