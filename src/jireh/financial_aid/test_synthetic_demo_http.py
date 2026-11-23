@@ -120,6 +120,35 @@ class FictionalOfferHTTPTests(TestCase):
             content_type="application/octet-stream", **headers,
         )
 
+    def test_http_selection_after_fictional_receipt_returns_conflict(self):
+        """A frozen synthetic draft must not become HTTP 500 on another child."""
+        from .models import AidApplicationStudent
+
+        sibling = Student.objects.create(
+            school=self.school, first_name="Fictional", last_name="Sibling",
+        )
+        link_student_to_household(
+            school_id=self.school.pk, household_id=self.house.pk,
+            student_id=sibling.pk,
+        )
+        self.select_child()
+        family = self.client_as(self.parent)
+        self.assertEqual(self.post_attestation(family).status_code, 200)
+        selection_url = reverse("jireh_aid_select_student", kwargs={
+            "school_id": self.school.pk, "household_id": self.house.pk,
+            "academic_year_id": self.year.pk, "student_id": sibling.pk,
+        })
+        response = family.post(
+            selection_url, HTTP_X_CSRFTOKEN=family.cookies["csrftoken"].value,
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(response.json(), {
+            "detail": "Student selection unavailable.",
+        })
+        self.assertEqual(
+            AidApplicationStudent.objects.filter(application=self.app).count(), 1,
+        )
+
     def test_full_family_to_officer_to_family_and_idempotent_retries(self):
         family = self.client_as(self.parent)
         self.select_child()
