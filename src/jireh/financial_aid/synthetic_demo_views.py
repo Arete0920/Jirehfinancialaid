@@ -10,9 +10,13 @@ from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, JsonResponse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
-from django.views.decorators.http import require_GET, require_POST
+from django.views.decorators.http import require_GET, require_POST, require_safe
 
+from .assessment_contract import CandidateAssessmentError
 from .offer_contract import OfferContractError
+from .questionnaire_validation import QuestionnaireValidationError
+from .synthetic_assessment import preview_fictional_assessment
+from .synthetic_questionnaire_preview import FictionalScenarioNotFound
 from .synthetic_submission import (
     record_synthetic_demo_submission, read_synthetic_demo_submission,
 )
@@ -27,6 +31,49 @@ def _denied(error):
     if isinstance(error, Http404):
         return JsonResponse({"detail": "Not found."}, status=404)
     return JsonResponse({"detail": "Synthetic action unavailable."}, status=409)
+
+
+@never_cache
+@require_safe
+def read_synthetic_staff_assessment(
+    request, school_id, academic_year_id, application_id, scenario_id,
+):
+    """Preview fixed fictional inputs without recording an assessment or offer."""
+    if request.GET:
+        return JsonResponse({"detail": "This preview accepts no query parameters."}, status=400)
+    try:
+        assessment = preview_fictional_assessment(
+            user=request.user, school_id=school_id, academic_year_id=academic_year_id,
+            application_id=application_id, scenario_id=scenario_id,
+        )
+    except (PermissionDenied, Http404) as error:
+        return _denied(error)
+    except FictionalScenarioNotFound:
+        return JsonResponse({"detail": "Not found."}, status=404)
+    except (
+        OSError, UnicodeDecodeError, json.JSONDecodeError,
+        QuestionnaireValidationError, CandidateAssessmentError,
+    ):
+        return JsonResponse({"detail": "Fictional assessment unavailable."}, status=503)
+    return JsonResponse({
+        "demo_only": True,
+        "school_id": str(assessment.school_id),
+        "academic_year_id": str(assessment.academic_year_id),
+        "application_id": str(application_id),
+        "scenario_id": scenario_id,
+        "policy_version": assessment.policy_version,
+        "calculation_version": assessment.calculation_version,
+        "buckets": [
+            {
+                "bucket": line.bucket.value,
+                "recommendation_cents": line.recommendation_cents,
+                "cap_applied": line.cap_applied,
+            }
+            for line in assessment.lines
+        ],
+        "total_recommendation_cents": assessment.total_recommendation_cents,
+        "requires_school_authorization": assessment.requires_school_authorization,
+    })
 
 
 @never_cache
