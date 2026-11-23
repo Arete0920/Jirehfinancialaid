@@ -221,15 +221,23 @@ def _scoped_member(value: object, allowed_members: object) -> UUID:
         type(allowed_members) is not tuple
         or not allowed_members
         or any(type(item) is not str for item in allowed_members)
+        or len(set(allowed_members)) != len(allowed_members)
     ):
         _invalid("candidate_member_scope_missing")
+    for allowed in allowed_members:
+        try:
+            scoped = UUID(allowed)
+        except (TypeError, AttributeError, ValueError):
+            _invalid("candidate_member_scope_missing")
+        if str(scoped) != allowed or scoped.int == 0:
+            _invalid("candidate_member_scope_missing")
     if type(value) is not str:
         _invalid("candidate_member_invalid")
     try:
         member = UUID(value)
     except (TypeError, AttributeError, ValueError):
         _invalid("candidate_member_invalid")
-    if str(member) != value:
+    if str(member) != value or member.int == 0:
         _invalid("candidate_member_invalid")
     if value not in allowed_members:
         _invalid("candidate_member_scope_denied")

@@ -245,6 +245,28 @@ class CandidateFinancialShapeTests(unittest.TestCase):
                         **params, record=income_record(contributor_id=member)
                     )
 
+    def test_member_scope_rejects_nil_malformed_and_duplicate_authorities(self):
+        nil_id = "00000000-0000-0000-0000-000000000000"
+        other = str(uuid4())
+        cases = (
+            (nil_id, (nil_id,), "candidate_member_scope_missing"),
+            (SYNTHETIC_MEMBER, (nil_id, SYNTHETIC_MEMBER), "candidate_member_scope_missing"),
+            (SYNTHETIC_MEMBER, ("invalid", SYNTHETIC_MEMBER), "candidate_member_scope_missing"),
+            (SYNTHETIC_MEMBER, (SYNTHETIC_MEMBER.upper(),), "candidate_member_scope_missing"),
+            (SYNTHETIC_MEMBER, (SYNTHETIC_MEMBER, SYNTHETIC_MEMBER), "candidate_member_scope_missing"),
+            (SYNTHETIC_MEMBER, (other,), "candidate_member_scope_denied"),
+            (nil_id, (SYNTHETIC_MEMBER,), "candidate_member_invalid"),
+        )
+        for member_id, allowed_ids, code in cases:
+            with self.subTest(code=code, allowed_ids=allowed_ids):
+                with self.assertRaises(QuestionnaireValidationError) as error:
+                    validate_v1_financial_candidate(
+                        **{**flow_options(), "authorized_member_ids": allowed_ids},
+                        record=income_record(contributor_id=member_id),
+                    )
+                self.assertEqual(str(error.exception), code)
+                self.assertNotIn(member_id, str(error.exception))
+
     def test_unapproved_sections_do_not_activate_consent_or_questionnaire(self):
         for section in ("consent", "school_questions", "household", None, "income "):
             with self.subTest(section=section):
