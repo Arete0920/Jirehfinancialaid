@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Run the synthetic Jireh guided demo rehearsal using disposable test settings.
+"""Run Jireh's synthetic household onboarding and draft walkthrough rehearsals.
 
 This executes tests, not a production service or browser UI. It never
 runs migrations against a configured deployment or enables customer routes.
@@ -38,11 +38,12 @@ def main():
         raise SystemExit("Refusing demo: demo runner requires in-memory database.")
 
     print("JIREH SYNTHETIC DEMO REHEARSAL — NOT A CUSTOMER APPLICATION")
-    print("All users, schools, children, draft records, and tests are synthetic.")
+    print("Fictional schools, families and draft records. Invitation mail stays in memory.")
     print("No production routes, financial data, payment, or live accounts are used.")
     call_command(
         "test",
         "jireh.financial_aid.test_demo_walkthrough",
+        "jireh.schools.test_onboarding_rehearsal",
         verbosity=2,
         interactive=False,
     )
