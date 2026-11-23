@@ -2,7 +2,7 @@ import CrownWizardStepHeader from "../../components/crown/CrownWizardStepHeader.
 import "../../styles/crown-wizard.css";
 
 function Currency({ value }) {
-  const n = parseFloat(value) || 0;
+  const n = Number.parseFloat(value) || 0;
   return <>${n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</>;
 }
 
@@ -13,11 +13,11 @@ export default function Step4Preview({ context, goNext, goPrev, stepIndex, total
   const totalByBucket = buckets.reduce((acc, b) => {
     acc[b] = awards
       .filter((a) => a.bucket === b)
-      .reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
+      .reduce((s, a) => s + (Number.parseFloat(a.amount) || 0), 0);
     return acc;
   }, {});
 
-  const grandTotal = awards.reduce((s, a) => s + (parseFloat(a.amount) || 0), 0);
+  const grandTotal = awards.reduce((s, a) => s + (Number.parseFloat(a.amount) || 0), 0);
 
   return (
     <div>
