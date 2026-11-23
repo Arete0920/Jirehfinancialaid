@@ -369,3 +369,108 @@ class SyntheticAidOffer(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Synthetic offered aid cannot be deleted.")
+
+
+class FinancialDocument(UUIDStampedModel):
+    """School-bound document metadata; no file bytes or original file name.
+
+    This model is currently reachable only through a synthetic-only service,
+    not a runtime URL. The opaque object identifier is never exposed as a URL.
+    """
+
+    STATE_ACTIVE = "ACTIVE"
+    STATE_DELETE_PENDING = "DELETE_PENDING"
+    STATE_DELETED = "DELETED"
+    STATES = [
+        (STATE_ACTIVE, "Scanned"),
+        (STATE_DELETE_PENDING, "Pending secure removal"),
+        (STATE_DELETED, "Removed"),
+    ]
+
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    household = models.ForeignKey(Household, on_delete=models.PROTECT)
+    application = models.ForeignKey(AidApplication, on_delete=models.PROTECT, related_name="document_records")
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    object_key = models.UUIDField(default=__import__("uuid").uuid4, unique=True, editable=False)
+    request_key = models.UUIDField(unique=True, editable=False)
+    version = models.PositiveIntegerField()
+    category = models.CharField(max_length=48)
+    detected_media_type = models.CharField(max_length=96)
+    byte_count = models.PositiveIntegerField()
+    sha256 = models.CharField(max_length=64)
+    state = models.CharField(max_length=16, choices=STATES, default=STATE_ACTIVE)
+    deleted_at = models.DateTimeField(null=True, blank=True)
+    objects = ScopedQuerySet.as_manager()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application", "version"], name="jireh_document_app_version_unique"
+            ),
+            models.CheckConstraint(
+                condition=Q(byte_count__gt=0), name="jireh_document_positive_bytes"
+            ),
+            models.CheckConstraint(
+                condition=Q(version__gt=0), name="jireh_document_positive_version"
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if not self.school_id or not self.household_id or not self.application_id:
+            return
+        app = self.application
+        if (
+            app.school_id != self.school_id
+            or app.household_id != self.household_id
+            or app.status != AidApplication.STATUS_DRAFT
+            or self.household.school_id != self.school_id
+            or app.academic_year.school_id != self.school_id
+        ):
+            raise ValidationError("Document metadata scope mismatch.")
+        if self._state.adding:
+            return
+        old = type(self).objects.filter(pk=self.pk).values(
+            "school_id", "household_id", "application_id", "created_by_id",
+            "object_key", "request_key", "version", "category",
+            "detected_media_type", "byte_count", "sha256",
+        ).first()
+        if old and any(getattr(self, name) != old[name] for name in old):
+            raise ValidationError("Document identity and content metadata are immutable.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Documents require the scoped secure-delete service.")
+
+
+class FinancialDocumentEvent(UUIDStampedModel):
+    """Metadata-only document lifecycle event; excludes file values and names."""
+
+    ACTION_CREATED = "CREATED"
+    ACTION_DELETED = "DELETED"
+    document = models.ForeignKey(FinancialDocument, on_delete=models.PROTECT, related_name="events")
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    action = models.CharField(
+        max_length=16,
+        choices=[(ACTION_CREATED, "Created"), (ACTION_DELETED, "Deleted")],
+    )
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["document", "action"], name="jireh_document_once_per_event"
+            )
+        ]
+
+    def clean(self):
+        super().clean()
+        if self.document_id and self.school_id and self.document.school_id != self.school_id:
+            raise ValidationError("Document audit school mismatch.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Document audit events are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Document audit events are append-only.")
