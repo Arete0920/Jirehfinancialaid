@@ -1,0 +1,37 @@
+name: Jireh standalone family read boundary
+
+on:
+  pull_request:
+    branches: [main]
+    paths:
+      - "frontend/src/api/family_draft_read.mjs"
+      - "frontend/tests/family_draft_read.nodecheck.mjs"
+      - ".github/workflows/family-read.yml"
+  push:
+    branches: [main]
+    paths:
+      - "frontend/src/api/family_draft_read.mjs"
+      - "frontend/tests/family_draft_read.nodecheck.mjs"
+      - ".github/workflows/family-read.yml"
+
+permissions:
+  contents: read
+
+jobs:
+  family-read-contract:
+    name: Node 22 isolated family read tests
+    runs-on: ubuntu-24.04
+    timeout-minutes: 5
+    steps:
+      - name: Checkout pinned source
+        uses: actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683 # v4.2.2
+      - name: Set up pinned Node
+        uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1
+        with:
+          node-version: "22.23.3"
+      - name: Verify Node syntax
+        run: |
+          node --check frontend/src/api/family_draft_read.mjs
+          node --check frontend/tests/family_draft_read.nodecheck.mjs
+      - name: Verify synthetic-only read contract
+        run: node --test frontend/tests/family_draft_read.nodecheck.mjs
