@@ -36,9 +36,26 @@ def record_synthetic_family_receipt(request, school_id, household_id, academic_y
     """Fictional, explicitly attested receipt, never a legal submission."""
     if request.content_type != "application/json":
         return JsonResponse({"detail": "Expected JSON."}, status=400)
+    raw_length = request.META.get("CONTENT_LENGTH")
+    if raw_length:
+        try:
+            if int(raw_length) > 1024:
+                return JsonResponse({"detail": "Synthetic JSON too large."}, status=400)
+        except (ValueError, TypeError):
+            return JsonResponse({"detail": "Invalid request size."}, status=400)
+    body = request.body
+    if len(body) > 1024:
+        return JsonResponse({"detail": "Synthetic JSON too large."}, status=400)
+    def reject_duplicate_keys(pairs):
+        values = {}
+        for key, value in pairs:
+            if key in values:
+                raise ValueError("Duplicate JSON member.")
+            values[key] = value
+        return values
     try:
-        payload = json.loads(request.body)
-    except (json.JSONDecodeError, UnicodeDecodeError):
+        payload = json.loads(body, object_pairs_hook=reject_duplicate_keys)
+    except (ValueError, UnicodeDecodeError, TypeError):
         return JsonResponse({"detail": "Invalid JSON."}, status=400)
     if not isinstance(payload, dict) or set(payload) != {"accuracy_attested"}:
         return JsonResponse({"detail": "Unsupported synthetic request."}, status=400)
@@ -83,6 +100,8 @@ def record_synthetic_staff_offer(
     request, school_id, academic_year_id, application_id, student_id
 ):
     """Only a fictional $250 need offer; no input amount accepted."""
+    if request.META.get("CONTENT_LENGTH") not in (None, "", "0"):
+        return JsonResponse({"detail": "No offer payload is permitted."}, status=400)
     if request.body:
         return JsonResponse({"detail": "No offer payload is permitted."}, status=400)
     try:
