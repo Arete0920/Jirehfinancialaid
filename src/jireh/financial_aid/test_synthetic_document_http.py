@@ -5,6 +5,7 @@ records, external storage or real antivirus certification are involved.
 """
 import json
 import uuid
+from unittest.mock import patch
 
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -176,6 +177,24 @@ class FictionalDocumentHTTPTests(TestCase):
         with override_settings(ROOT_URLCONF="jireh.runtime.urls"):
             self.assertEqual(client.get(root).status_code, 404)
         self.assertFalse(FinancialDocument.objects.exists())
+
+    def test_missing_optional_encryption_dependency_does_not_break_demo_routes(self):
+        from .synthetic_document_views import _local_backend
+
+        client = self.family()
+        try:
+            _local_backend.cache_clear()
+            with patch(
+                "jireh.financial_aid.synthetic_document_views.LocalEncryptedClamdBackend",
+                None,
+            ):
+                response = self.create(client, str(uuid.uuid4()))
+                self.assertEqual(response.status_code, 503)
+                self.assertEqual(response.json()["detail"], "Fictional storage unavailable.")
+                self.assertEqual(client.get(self.urls()[0]).status_code, 200)
+                self.assertFalse(FinancialDocument.objects.exists())
+        finally:
+            _local_backend.cache_clear()
 
     def test_query_parameters_and_duplicate_body_fields_are_rejected(self):
         client = self.family()
