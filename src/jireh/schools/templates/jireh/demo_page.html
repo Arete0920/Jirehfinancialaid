@@ -99,8 +99,9 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div class="separator"></div><h3>Fictional submission receipt</h3>
 <p>Records a synthetic milestone only. The real application remains a DRAFT; no financial answers, legal consent or payment is collected.</p>
 <label class="small"><input type="checkbox" id="synthetic-attestation"> I understand this is a fictional example, not an actual financial aid submission.</label>
-<div class="actions"><button class="button" id="record-synthetic-receipt" type="button" disabled>Record fictional receipt</button><button class="button secondary" id="read-synthetic-offers" type="button">Read fictional offered aid</button></div>
-<div id="synthetic-family-result" role="region" aria-label="Fictional aid result"></div>
+<div class="actions"><button class="button" id="record-synthetic-receipt" type="button" aria-controls="synthetic-family-result" disabled>Record fictional receipt</button><button class="button secondary" id="read-synthetic-offers" type="button" aria-controls="synthetic-offer-result" disabled>Read fictional offered aid</button></div>
+<div id="synthetic-family-result" role="status" aria-label="Fictional receipt result"></div>
+<div id="synthetic-offer-result" role="status" aria-label="Fictional offered aid result"></div>
 </div>
 <div id="director" class="hidden"><h3>School financial aid director</h3><p>Review your school’s drafts. The demonstration offer uses a fixed $250 amount. Assessment previews use a fictional test policy.</p>
 <div class="grid"><div class="metric"><strong id="director-school">—</strong><span>Assigned school</span></div><div class="metric"><strong id="application-count">—</strong><span>Drafts visible</span></div></div>
@@ -130,7 +131,9 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   const PASSWORD = "{{ demo_password|escapejs }}";
   const state = {role: null, config: null, students: [], draft: null, needsReconciliation: false, documentId: null, selectedCount: 0, receiptVerified: false, receiptUncertain: false};
   const $ = id => document.getElementById(id);
+  let activeStep = 1;
   const setActiveStep = step => {
+    activeStep = step;
     document.querySelectorAll(".step[data-step]").forEach(node => {
       const current = node.dataset.step === String(step);
       node.classList.toggle("active", current);
@@ -179,20 +182,24 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       state.role!=="local-demo-family" || !state.draft || state.needsReconciliation ||
       state.selectedCount===0 || state.receiptVerified || state.receiptUncertain;
   };
+  function clearOfferReadback(){
+    $("read-synthetic-offers").disabled=true;
+    $("synthetic-offer-result").replaceChildren();
+  }
   async function refreshSyntheticReceipt(){
     if(state.role!=="local-demo-family" || !state.draft) return;
-    const school=primary(),originalDraftId=state.draft.id;
+    const config=state.config,school=primary(),originalDraftId=state.draft.id;
     state.receiptUncertain=true;
     setReceiptButton();
     let read=null;
     try{read=await api(path(school,school.household_id,school.year_id)+"synthetic/receipt/read/");}
     catch{ /* A failed independent read is not proof of absence. */ }
-    if(state.role!=="local-demo-family" || state.draft?.id!==originalDraftId)return;
+    if(state.config!==config || state.draft?.id!==originalDraftId)return;
     if(read?.ok && validSyntheticReceipt(read.data,school)){
       state.receiptVerified=true;state.receiptUncertain=false;
       $("synthetic-family-result").textContent=
         "Fictional receipt independently verified. Application remains DRAFT.";
-      setActiveStep(6);
+      if(activeStep!==7)setActiveStep(6);
     }else if(read?.status===404){
       state.receiptVerified=false;state.receiptUncertain=false;
       $("synthetic-family-result").textContent="No fictional receipt recorded.";
@@ -210,6 +217,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     $("draft-status").textContent = "Verification required";
     $("create-draft").disabled = true;
     $("record-synthetic-receipt").disabled = true;
+    clearOfferReadback();
     $("preview-family-questionnaire").disabled = true;
     $("family-questionnaire-result").textContent = "";
     state.documentId = null;setFictionalDocumentState(null);
@@ -230,6 +238,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     setFictionalDocumentState(null);
     $("synthetic-attestation").checked=false;
     $("synthetic-family-result").replaceChildren();
+    clearOfferReadback();
     $("record-synthetic-receipt").disabled=true;
     $("preview-family-questionnaire").disabled=true;
     $("family-questionnaire-result").textContent="";
@@ -276,6 +285,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   }
   async function loadHousehold(){
     if(!state.config || state.role!=="local-demo-family")return;
+    clearOfferReadback();
     const a=primary();
     const h=await api("/api/v1/schools/"+a.id+"/households/"+a.household_id+"/");
     const s=await api("/api/v1/schools/"+a.id+"/households/"+a.household_id+"/students/");
@@ -293,7 +303,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     $("draft-status").textContent=draft.ok?draft.data.status:"Not created";
     renderStudents();
     setActiveStep(state.draft ? 3 : 2);
-    if(state.draft){await refreshSelections();await refreshFictionalDocuments();await refreshSyntheticReceipt();}
+    if(state.draft){await refreshSavedFamilyDraft();}
     else{state.documentId=null;setFictionalDocumentState(null);state.selectedCount=0;state.receiptVerified=false;state.receiptUncertain=false;setReceiptButton();}
     $("create-draft").disabled=false;
     $("preview-family-questionnaire").disabled=!state.draft;
@@ -328,8 +338,17 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     setReceiptButton();
     if(r.data.student_ids.length) setActiveStep(4);
   }
+  async function refreshSavedFamilyDraft(){
+    const config=state.config,draftId=state.draft.id;
+    await refreshSelections();
+    await refreshFictionalDocuments();
+    if(state.config!==config || state.draft?.id!==draftId)return;
+    $("read-synthetic-offers").disabled=false;
+    await refreshSyntheticReceipt();
+  }
   async function createDraft(){
     if(!state.config||state.role!=="local-demo-family"||state.needsReconciliation)return;
+    clearOfferReadback();
     $("create-draft").disabled=true;
     try{
       const a=primary(),r=await api(path(a,a.household_id,a.year_id),"POST");
@@ -352,7 +371,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("draft-status").textContent=saved.data.status;
       setActiveStep(3);
       log("Annual draft active: "+saved.data.id.slice(0,8)+"… — independently verified saved record");
-      renderStudents();await refreshSelections();await refreshFictionalDocuments();await refreshSyntheticReceipt();
+      renderStudents();await refreshSavedFamilyDraft();
     }catch(error){
       // Ambiguous writes cannot be retried until an independent read verifies.
       requireDraftReadback();
@@ -505,14 +524,16 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     log("Receipt POST is not persistence proof; refresh before retry",false);
   }
   async function readSyntheticOffers(){
-    if(state.role!=="local-demo-family"||!state.config)return;
-    const a=primary(),r=await api(path(a,a.household_id,a.year_id)+"synthetic/offers/");
+    if(state.role!=="local-demo-family"||!state.draft||$("read-synthetic-offers").disabled)return;
+    const config=state.config,draftId=state.draft.id,a=primary();
+    const r=await api(path(a,a.household_id,a.year_id)+"synthetic/offers/");
+    if(state.config!==config || state.draft?.id!==draftId)return;
     if(!r.ok||r.data.synthetic!==true){
       log("Fictional offered-aid readback denied HTTP "+r.status,false);
       return;
     }
     const labels=r.data.offers.map(o=>"$"+(o.amount_cents/100).toFixed(2)+" "+o.bucket);
-    $("synthetic-family-result").textContent=labels.length?
+    $("synthetic-offer-result").textContent=labels.length?
       "Fictional offered aid: "+labels.join(", ")+" — not a payment or binding award":
       "No fictional offer has been recorded yet.";
     log("Family readback returned "+r.data.offers.length+" school-bound fictional offers");
