@@ -1,0 +1,84 @@
+"""Offline exact-commit packaging tests using a disposable Git repository."""
+import hashlib
+import importlib.util
+import json
+from pathlib import Path
+import subprocess
+import tarfile
+import tempfile
+import unittest
+
+
+_SPEC = importlib.util.spec_from_file_location(
+    "build_release_bundle", Path(__file__).resolve().parents[1] / "scripts/build_release_bundle.py",
+)
+_MODULE = importlib.util.module_from_spec(_SPEC)
+_SPEC.loader.exec_module(_MODULE)
+
+
+class ReleaseBundleTests(unittest.TestCase):
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory()
+        self.addCleanup(self.temp.cleanup)
+        self.root = Path(self.temp.name)
+        self.repo = self.root / "repo"
+        self.repo.mkdir()
+        self.git("init", "-q")
+        self.git("config", "user.name", "Fictional Test")
+        self.git("config", "user.email", "fictional@example.invalid")
+        for path in _MODULE.PATHS:
+            name = path + "/__init__.py" if path == "src/jireh" else path
+            file = self.repo / name
+            file.parent.mkdir(parents=True, exist_ok=True)
+            file.write_text("fixture\n", encoding="utf-8")
+        (self.repo / "excluded.txt").write_text("not selected", encoding="utf-8")
+        self.commit()
+
+    def git(self, *args):
+        return subprocess.check_output(["git", "-C", str(self.repo), *args]).decode().strip()
+
+    def commit(self):
+        self.git("add", ".")
+        self.git("commit", "-qm", "Fictional source")
+        self.sha = self.git("rev-parse", "HEAD")
+
+    def test_reproducible_exact_commit_and_manifest(self):
+        (self.repo / "manage.py").write_text("dirty worktree", encoding="utf-8")
+        (self.repo / ".env").write_text("untracked", encoding="utf-8")
+        one, two = self.root / "one", self.root / "two"
+        first = _MODULE.build_bundle(self.repo, self.sha, one)
+        second = _MODULE.build_bundle(self.repo, self.sha, two)
+        self.assertEqual(first, second)
+        self.assertEqual((one / "jireh-source.tar").read_bytes(), (two / "jireh-source.tar").read_bytes())
+        self.assertEqual(json.loads((one / "source-evidence.json").read_text()), first)
+        self.assertFalse(first["authorizes_deployment"])
+        self.assertEqual(first["files"]["manage.py"], hashlib.sha256(b"fixture\n").hexdigest())
+        with tarfile.open(one / "jireh-source.tar") as tar:
+            self.assertNotIn("jireh/.env", tar.getnames())
+            self.assertNotIn("jireh/excluded.txt", tar.getnames())
+
+    def test_reject_symbolic_revision_missing_path_and_overwrite(self):
+        with self.assertRaises(ValueError):
+            _MODULE.build_bundle(self.repo, "HEAD", self.root / "one")
+        _MODULE.build_bundle(self.repo, self.sha, self.root / "two")
+        with self.assertRaises(FileExistsError):
+            _MODULE.build_bundle(self.repo, self.sha, self.root / "two")
+        (self.repo / "manage.py").unlink()
+        self.commit()
+        with self.assertRaises(ValueError):
+            _MODULE.build_bundle(self.repo, self.sha, self.root / "three")
+
+    def test_reject_symlink_and_export_ignore(self):
+        (self.repo / "src/jireh/alias").symlink_to("__init__.py")
+        self.commit()
+        with self.assertRaises(ValueError):
+            _MODULE.build_bundle(self.repo, self.sha, self.root / "one")
+        (self.repo / "src/jireh/alias").unlink()
+        (self.repo / ".gitattributes").write_text("manage.py export-ignore\n", encoding="utf-8")
+        self.commit()
+        with self.assertRaises(ValueError):
+            _MODULE.build_bundle(self.repo, self.sha, self.root / "two")
+
+
+if __name__ == "__main__":
+    unittest.main()
