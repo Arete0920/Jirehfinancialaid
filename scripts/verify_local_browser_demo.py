@@ -165,7 +165,25 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.reload()
             expect(page.locator('[data-document-version="2"]')).to_be_visible()
             page.screenshot(path=str(output / "customer-workspace-documents.png"), full_page=True)
+            page.get_by_role("link", name="Return to annual application").click()
+            page.get_by_role("link", name="Review fictional application").click()
+            expect(page.locator("#review-status")).to_have_text("Review required")
+            page.get_by_role("checkbox", name="I reviewed this saved fictional application.").check()
+            page.get_by_role("button", name="Confirm fictional review").click()
+            expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
+            page.screenshot(path=str(output / "customer-workspace-review.png"), full_page=True)
+            review_url = page.url
+            page.goto(questionnaire_url)
+            page.locator("#id_income-0-value").fill("765.44")
+            page.get_by_role("button", name="Save fictional answers").click()
+            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 3")
+            page.goto(review_url)
+            expect(page.locator("#review-status")).to_have_text("Review required")
+            page.get_by_role("checkbox", name="I reviewed this saved fictional application.").check()
+            page.get_by_role("button", name="Confirm fictional review").click()
+            expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
             sign_out()
+            assert page.request.get(review_url).status == 403
             assert page.request.get(documents_url).status == 403
             assert page.request.get(corrected_read_url).status == 403
             assert page.request.get(family_url).status == 403
@@ -185,6 +203,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             assert page.request.get(family_url).status == 404
             assert page.request.get(questionnaire_url).status == 404
             assert page.request.get(documents_url).status == 404
+            assert page.request.get(review_url).status == 404
             assert page.request.get(corrected_read_url).status == 404
             sign_out()
 
@@ -201,8 +220,10 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(page.locator("#selected-count")).to_have_text("2 selected")
             assert page.request.get(director_a_url).status == 404
             page.goto(questionnaire_url)
-            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 2")
-            expect(page.locator("#id_income-0-value")).to_have_value("765.43")
+            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 3")
+            expect(page.locator("#id_income-0-value")).to_have_value("765.44")
+            page.goto(review_url)
+            expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
             page.goto(documents_url)
             expect(page.locator("#document-count")).to_have_text("1 listed")
             assert page.request.get(corrected_read_url).body() == corrected
@@ -585,10 +606,11 @@ def main():
             page.get_by_role("button", name="Family applicant").click()
             expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             page.get_by_role("button", name="Read fictional offered aid").click()
-            expect(page.locator("#synthetic-family-result")).to_contain_text(
+            offer_status = page.get_by_role("status", name="Fictional offered aid result")
+            expect(offer_status).to_contain_text(
                 "Fictional offered aid: $250.00 need"
             )
-            expect(page.locator("#synthetic-family-result")).to_contain_text(
+            expect(offer_status).to_contain_text(
                 "not a payment or binding award"
             )
             expect(page.locator('.step[aria-current="step"]')).to_contain_text(
@@ -599,6 +621,7 @@ def main():
 
             page.get_by_role("button", name="School B director").click()
             expect(page.locator("#application-count")).to_have_text("0")
+            expect(page.locator("#synthetic-offer-result")).to_be_empty()
             school_b_workload = workload(school_b)
             assert school_b_workload["status"] == 200, "School B director workload denied"
             assert school_b_workload["data"]["draft_application_records"] == 0
@@ -636,12 +659,27 @@ def main():
             page.screenshot(path=str(output / "platform-operations-preview.png"), full_page=True)
             print("CHROMIUM OPERATIONS: two saved fictional schools; no creation or integrations", flush=True)
             page.get_by_role("link", name="Return to the fictional walkthrough").click()
-            page.get_by_role("button", name="Family applicant").click()
-            expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
+            pending_receipts = []
+            receipt_readback = "**/synthetic/receipt/read/"
+
+            def hold_receipt(route):
+                pending_receipts.append(route)
+
+            page.route(receipt_readback, hold_receipt)
+            with page.expect_request(receipt_readback):
+                page.get_by_role("button", name="Family applicant").click()
+                expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             page.get_by_role("button", name="Read fictional offered aid").click()
-            expect(page.locator("#synthetic-family-result")).to_contain_text(
-                "Fictional offered aid: $250.00 need"
+            saved_offer = page.get_by_text("Fictional offered aid: $250.00 need")
+            expect(saved_offer).to_be_visible()
+            assert len(pending_receipts) == 1, "Expected one pending receipt readback"
+            pending_receipts.pop().continue_()
+            page.unroute(receipt_readback, hold_receipt)
+            expect(page.locator("#synthetic-family-result")).to_have_text(
+                "Fictional receipt independently verified. Application remains DRAFT."
             )
+            expect(saved_offer).to_be_visible()
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("Fictional $250 offer")
             print("CHROMIUM NAVIGATION: failed logout denies sign-in; dashboard and operator return verified", flush=True)
             context.close()
             browser.close()
