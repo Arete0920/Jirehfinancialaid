@@ -270,6 +270,32 @@ class AnnualDraftStudentSelectionTests(TestCase):
         self.assertEqual(client.post(self._select_url()).status_code, 403)
         self.assertFalse(AidApplicationStudent.objects.exists())
 
+    def test_fictional_receipt_freezes_selection_with_sanitized_conflict(self):
+        """A frozen draft rejects a sibling via HTTP without a server error."""
+        from .synthetic_submission import record_synthetic_demo_submission
+
+        selected = select_student_for_draft(**self._args())
+        record_synthetic_demo_submission(
+            user=self.parent,
+            school_id=self.school.pk,
+            household_id=self.household.pk,
+            academic_year_id=self.year.pk,
+            accuracy_attested=True,
+        )
+        client, csrf = self._csrf_client()
+        response = client.post(
+            self._select_url(student=self.sibling), HTTP_X_CSRFTOKEN=csrf,
+        )
+        self.assertEqual(response.status_code, 409)
+        self.assertEqual(
+            response.json(), {"detail": "Student selection unavailable."},
+        )
+        self.assertEqual(
+            list(AidApplicationStudent.objects.values_list(
+                "household_student_id", flat=True,
+            )), [selected.household_student_id],
+        )
+
     def test_revoked_household_grant_blocks_read_and_selection(self):
         client, token = self._csrf_client()
         HouseholdAccess.objects.filter(
