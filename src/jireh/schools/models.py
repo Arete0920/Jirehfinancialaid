@@ -1414,3 +1414,75 @@ class SchoolSetupIntent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("School setup intent evidence cannot be deleted.")
+
+
+class SchoolPreparationEvent(UUIDStampedModel):
+    """Append-only, bounded pre-activation job history for one setup receipt.
+
+    The stream is the durable job state; no mutable status or active-school
+    grant is duplicated here. Only the separately guarded rehearsal service
+    can establish a valid transition. This is not a school-creation authority.
+    """
+
+    intent = models.ForeignKey(
+        SchoolSetupIntent, on_delete=models.PROTECT,
+        related_name="preparation_events",
+    )
+    actor = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_school_preparation_events",
+    )
+    request_key = models.UUIDField()
+    sequence = models.PositiveSmallIntegerField()
+    attempt = models.PositiveSmallIntegerField()
+    action = models.CharField(
+        max_length=16,
+        choices=[
+            ("QUEUED", "Queued"), ("STARTED", "Started"),
+            ("PREPARED", "Prepared"), ("FAILED", "Failed"),
+            ("REQUEUED", "Requeued"),
+        ],
+    )
+    reason = models.CharField(max_length=32, blank=True, default="")
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["intent", "sequence"], name="jireh_prep_event_sequence",
+            ),
+            models.UniqueConstraint(
+                fields=["intent", "request_key", "action"],
+                name="jireh_prep_event_request_action",
+            ),
+            models.CheckConstraint(
+                condition=~Q(request_key=uuid.UUID(int=0)),
+                name="jireh_prep_event_nonzero_key",
+            ),
+            models.CheckConstraint(
+                condition=Q(sequence__gte=1, sequence__lte=9,
+                            attempt__gte=1, attempt__lte=3),
+                name="jireh_prep_event_bounds",
+            ),
+            models.CheckConstraint(
+                condition=(
+                    Q(action__in=["QUEUED", "STARTED", "PREPARED"], reason="")
+                    | Q(action="FAILED", reason="SCHOOL_CODE_CONFLICT")
+                    | Q(action="REQUEUED", reason="CODE_CONFLICT_RECHECK")
+                ),
+                name="jireh_prep_event_reason",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if (self.intent_id and self.actor_id
+                and self.intent.proposed_by_id != self.actor_id):
+            raise ValidationError("Preparation evidence requires the receipt owner.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("School preparation evidence is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("School preparation evidence cannot be deleted.")
