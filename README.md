@@ -2,11 +2,11 @@
 
 Jireh is being developed as an independent financial-aid product for **Christian and Catholic schools**.
 
-**Engineering status:** Initial standalone Django school, household, student, annual aid draft and test-only authenticated API components, with migrations and regression tests. This is **not a deployable product**: real login/onboarding, end-to-end tenant isolation, secure financial-document storage, compliance controls, and payment processing remain incomplete. It is **not ready for customer use**.
+**Engineering status (source verification: November 23, 2026):** Protected `main@e7dbfa885f19d3af6e959e4b4f2a6fd6c09a83dd` passed six exact-commit source checks: Python, Django, disposable PostgreSQL 16, synthetic Chromium, SonarCloud and repository presentation. The standalone runtime intentionally exposes only process liveness and database readiness; family, document and officer workflows remain test-only. All eleven target-environment production acceptance gates remain **NOT TESTED**. **Jireh is not approved for real customer use.**
 
 ## Approved product boundaries
 
-- One financial-aid application fee of **$55 per household**, paid by the family, regardless of the number of children. Payment timing, refunds, and processing details are undecided; no payments are enabled.
+- A **$55 household application fee** (5,500 USD cents), paid by the family regardless of the number of selected children, is initiated at actual submission. Final `SUBMITTED` requires authoritative server-side payment reconciliation; initiation or client success is insufficient. The offline fee quote is not collection. The owner has deferred **all CompuWerx-specific integration and provider activity** until Jireh is independently release-ready and the owner separately authorizes that stage. No alternative processor, waiver, paid-status bypass or real payments are enabled. Refunds, merchant terms and other payment rules remain unresolved. See [issue #50 owner hold](https://github.com/Arete0920/Jirehfinancialaid/issues/50#issuecomment-7103729979).
 - Five financial-aid buckets: need, mission, marketing/enrollment, merit, and hardship. This initial package defines their identifiers only; it does **not** implement financial need analysis or award decisions.
 - Jireh SGO is excluded. CROWN and other student information systems may become optional integrations; none may be required for Jireh to operate.
 - Hosting is not selected. No Azure services or deployment configuration are required or enabled.
@@ -36,6 +36,16 @@ To rehearse first-director approval before the household invitation, install the
 
 ```bash
 PYTHONPATH=src python -m django test jireh.schools.test_first_director_mfa.FirstDirectorOnboardingTests --settings=jireh.schools.test_settings
+```
+
+With the same test dependencies, run the TLS SMTP rehearsal to exercise Django's
+mail client against an authenticated loopback server with a disposable certificate.
+It verifies two-code redemption after successful delivery, rejects untrusted or
+wrong-host certificates, and checks that SMTP rejection invalidates the rejected
+invitation or mailbox code.
+
+```bash
+PYTHONPATH=src python -m django test jireh.schools.test_smtp_tls_rehearsal --settings=jireh.schools.test_settings
 ```
 
 **Data boundary:** An academic year, household and student belong to one school. A student may be linked to more than one household (such as separated parents), but that relationship **does not grant access to another household's financial records**. The current `for_school` ORM helpers and school-checked linking service are internal safeguards, **not authentication or complete database-enforced tenant isolation**. A later authenticated API must enforce school and household authorization independently; no public or production endpoint is enabled by these models. Never use bulk or raw writes to bypass the link service.

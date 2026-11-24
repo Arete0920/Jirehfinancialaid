@@ -28,7 +28,7 @@ def _canonical_uuid(value: object, code: str) -> UUID:
         parsed = UUID(value)
     except (ValueError, TypeError, AttributeError):
         _deny(code)
-    if str(parsed) != value:
+    if str(parsed) != value or parsed.int == 0:
         _deny(code)
     return parsed
 
