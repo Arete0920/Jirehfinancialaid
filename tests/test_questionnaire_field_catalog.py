@@ -1,4 +1,4 @@
-"""Validate the design-only Jireh questionnaire catalog.
+"""Validate the owner-approved field-list design contract.
 
 This file tests metadata, not applicant answers. It does not import Django,
 add production routes, store financial records, or approve questionnaire policy.
@@ -41,7 +41,7 @@ class QuestionnaireFieldCatalogDesignTests(unittest.TestCase):
 
     def test_catalog_is_explicitly_non_operational(self):
         self.assertEqual(
-            self.catalog["schema_status"], "DESIGN_ONLY_NOT_APPROVED_FOR_COLLECTION"
+            self.catalog["schema_status"], "FIELD_LIST_APPROVED_DESIGN_ONLY_NOT_COLLECTION"
         )
         self.assertEqual(self.catalog["schema_version"], "0.1.0")
         for flag in (
@@ -64,7 +64,7 @@ class QuestionnaireFieldCatalogDesignTests(unittest.TestCase):
         field_ids = []
         for section in self.catalog["sections"]:
             self.assertTrue(section["fields"], section["id"])
-            self.assertEqual(section["lifecycle"], "candidate")
+            self.assertEqual(section["lifecycle"], "approved_for_development")
             for field in section["fields"]:
                 path = field["id"]
                 self.assertTrue(
@@ -82,6 +82,12 @@ class QuestionnaireFieldCatalogDesignTests(unittest.TestCase):
                 field_ids.append(path)
         self.assertEqual(len(field_ids), len(set(field_ids)))
         self.assertEqual(len(field_ids), 31)
+        approval = self.catalog["field_list_approval"]
+        self.assertEqual(approval["status"], "OWNER_APPROVED_FOR_DEVELOPMENT")
+        self.assertEqual(approval["approved_field_count"], len(field_ids))
+        self.assertEqual(
+            approval["scope"], "EXACT_31_CANDIDATE_FIELD_PATHS_IN_SEVEN_SECTIONS"
+        )
 
     def test_money_flow_and_balance_have_distinct_time_semantics(self):
         types = self.catalog["types"]
@@ -138,7 +144,7 @@ class QuestionnaireFieldCatalogDesignTests(unittest.TestCase):
     def test_interim_guardrails_never_approve_collection(self):
         self.assertEqual(
             self.catalog["schema_status"],
-            "DESIGN_ONLY_NOT_APPROVED_FOR_COLLECTION",
+            "FIELD_LIST_APPROVED_DESIGN_ONLY_NOT_COLLECTION",
         )
         self.assertIs(self.catalog["requirements"]["no_data_storage"], True)
         self.assertIs(self.catalog["requirements"]["no_production_routes"], True)
@@ -148,6 +154,14 @@ class QuestionnaireFieldCatalogDesignTests(unittest.TestCase):
             [f"Q{i:02}" for i in range(1, 11)],
         )
         self.assertNotIn("production_enabled", self.catalog)
+
+    def test_approved_field_list_does_not_authorize_live_collection(self):
+        self.assertEqual(self.catalog["schema_version"], "0.1.0")
+        self.assertIs(self.catalog["requirements"]["no_data_storage"], True)
+        self.assertIs(self.catalog["requirements"]["no_production_routes"], True)
+        self.assertIs(self.catalog["requirements"]["no_financial_scoring"], True)
+        self.assertEqual(self.catalog["types"]["money_flow"]["min"], "PENDING_OWNER_POLICY")
+        self.assertEqual(self.catalog["types"]["money_balance"]["min"], "PENDING_OWNER_POLICY")
 
     def test_unapproved_policy_decisions_are_explicit(self):
         decisions = self.catalog["pending_owner_decisions"]

@@ -2,12 +2,12 @@
 
 Jireh is being developed as an independent financial-aid product for **Christian and Catholic schools**.
 
-**Engineering status:** Initial standalone Django school, household, student, annual aid draft and test-only authenticated API components, with migrations and regression tests. This is **not a deployable product**: real login/onboarding, end-to-end tenant isolation, secure financial-document storage, compliance controls, and payment processing remain incomplete. It is **not ready for customer use**.
+**Engineering status (historical exact-main checkpoint, November 23, 2026 ET):** Protected `main@12a4503cc1acf295e3ce52147acf54a7b2c12063` passed six exact-commit source checks: Python, Django, disposable PostgreSQL 16, synthetic Chromium, SonarCloud, and repository presentation. PRs #104, #102 and #100 subsequently merged; their post-merge CI must be verified against each newer main SHA rather than attributed to this older checkpoint. The independent school/household/family/officer workflows include synthetic draft, multi-child selection, fictional financial scenario validation, encrypted fictional-document lifecycle, saved fictional receipt/offer readback, and browser acceptance. The actual standalone runtime still exposes only `GET/HEAD /healthz/` and `/readyz/`: **the synthetic experience is not an approved customer application**. All eleven target-environment acceptance gates still lack environment-specific PASS evidence. The existing [production readiness matrix](docs/PRODUCTION_READINESS.md) separates **completed development**, **deployable synthetic acceptance**, and **paid commercial GO**. No production deployment or real-family processing is authorized.
 
 ## Approved product boundaries
 
-- One financial-aid application fee of **$55 per household**, paid by the family, regardless of the number of children. Payment timing, refunds, and processing details are undecided; no payments are enabled.
-- Five financial-aid buckets: need, mission, marketing/enrollment, merit, and hardship. This initial package defines their identifiers only; it does **not** implement financial need analysis or award decisions.
+- A **$55 household application fee** (5,500 USD cents), paid by the family regardless of the number of selected children, is initiated at actual submission. Final `SUBMITTED` requires authoritative server-side payment reconciliation; initiation or client success is insufficient. The offline fee quote is not collection. The owner has deferred **all CompuWerx-specific integration and provider activity** until Jireh is independently release-ready and the owner separately authorizes that stage. No alternative processor, waiver, paid-status bypass or real payments are enabled. Refunds, merchant terms and other payment rules remain unresolved. See [issue #50 owner hold](https://github.com/Arete0920/Jirehfinancialaid/issues/50#issuecomment-7103729979).
+- Five financial-aid buckets: need, mission, marketing/enrollment, merit, and hardship. The repository contains versioned arithmetic validation and a read-only assessment of fixed fictional scenarios plus test-only $250 officer-offer records. These are **not** approved live eligibility rules, binding awards, or disbursements.
 - Jireh SGO is excluded. CROWN and other student information systems may become optional integrations; none may be required for Jireh to operate.
 - Hosting is not selected. No Azure services or deployment configuration are required or enabled.
 - Real family/student information and credentials must never be committed to this public repository.
@@ -30,9 +30,29 @@ PYTHONPATH=src python -m django test jireh.schools jireh.financial_aid --setting
 python -m compileall -q src tests
 ```
 
+Run `python scripts/rehearse_synthetic_demo.py` for the household onboarding and draft walkthroughs. The onboarding rehearsal starts with fictional school, director and family accounts and creates the family grant through invitation and two-code redemption. Django's in-memory mailbox captures both messages. The rehearsal also verifies that a director's revocation blocks household access in the family's existing session. External SMTP and institutional identity verification require separate acceptance.
+
+To rehearse first-director approval before the household invitation, install the pinned dependencies in `requirements.txt` and `requirements-webauthn-ci.txt` and run the following command. The test starts with fictional operator credentials and a School A director account without a staff grant.
+
+```bash
+PYTHONPATH=src python -m django test jireh.schools.test_first_director_mfa.FirstDirectorOnboardingTests --settings=jireh.schools.test_settings
+```
+
+With the same test dependencies, run the TLS SMTP rehearsal to exercise Django's
+mail client against an authenticated loopback server with a disposable certificate.
+It verifies two-code redemption after successful delivery, rejects untrusted or
+wrong-host certificates, and checks that SMTP rejection invalidates the rejected
+invitation or mailbox code.
+
+```bash
+PYTHONPATH=src python -m django test jireh.schools.test_smtp_tls_rehearsal --settings=jireh.schools.test_settings
+```
+
 **Data boundary:** An academic year, household and student belong to one school. A student may be linked to more than one household (such as separated parents), but that relationship **does not grant access to another household's financial records**. The current `for_school` ORM helpers and school-checked linking service are internal safeguards, **not authentication or complete database-enforced tenant isolation**. A later authenticated API must enforce school and household authorization independently; no public or production endpoint is enabled by these models. Never use bulk or raw writes to bypass the link service.
 
-All changes should use a narrow, reversible pull request (normally fewer than 20 changed files), targeted tests, and evidence for the exact commit. The product owner is a solo developer: automated checks and Copilot feedback are useful, but must not be misrepresented as independent human approval.
+All changes should use a narrow, reversible pull request (normally fewer than 20 changed files), targeted tests, and evidence for the exact commit. The product owner is a solo developer: automated checks and advisory engineering feedback are useful, but must not be misrepresented as independent human approval.
+
+Repository presentation and attribution follow [the Jireh policy](docs/REPOSITORY_PRESENTATION_AND_ATTRIBUTION_POLICY.md). Required factual disclosures, legal attribution, and authentic historical records are preserved.
 
 Commercial launch, hosting, live data, external integrations, and payment activation require separate approval and verified acceptance.
 
@@ -281,9 +301,17 @@ not a trusted provisioning workflow, RLS or launch authorization.
 The separate `jireh.runtime` Django settings, WSGI/ASGI entries and root
 `manage.py` establish a **fail-closed configuration foundation**. This is not
 an approved public service, a customer demo or a complete authentication stack.
-The runtime URL configuration exposes **only** `GET/HEAD /healthz/`: a
-process-liveness response, **not** proof of database, financial-aid workflow,
-provisioning or security readiness. Test-only family/staff API routes stay
+The runtime URL configuration exposes only `GET/HEAD /healthz/` for process
+liveness and `GET/HEAD /readyz/` for one read-only `SELECT 1` PostgreSQL
+connectivity check. A successful readiness probe is **not** proof of schema
+parity, financial-aid workflows, tenant isolation, security certification,
+provisioning or production GO. Failed database checks return generic HTTP 503
+without leaking connection errors. The runtime generates a new server-side
+`X-Correlation-ID` on each request and emits bounded, structured request
+metadata with fixed route classes, not paths, query strings, identifiers,
+financial content, request headers or exception messages. This is a source
+logging control, **not** configured alert delivery, retention or M1 security
+operations certification. Test-only family/staff API routes stay
 in `jireh.schools.test_settings` and are not included in runtime routing.
 
 Runtime startup requires explicit `JIREH_ENABLE_RUNTIME=1` and these values:

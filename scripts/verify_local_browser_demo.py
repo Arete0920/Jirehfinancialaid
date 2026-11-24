@@ -58,6 +58,44 @@ def main():
             expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             expect(page.locator("#school-name")).to_have_text("Synthetic Christian Academy")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("View household")
+            # CROWN saved-record truth: a successful POST is not proof that
+            # the annual draft was persisted. A fictional forged response must
+            # never unlock child selection or duplicate POST retries.
+            forged_body = '{"id":"00000000-0000-4000-8000-000000000001","status":"DRAFT"}'
+            def phantom_draft(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=200, content_type="application/json", body=forged_body)
+                else:
+                    route.continue_()
+            page.route("**/aid-application/draft/", phantom_draft)
+            page.get_by_role("button", name="Create / resume annual draft").click()
+            expect(page.locator("#draft-status")).to_have_text("Verification required")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_disabled()
+            expect(page.locator("#events")).to_contain_text("independent saved-record verification")
+            # A separate GET confirms no annual draft was created. Only then
+            # may the family attempt the actual write again.
+            page.unroute("**/aid-application/draft/", phantom_draft)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(page.locator("#draft-status")).to_have_text("Not created")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_enabled()
+
+            # HTTP 503 after dispatch is ambiguous: the server might have
+            # committed. The page may not enable an immediate duplicate POST.
+            def uncertain_write(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=503, content_type="application/json",
+                                  body='{"detail":"Unavailable."}')
+                else:
+                    route.continue_()
+            page.route("**/aid-application/draft/", uncertain_write)
+            page.get_by_role("button", name="Create / resume annual draft").click()
+            expect(page.locator("#draft-status")).to_have_text("Verification required")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_disabled()
+            page.unroute("**/aid-application/draft/", uncertain_write)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(page.locator("#draft-status")).to_have_text("Not created")
+            expect(page.get_by_role("button", name="Create / resume annual draft")).to_be_enabled()
+
             page.get_by_role("button", name="Create / resume annual draft").click()
             expect(page.locator("#draft-status")).to_have_text("DRAFT")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Create annual draft")
@@ -68,6 +106,37 @@ def main():
                     page.locator("#children button").filter(has_text="Selected")
                 ).to_have_count(selected_count + 1)
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Select children")
+            # Test-only family financial shapes are validated, never stored.
+            preview_result = page.get_by_role("status", name="Fictional questionnaire result")
+            preview_button = page.get_by_role("button", name="Validate fictional questionnaire")
+            preview_button.click()
+            expect(preview_result).to_have_text(
+                "Fictional income, assets and liabilities validated; no answers saved. Questionnaire incomplete."
+            )
+            page.get_by_label("Example scenario").select_option("fictional_moderate")
+            expect(preview_result).to_be_empty()
+            preview_button.click()
+            expect(preview_result).to_contain_text("no answers saved")
+            # Real local AES-GCM storage of a server-owned fictional PDF,
+            # scoped to the family draft; never a user-provided document.
+            add_document = page.get_by_role("button", name="Add fictional sample PDF")
+            read_document = page.get_by_role("button", name="Read encrypted sample PDF")
+            remove_document = page.get_by_role("button", name="Delete fictional sample PDF")
+            document_result = page.get_by_role("status", name="Fictional document result")
+            expect(add_document).to_be_enabled()
+            expect(read_document).to_be_disabled()
+            add_document.click()
+            expect(document_result).to_contain_text(
+                "Encrypted fictional sample created and independently verified."
+            )
+            expect(read_document).to_be_enabled()
+            read_document.click()
+            expect(document_result).to_contain_text("Encrypted fictional sample read and verified.")
+            page.screenshot(path=str(output / "fictional-encrypted-document.png"), full_page=True)
+            remove_document.click()
+            expect(document_result).to_contain_text("Fictional encrypted sample deleted")
+            expect(read_document).to_be_disabled()
+            expect(add_document).to_be_enabled()
             # Wait for the new session, not stale text from the previous persona.
             page.get_by_role("button", name="Family applicant").click()
             expect(page.locator("#family")).to_be_visible()
@@ -79,19 +148,191 @@ def main():
             expect(page.locator("#events")).to_contain_text("PASS: School B family draft denied (404)")
             page.get_by_role("button", name="Verify CSRF protection").click()
             expect(page.locator("#events")).to_contain_text("PASS: Missing CSRF header rejected (403)")
+            page.locator("#synthetic-attestation").check()
+            receipt_button = page.get_by_role("button", name="Record fictional receipt")
+            receipt_status = page.locator("#synthetic-family-result")
+            def phantom_receipt(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=200, content_type="application/json", body=(
+                        '{"application_id":"00000000-0000-4000-8000-000000000001",'
+                        '"receipt_id":"00000000-0000-4000-8000-000000000002",'
+                        '"consent_version":"synthetic-demo-v1","status":"SYNTHETIC_RECEIPT"}'
+                    ))
+                else:
+                    route.continue_()
+            page.route("**/synthetic/receipt/", phantom_receipt)
+            receipt_button.click()
+            expect(receipt_status).to_contain_text("Receipt verification required")
+            expect(receipt_button).to_be_disabled()
+            page.unroute("**/synthetic/receipt/", phantom_receipt)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(receipt_button).to_be_enabled()
+            def ambiguous_receipt(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=503, content_type="application/json",
+                                  body='{"detail":"Unavailable."}')
+                else:
+                    route.continue_()
+            page.route("**/synthetic/receipt/", ambiguous_receipt)
+            receipt_button.click()
+            expect(receipt_status).to_contain_text("Receipt verification required")
+            expect(receipt_button).to_be_disabled()
+            page.unroute("**/synthetic/receipt/", ambiguous_receipt)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(receipt_button).to_be_enabled()
+            receipt_button.click()
+            expect(receipt_status).to_contain_text(
+                "Fictional receipt independently verified"
+            )
+            expect(receipt_button).to_be_disabled()
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text(
+                "Fictional receipt"
+            )
+            page.wait_for_timeout(900)  # readable owner-preview pacing
             page.screenshot(path=str(output / "family-journey.png"), full_page=True)
+
+            # Exercise PR #84's actual read-only workload API from Chromium.
+            # Browser fetch preserves the current persona's session cookies.
+            config = page.evaluate("""async () => {
+                const response = await fetch("/local-demo/config/", {credentials: "same-origin"});
+                if (!response.ok) throw new Error("Synthetic config unavailable");
+                return response.json();
+            }""")
+            school_a, school_b = config["school_a"], config["school_b"]
+            def workload(school):
+                url = (
+                    f"/api/v1/schools/{school['id']}/academic-years/"
+                    f"{school['year_id']}/aid-applications/draft-workload/"
+                )
+                return page.evaluate("""async url => {
+                    const response = await fetch(url, {credentials: "same-origin"});
+                    return {
+                        status: response.status,
+                        cacheControl: response.headers.get("Cache-Control") || "",
+                        data: await response.json()
+                    };
+                }""", url)
+
+            family_workload = workload(school_a)
+            assert family_workload["status"] == 404, "Family must not see staff workload"
+            assert family_workload["data"] == {"detail": "Not found."}
 
             page.get_by_role("button", name="School A director").click()
             expect(page.locator("#application-count")).to_have_text("1")
+            school_a_workload = workload(school_a)
+            assert school_a_workload["status"] == 200, "Authorized director workload denied"
+            assert school_a_workload["data"] == {
+                "school_id": school_a["id"],
+                "academic_year_id": school_a["year_id"],
+                "draft_application_records": 1,
+                "distinct_draft_households": 1,
+                "selected_household_student_links": 2,
+                "application_unit": "household_application_not_student",
+                "selection_unit": "household_student_link_not_distinct_student",
+                "financial_submissions_or_awards_included": False,
+            }, "Director workload count/units differ from saved synthetic drafts"
+            assert "no-store" in school_a_workload["cacheControl"].lower()
+            assert workload(school_b)["status"] == 404, "Director A saw School B workload"
+            print("CHROMIUM WORKLOAD A: family denied, director scoped, count 1/1/2, cross-school denied", flush=True)
+            page.get_by_role("button", name="View selected children").click()
+            expect(page.locator("#case-detail")).to_contain_text("selected children: 2")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
+            assessment_button = page.get_by_role("button", name="Preview fictional assessment")
+            assessment_result = page.get_by_role("status", name="Fictional assessment result")
+            assessment_buckets = page.get_by_role("list", name="Fictional bucket recommendations")
+
+            def missing_assessment_total(route):
+                response = route.fetch()
+                assert response.ok, "Expected a valid assessment before altering the response"
+                payload = response.json()
+                del payload["total_recommendation_cents"]
+                route.fulfill(response=response, json=payload)
+
+            assessment_path = "**/synthetic/assessment/*/"
+            page.route(assessment_path, missing_assessment_total)
+            assessment_button.click()
+            expect(assessment_result).to_have_text("Fictional assessment unavailable.")
+            expect(assessment_buckets).to_be_hidden()
+            page.unroute(assessment_path, missing_assessment_total)
+            assessment_button.click()
+            expect(assessment_result).to_contain_text("Fictional preview total: $92.00")
+            expect(assessment_buckets).to_contain_text("hardship: $50.00 (test cap applied)")
+            page.get_by_label("Fictional scenario").select_option("fictional_moderate")
+            expect(assessment_result).to_be_empty()
+            assessment_button.click()
+            expect(assessment_result).to_contain_text("Fictional preview total: $159.67")
+            offer_button = page.get_by_role("button", name="Record fictional $250 need offer")
+            def phantom_offer(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=200, content_type="application/json", body=(
+                        '{"application_id":"00000000-0000-4000-8000-000000000001",'
+                        '"student_id":"00000000-0000-4000-8000-000000000002",'
+                        '"bucket":"need","amount_cents":25000,"status":"SYNTHETIC_OFFERED"}'
+                    ))
+                else:
+                    route.continue_()
+            page.route("**/synthetic/offers/*/", phantom_offer)
+            offer_button.click()
+            expect(page.locator("#case-detail")).to_contain_text(
+                "Offer verification required"
+            )
+            expect(offer_button).to_be_disabled()
+            page.unroute("**/synthetic/offers/*/", phantom_offer)
+            page.get_by_role("button", name="View selected children").click()
+            offer_button = page.get_by_role("button", name="Record fictional $250 need offer")
+            expect(offer_button).to_be_enabled()
+            def ambiguous_offer(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=503, content_type="application/json",
+                                  body='{"detail":"Unavailable."}')
+                else:
+                    route.continue_()
+            page.route("**/synthetic/offers/*/", ambiguous_offer)
+            offer_button.click()
+            expect(page.locator("#case-detail")).to_contain_text("Offer verification required")
+            expect(offer_button).to_be_disabled()
+            page.unroute("**/synthetic/offers/*/", ambiguous_offer)
+            page.get_by_role("button", name="View selected children").click()
+            offer_button = page.get_by_role("button", name="Record fictional $250 need offer")
+            expect(offer_button).to_be_enabled()
+            offer_button.click()
+            expect(page.locator("#case-detail")).to_contain_text(
+                "Fictional $250 need offer independently verified"
+            )
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text(
+                "Fictional $250 offer"
+            )
+            page.wait_for_timeout(900)  # readable owner-preview pacing
             page.get_by_role("button", name="Verify other school is denied").click()
             expect(page.locator("#events")).to_contain_text(
                 "PASS: Another school's director inventory denied (404)"
             )
             page.screenshot(path=str(output / "director-journey.png"), full_page=True)
+            page.get_by_role("button", name="Family applicant").click()
+            expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
+            page.get_by_role("button", name="Read fictional offered aid").click()
+            expect(page.locator("#synthetic-family-result")).to_contain_text(
+                "Fictional offered aid: $250.00 need"
+            )
+            expect(page.locator("#synthetic-family-result")).to_contain_text(
+                "not a payment or binding award"
+            )
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text(
+                "Fictional $250 offer"
+            )
+            page.wait_for_timeout(900)  # readable owner-preview pacing
+            page.screenshot(path=str(output / "family-offer-readback.png"), full_page=True)
 
             page.get_by_role("button", name="School B director").click()
             expect(page.locator("#application-count")).to_have_text("0")
+            school_b_workload = workload(school_b)
+            assert school_b_workload["status"] == 200, "School B director workload denied"
+            assert school_b_workload["data"]["draft_application_records"] == 0
+            assert school_b_workload["data"]["distinct_draft_households"] == 0
+            assert school_b_workload["data"]["selected_household_student_links"] == 0
+            assert school_b_workload["data"]["financial_submissions_or_awards_included"] is False
+            assert workload(school_a)["status"] == 404, "Director B saw School A workload"
+            print("CHROMIUM WORKLOAD B: empty school 0/0/0, cross-school denied", flush=True)
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
             page.get_by_role("button", name="Verify other school is denied").click()
             expect(page.locator("#events")).to_contain_text(

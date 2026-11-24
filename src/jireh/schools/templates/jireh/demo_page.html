@@ -39,7 +39,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <body>
 <header><div><div class="overline">Independent financial aid platform</div><div class="brand">JIREH<span>.</span></div></div><div class="pill">LOCAL SYNTHETIC DEMO · NOT LIVE</div></header>
 <main>
-<div class="intro"><div><div class="overline" style="color:#4d7965">Financial aid · 2026–27</div><h1>Family application walkthrough</h1><p>Experience the verified draft and school-access workflow with fictional people and institutions.</p></div><div class="notice"><strong>Demonstration limits:</strong> Financial questions, uploads, submission, assessment, awards and payments are not implemented in this demo. This page is loopback-only, uses disposable data, and must not be deployed.</div></div>
+<div class="intro"><div><div class="overline" style="color:#4d7965">Financial aid · 2026–27</div><h1>Family application walkthrough</h1><p>Experience the verified draft and school-access workflow with fictional people and institutions.</p></div><div class="notice"><strong>Local fictional demo.</strong> Use the seeded examples to explore drafts, receipts, assessment previews and the fixed $250 demonstration offer. All scenarios use disposable data. Real intake, final submission, binding awards and payment are outside this demo’s scope.</div></div>
 <div class="layout">
 <aside class="panel sidebar" aria-label="Journey navigation">
 <div class="small" style="font-weight:750;letter-spacing:.1em;text-transform:uppercase">Walkthrough</div>
@@ -48,6 +48,8 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div class="step" data-step="3"><span class="num">3</span> Create annual draft</div>
 <div class="step" data-step="4"><span class="num">4</span> Select children</div>
 <div class="step" data-step="5"><span class="num">5</span> Director review</div>
+<div class="step" data-step="6"><span class="num">6</span> Fictional receipt</div>
+<div class="step" data-step="7"><span class="num">7</span> Fictional $250 offer</div>
 <div class="separator"></div>
 <p class="small">Every action below calls the actual test-only Django API. The second synthetic school demonstrates that permissions cannot cross tenant boundaries.</p>
 </aside>
@@ -66,11 +68,38 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div class="actions"><button class="button secondary" id="load-household" type="button">Refresh household</button><button class="button" id="create-draft" type="button" disabled>Create / resume annual draft</button></div>
 <h3>Children in household</h3><div id="children"><p>Load your household to see children.</p></div>
 <div class="actions"><button class="button secondary" id="verify-tenant" type="button">Verify School B access is denied</button><button class="button secondary" id="verify-csrf" type="button">Verify CSRF protection</button></div>
+<div class="separator"></div><h3>Fictional questionnaire validation</h3>
+<p class="small">Validates fixed example income, asset and liability row formats. Does not accept, collect, save or verify actual household financial information. The questionnaire remains incomplete.</p>
+<div class="actions"><label>Example scenario <select id="family-questionnaire-scenario"><option value="fictional_modest">Modest</option><option value="fictional_moderate">Moderate</option></select></label><button class="button secondary" id="preview-family-questionnaire" type="button" disabled>Validate fictional questionnaire</button></div>
+<p id="family-questionnaire-result" role="status" aria-label="Fictional questionnaire result"></p>
+<div class="separator"></div><h3>Fictional supporting document</h3>
+<p class="small">Creates, independently reads and securely deletes one fixed sample PDF using local encrypted storage. No upload control exists, and no real documents, financial amounts or client files are accepted. Fictional scanner fixture only.</p>
+<div class="actions">
+<button class="button secondary" id="add-fictional-document" type="button" disabled>Add fictional sample PDF</button>
+<button class="button secondary" id="read-fictional-document" type="button" disabled>Read encrypted sample PDF</button>
+<button class="button secondary" id="remove-fictional-document" type="button" disabled>Delete fictional sample PDF</button>
 </div>
-<div id="director" class="hidden"><h3>School financial aid director</h3><p>View a read-only list of annual draft applications within this school. No financial assessment or award is shown.</p>
+<p id="family-document-result" role="status" aria-label="Fictional document result">No fictional document created.</p>
+<div class="separator"></div><h3>Fictional submission receipt</h3>
+<p>Records a synthetic milestone only. The real application remains a DRAFT; no financial answers, legal consent or payment is collected.</p>
+<label class="small"><input type="checkbox" id="synthetic-attestation"> I understand this is a fictional example, not an actual financial aid submission.</label>
+<div class="actions"><button class="button" id="record-synthetic-receipt" type="button" disabled>Record fictional receipt</button><button class="button secondary" id="read-synthetic-offers" type="button">Read fictional offered aid</button></div>
+<div id="synthetic-family-result" role="region" aria-label="Fictional aid result"></div>
+</div>
+<div id="director" class="hidden"><h3>School financial aid director</h3><p>Review your school’s drafts. The demonstration offer uses a fixed $250 amount. Assessment previews use a fictional test policy.</p>
 <div class="grid"><div class="metric"><strong id="director-school">—</strong><span>Assigned school</span></div><div class="metric"><strong id="application-count">—</strong><span>Drafts visible</span></div></div>
-<div class="actions"><button class="button" id="load-inventory" type="button">Load school drafts</button><button class="button secondary" id="verify-director" type="button">Verify other school is denied</button></div>
-<div id="inventory"></div></div>
+<div class="actions"><a class="button secondary" href="/local-demo/director-summary/" id="director-summary-link">View verified school workload</a><button class="button" id="load-inventory" type="button">Load school drafts</button><button class="button secondary" id="verify-director" type="button">Verify other school is denied</button></div>
+<div id="inventory"></div><div id="case-detail" role="region" aria-label="Selected case detail"></div></div>
+<template id="assessment-preview-template">
+<section aria-label="Fictional assessment preview">
+<div class="actions">
+<label>Fictional scenario <select><option value="fictional_modest">Modest</option><option value="fictional_moderate">Moderate</option></select></label>
+<button class="button secondary" type="button">Preview fictional assessment</button>
+</div>
+<p role="status" aria-label="Fictional assessment result"></p>
+<ul aria-label="Fictional bucket recommendations" hidden></ul>
+</section>
+</template>
 <div class="separator"></div><h3>Test activity</h3><div id="events" role="log" aria-label="Synthetic demonstration activity log"><div>Choose a persona to begin. No real data is used.</div></div>
 </section></div>
 </main><footer>Jireh Financial Aid · Standalone development prototype · Local synthetic data only · Production release: NO-GO</footer>
@@ -78,7 +107,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 "use strict";
 (() => {
   const PASSWORD = "{{ demo_password|escapejs }}";
-  const state = {role: null, config: null, students: [], draft: null};
+  const state = {role: null, config: null, students: [], draft: null, needsReconciliation: false, documentId: null, selectedCount: 0, receiptVerified: false, receiptUncertain: false};
   const $ = id => document.getElementById(id);
   const setActiveStep = step => {
     document.querySelectorAll(".step[data-step]").forEach(node => {
@@ -90,21 +119,94 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   };
   const cookie = name => (document.cookie.split("; ").find(v=>v.startsWith(name+"="))||"").split("=").slice(1).join("=");
   const log = (msg, good=true) => { const d=document.createElement("div"); d.className=good?"good":"bad";d.textContent=new Date().toLocaleTimeString()+"  "+msg;$("events").prepend(d); };
-  const api = async (path, method="GET", csrf=true) => {
+  const api = async (path, method="GET", csrf=true, payload=null) => {
     const options={method, credentials:"same-origin", headers:{}};
     if(method!=="GET"&&csrf)options.headers["X-CSRFToken"]=decodeURIComponent(cookie("csrftoken"));
+    if(payload!==null){options.headers["Content-Type"]="application/json";options.body=JSON.stringify(payload);}
     const r=await fetch(path,options);
     const data=await r.json().catch(()=>({detail:"Unexpected response"}));
     return {status:r.status,ok:r.ok,data};
   };
   const path = (school, household, year) => "/api/v1/schools/"+school.id+"/households/"+household+"/academic-years/"+year+"/aid-application/draft/";
   const staffPath = school => "/api/v1/schools/"+school.id+"/academic-years/"+school.year_id+"/aid-applications/";
+  const isSavedDraft = (data, school, postedId = null) => (
+    data && typeof data.id === "string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(data.id) &&
+    data.status === "DRAFT" && data.school_id === school.id &&
+    data.household_id === school.household_id &&
+    data.academic_year_id === school.year_id &&
+    (postedId === null || data.id === postedId)
+  );
+  const validUuid = value => typeof value==="string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value) &&
+    value!=="00000000-0000-0000-0000-000000000000";
+  const validSyntheticReceipt = (data, school, postedId=null) =>
+    data?.status==="SYNTHETIC_RECEIPT" &&
+    data.application_id===state.draft?.id && state.draft?.school_id===school.id &&
+    state.draft?.household_id===school.household_id &&
+    state.draft?.academic_year_id===school.year_id && validUuid(data.receipt_id) &&
+    data.consent_version==="synthetic-demo-v1" &&
+    (postedId===null || data.receipt_id===postedId);
+  const validSyntheticOfficerOffer = (data, school, applicationId, studentId) =>
+    data?.demo_only===true && data.school_id===school.id &&
+    data.academic_year_id===school.year_id &&
+    data.application_id===applicationId && data.student_id===studentId &&
+    data.status==="SYNTHETIC_OFFERED" && data.bucket==="need" &&
+    data.amount_cents===25000;
+  const setReceiptButton = () => {
+    $("record-synthetic-receipt").disabled=
+      state.role!=="local-demo-family" || !state.draft || state.needsReconciliation ||
+      state.selectedCount===0 || state.receiptVerified || state.receiptUncertain;
+  };
+  async function refreshSyntheticReceipt(){
+    if(state.role!=="local-demo-family" || !state.draft) return;
+    const school=primary(),originalDraftId=state.draft.id;
+    state.receiptUncertain=true;
+    setReceiptButton();
+    let read=null;
+    try{read=await api(path(school,school.household_id,school.year_id)+"synthetic/receipt/read/");}
+    catch{ /* A failed independent read is not proof of absence. */ }
+    if(state.role!=="local-demo-family" || state.draft?.id!==originalDraftId)return;
+    if(read?.ok && validSyntheticReceipt(read.data,school)){
+      state.receiptVerified=true;state.receiptUncertain=false;
+      $("synthetic-family-result").textContent=
+        "Fictional receipt independently verified. Application remains DRAFT.";
+      setActiveStep(6);
+    }else if(read?.status===404){
+      state.receiptVerified=false;state.receiptUncertain=false;
+      $("synthetic-family-result").textContent="No fictional receipt recorded.";
+    }else{
+      state.receiptVerified=false;state.receiptUncertain=true;
+      $("synthetic-family-result").textContent=
+        "Receipt verification required. Refresh household before retry.";
+    }
+    setReceiptButton();
+  }
+  function requireDraftReadback() {
+    state.draft = null;
+    state.needsReconciliation = true;
+    state.receiptVerified=false;state.receiptUncertain=true;state.selectedCount=0;
+    $("draft-status").textContent = "Verification required";
+    $("create-draft").disabled = true;
+    $("record-synthetic-receipt").disabled = true;
+    $("preview-family-questionnaire").disabled = true;
+    $("family-questionnaire-result").textContent = "";
+    state.documentId = null;setFictionalDocumentState(null);
+    renderStudents();
+    log("Draft independent saved-record verification failed; refresh household before retry", false);
+  }
   const primary = () => state.config.school_a;
   const secondary = () => state.config.school_b;
   async function logout(){
     if(!state.role)return;
     await api("/test-auth/logout/","POST");
-    state.role=null;state.config=null;state.students=[];state.draft=null;
+    state.role=null;state.config=null;state.students=[];state.draft=null;state.needsReconciliation=false;state.documentId=null;state.selectedCount=0;state.receiptVerified=false;state.receiptUncertain=false;
+    setFictionalDocumentState(null);
+    $("synthetic-attestation").checked=false;
+    $("synthetic-family-result").replaceChildren();
+    $("record-synthetic-receipt").disabled=true;
+    $("preview-family-questionnaire").disabled=true;
+    $("family-questionnaire-result").textContent="";
   }
   async function login(role){
     try{
@@ -112,6 +214,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("authstatus").textContent="Signing in";
       $("family").classList.add("hidden");
       $("director").classList.add("hidden");
+      $("case-detail").replaceChildren();
       await logout();
       await api("/test-auth/login/");
       const r=await fetch("/test-auth/login/",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRFToken":decodeURIComponent(cookie("csrftoken"))},body:JSON.stringify({username:role,password:PASSWORD})});
@@ -139,12 +242,22 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     if(!h.ok||!s.ok){log("Household access denied ("+h.status+"/"+s.status+")",false);return;}
     state.students=s.data.students;
     const draft=await api(path(a,a.household_id,a.year_id));
+    // Only an independently scoped, saved GET may establish an active draft.
+    if((draft.ok && !isSavedDraft(draft.data,a)) ||
+       (!draft.ok && draft.status!==404)){
+      requireDraftReadback();
+      return;
+    }
     state.draft=draft.ok?draft.data:null;
+    state.needsReconciliation=false;
     $("draft-status").textContent=draft.ok?draft.data.status:"Not created";
     renderStudents();
     setActiveStep(state.draft ? 3 : 2);
-    if(state.draft)await refreshSelections();
+    if(state.draft){await refreshSelections();await refreshFictionalDocuments();await refreshSyntheticReceipt();}
+    else{state.documentId=null;setFictionalDocumentState(null);state.selectedCount=0;state.receiptVerified=false;state.receiptUncertain=false;setReceiptButton();}
     $("create-draft").disabled=false;
+    $("preview-family-questionnaire").disabled=!state.draft;
+    $("family-questionnaire-result").textContent="";
     log("Household verified: "+h.data.name+"; "+state.students.length+" linked children");
   }
   function renderStudents(){
@@ -166,38 +279,355 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   }
   async function refreshSelections(){
     const a=primary(),r=await api(path(a,a.household_id,a.year_id)+"students/");
-    if(!r.ok)return;
+    if(!r.ok){state.selectedCount=0;setReceiptButton();return;}
+    state.selectedCount=r.data.student_ids.length;
     document.querySelectorAll("#children .child").forEach((item,index)=>{
       const chosen=r.data.student_ids.includes(state.students[index].id);
       const btn=item.querySelector("button");btn.textContent=chosen?"Selected ✓":"Select child";btn.disabled=chosen;
     });
+    setReceiptButton();
     if(r.data.student_ids.length) setActiveStep(4);
   }
   async function createDraft(){
-    if(!state.config||state.role!=="local-demo-family")return;
+    if(!state.config||state.role!=="local-demo-family"||state.needsReconciliation)return;
     $("create-draft").disabled=true;
     try{
       const a=primary(),r=await api(path(a,a.household_id,a.year_id),"POST");
-      if(!r.ok){log("Draft request failed HTTP "+r.status,false);return;}
-      state.draft=r.data;$("draft-status").textContent=r.data.status;
+      if(!r.ok){
+        // A 5xx after POST may conceal a committed write; do not auto-retry.
+        if(r.status>=500)requireDraftReadback();
+        else log("Draft request failed HTTP "+r.status,false);
+        return;
+      }
+      // CROWN's canonical saved-record rule: POST alone is not persistence proof.
+      const saved=await api(path(a,a.household_id,a.year_id));
+      if(!saved.ok||!isSavedDraft(saved.data,a,r.data?.id)){
+        requireDraftReadback();
+        return;
+      }
+      state.draft=saved.data;
+      $("preview-family-questionnaire").disabled=false;
+      $("family-questionnaire-result").textContent="";
+      state.needsReconciliation=false;
+      $("draft-status").textContent=saved.data.status;
       setActiveStep(3);
-      log("Annual draft active: "+r.data.id.slice(0,8)+"… — repeated creation is idempotent");
-      renderStudents();await refreshSelections();
+      log("Annual draft active: "+saved.data.id.slice(0,8)+"… — independently verified saved record");
+      renderStudents();await refreshSelections();await refreshFictionalDocuments();await refreshSyntheticReceipt();
+    }catch(error){
+      // Ambiguous writes cannot be retried until an independent read verifies.
+      requireDraftReadback();
     }finally{
-      $("create-draft").disabled=false;
+      $("create-draft").disabled=state.needsReconciliation;
     }
+  }
+  async function previewFamilyQuestionnaire(){
+    const result=$("family-questionnaire-result");
+    result.textContent="";
+    if(state.role!=="local-demo-family"||!state.draft||state.needsReconciliation)return;
+    const a=primary(),scenario=$("family-questionnaire-scenario").value;
+    const control=$("preview-family-questionnaire");
+    control.disabled=true;
+    result.textContent="Validating fictional row shapes…";
+    try{
+      const response=await api(
+        path(a,a.household_id,a.year_id)+"synthetic/questionnaire/"+encodeURIComponent(scenario)+"/"
+      );
+      const data=response.data;
+      const valid=response.ok&&data&&data.demo_only===true&&
+        data.school_id===a.id&&data.household_id===a.household_id&&
+        data.academic_year_id===a.year_id&&data.application_id===state.draft.id&&
+        data.scenario_id===scenario&&
+        JSON.stringify(data.validated_candidate_sections)===
+          JSON.stringify(["income","assets","liabilities"])&&
+        data.full_questionnaire_complete===false&&
+        data.financial_answers_stored===false&&data.consent_captured===false&&
+        data.assessment_or_award_performed===false;
+      result.textContent=valid?
+        "Fictional income, assets and liabilities validated; no answers saved. Questionnaire incomplete.":
+        "Fictional questionnaire unavailable.";
+      if(valid)log("Fictional financial row formats verified without saving answers");
+      else log("Fictional financial preview verification failed",false);
+    }catch(error){
+      result.textContent="Fictional questionnaire unavailable.";
+      log("Fictional financial preview request failed",false);
+    }finally{
+      control.disabled=state.role!=="local-demo-family"||!state.draft||state.needsReconciliation;
+    }
+  }
+  const fictionalDocumentBase=()=>{
+    const a=primary();
+    return path(a,a.household_id,a.year_id)+"synthetic/documents/";
+  };
+  function setFictionalDocumentState(documentId,message=null){
+    const eligible=state.role==="local-demo-family"&&!!state.draft&&!state.needsReconciliation;
+    $("add-fictional-document").disabled=!eligible||!!documentId;
+    $("read-fictional-document").disabled=!eligible||!documentId;
+    $("remove-fictional-document").disabled=!eligible||!documentId;
+    $("family-document-result").textContent=message||(
+      documentId?"Encrypted fictional sample available; no actual records uploaded.":
+      "No fictional document created."
+    );
+  }
+  async function refreshFictionalDocuments(){
+    if(state.role!=="local-demo-family"||!state.draft||state.needsReconciliation){
+      state.documentId=null;setFictionalDocumentState(null);return;
+    }
+    const {ok,data}=await api(fictionalDocumentBase());
+    const rows=data?.documents;
+    if(!ok||data.demo_only!==true||!Array.isArray(rows)||data.has_more!==false||
+       rows.length>1||rows.some(row=>
+         typeof row.document_id!=="string"||row.category!=="FICTIONAL_TAX")){
+      state.documentId=null;setFictionalDocumentState(null,"Fictional document verification unavailable.");
+      $("add-fictional-document").disabled=true;return;
+    }
+    state.documentId=rows.length?rows[0].document_id:null;
+    setFictionalDocumentState(state.documentId);
+  }
+  async function addFictionalDocument(){
+    if(state.role!=="local-demo-family"||!state.draft||state.documentId||state.needsReconciliation)return;
+    $("add-fictional-document").disabled=true;
+    const key=crypto.randomUUID();
+    const {ok,data}=await api(fictionalDocumentBase()+"create/","POST",true,{request_key:key});
+    if(!ok||data.demo_only!==true||data.status!=="FICTIONAL_DOCUMENT_ACTIVE"){
+      log("Fictional PDF creation unavailable; refresh before retry",false);
+      $("family-document-result").textContent="Verification required; refresh household.";
+      return;
+    }
+    await refreshFictionalDocuments();
+    if(state.documentId===data.document_id){
+      log("Fixed fictional PDF encrypted and scoped to family draft");
+      $("family-document-result").textContent="Encrypted fictional sample created and independently verified.";
+    }else{
+      $("family-document-result").textContent="Verification required; refresh household.";
+      $("add-fictional-document").disabled=true;
+    }
+  }
+  async function readFictionalDocument(){
+    if(!state.documentId||state.role!=="local-demo-family")return;
+    const id=state.documentId;
+    $("read-fictional-document").disabled=true;
+    try{
+      const response=await fetch(fictionalDocumentBase()+id+"/read/",{credentials:"same-origin",cache:"no-store"});
+      const payload=await response.arrayBuffer();
+      if(response.ok&&response.headers.get("Content-Type")?.startsWith("application/pdf")&&
+         payload.byteLength>=5&&new TextDecoder().decode(payload.slice(0,5))==="%PDF-"&&
+         state.documentId===id&&state.role==="local-demo-family"){
+        $("family-document-result").textContent="Encrypted fictional sample read and verified. No financial record displayed.";
+        log("Scoped encrypted sample PDF readback succeeded");
+      }else throw new Error("Readback invalid");
+    }catch{
+      $("family-document-result").textContent="Fictional document readback unavailable.";
+      log("Fictional PDF readback denied",false);
+    }finally{setFictionalDocumentState(state.documentId,$("family-document-result").textContent);}
+  }
+  async function removeFictionalDocument(){
+    if(!state.documentId||state.role!=="local-demo-family")return;
+    const id=state.documentId;
+    $("remove-fictional-document").disabled=true;
+    const {ok,data}=await api(fictionalDocumentBase()+id+"/remove/","DELETE");
+    if(!ok||data.status!=="FICTIONAL_DOCUMENT_DELETED"){
+      $("family-document-result").textContent="Deletion status uncertain; refresh household.";
+      return;
+    }
+    await refreshFictionalDocuments();
+    if(!state.documentId){
+      $("family-document-result").textContent="Fictional encrypted sample deleted; readback unavailable.";
+      log("Fictional sample deleted and independently verified");
+    }
+  }
+  async function recordSyntheticReceipt(){
+    if(state.role!=="local-demo-family"||!state.draft||state.receiptVerified||state.receiptUncertain)return;
+    if(!$("synthetic-attestation").checked){
+      log("Check the explicit fictional-attestation box first",false);
+      return;
+    }
+    const a=primary(),url=path(a,a.household_id,a.year_id)+"synthetic/receipt/",originalDraftId=state.draft.id;
+    state.receiptUncertain=true;setReceiptButton();
+    let post=null,read=null;
+    try{post=await api(url,"POST",true,{"accuracy_attested":true});}catch{ /* Ambiguous outcome. */ }
+    if(state.role!=="local-demo-family" || state.draft?.id!==originalDraftId)return;
+    if(post && !post.ok && post.status<500){
+      state.receiptUncertain=false;setReceiptButton();
+      log("Fictional receipt unavailable HTTP "+post.status,false);return;
+    }
+    try{read=await api(url+"read/");}catch{ /* Require explicit refresh. */ }
+    if(state.role!=="local-demo-family" || state.draft?.id!==originalDraftId)return;
+    if(read?.ok && validSyntheticReceipt(read.data,a,post?.ok?post.data?.receipt_id:null)){
+      state.receiptVerified=true;state.receiptUncertain=false;setReceiptButton();
+      $("synthetic-family-result").textContent=
+        "Fictional receipt independently verified. Application remains DRAFT.";
+      log("Independent fictional receipt GET verified; no legal submission or payment");
+      setActiveStep(6);
+      return;
+    }
+    $("synthetic-family-result").textContent=
+      "Receipt verification required. Refresh household before retry.";
+    log("Receipt POST is not persistence proof; refresh before retry",false);
+  }
+  async function readSyntheticOffers(){
+    if(state.role!=="local-demo-family"||!state.config)return;
+    const a=primary(),r=await api(path(a,a.household_id,a.year_id)+"synthetic/offers/");
+    if(!r.ok||r.data.synthetic!==true){
+      log("Fictional offered-aid readback denied HTTP "+r.status,false);
+      return;
+    }
+    const labels=r.data.offers.map(o=>"$"+(o.amount_cents/100).toFixed(2)+" "+o.bucket);
+    $("synthetic-family-result").textContent=labels.length?
+      "Fictional offered aid: "+labels.join(", ")+" — not a payment or binding award":
+      "No fictional offer has been recorded yet.";
+    log("Family readback returned "+r.data.offers.length+" school-bound fictional offers");
+    if(labels.length)setActiveStep(7);
+  }
+  function isAssessmentPreview(data){
+    const expectedBuckets=["need","mission","marketing","merit","hardship"];
+    const isAmount=cents=>Number.isSafeInteger(cents)&&cents>=0;
+    return data?.demo_only===true && data.requires_school_authorization===true &&
+      typeof data.policy_version==="string" && data.policy_version.trim()!=="" &&
+      typeof data.calculation_version==="string" && data.calculation_version.trim()!=="" &&
+      isAmount(data.total_recommendation_cents) && Array.isArray(data.buckets) &&
+      data.buckets.length===expectedBuckets.length &&
+      data.buckets.every((line,index)=>line?.bucket===expectedBuckets[index] &&
+        isAmount(line.recommendation_cents) && typeof line.cap_applied==="boolean") &&
+      data.buckets.reduce((sum,line)=>sum+line.recommendation_cents,0)===data.total_recommendation_cents;
+  }
+  function showAssessmentPreview(school, applicationId){
+    const panel=$("assessment-preview-template").content.firstElementChild.cloneNode(true);
+    const scenario=panel.querySelector("select");
+    const button=panel.querySelector("button");
+    const result=panel.querySelector("[role=status]");
+    const buckets=panel.querySelector("ul");
+    const formatCents=cents=>"$"+(cents/100).toFixed(2);
+    scenario.addEventListener("change",()=>{
+      result.textContent="";
+      buckets.replaceChildren();
+      buckets.hidden=true;
+    });
+    button.addEventListener("click",async()=>{
+      const scenarioId=scenario.value;
+      button.disabled=true;
+      scenario.disabled=true;
+      result.textContent="Loading fictional assessment…";
+      buckets.replaceChildren();
+      buckets.hidden=true;
+      try{
+        const url=staffPath(school)+applicationId+"/synthetic/assessment/"+encodeURIComponent(scenarioId)+"/";
+        const {ok,data}=await api(url);
+        if(!panel.isConnected)return;
+        if(!ok||!isAssessmentPreview(data)||data.school_id!==school.id||data.academic_year_id!==school.year_id||
+          data.application_id!==applicationId||data.scenario_id!==scenarioId){
+          throw new Error("Preview unavailable");
+        }
+        for(const line of data.buckets){
+          const item=document.createElement("li");
+          item.textContent=line.bucket+": "+formatCents(line.recommendation_cents)+
+            (line.cap_applied?" (test cap applied)":"");
+          buckets.append(item);
+        }
+        result.textContent="Fictional preview total: "+formatCents(data.total_recommendation_cents)+
+          " · Test policy "+data.policy_version+" · School approval required for any award";
+        buckets.hidden=false;
+      }catch{
+        result.textContent="Fictional assessment unavailable.";
+      }finally{
+        button.disabled=false;
+        scenario.disabled=false;
+      }
+    });
+    $("case-detail").append(panel);
+  }
+  async function loadCase(school, applicationId, originalRole){
+    const r=await api(staffPath(school)+applicationId+"/");
+    if(state.role!==originalRole)return;
+    $("case-detail").replaceChildren();
+    if(!r.ok){
+      log("Selected case access denied HTTP "+r.status,false);
+      return;
+    }
+    if(r.data.school_id!==school.id || r.data.application_id!==applicationId){
+      log("Selected case scope mismatch; response rejected",false);
+      return;
+    }
+    const count=r.data.selected_student_count;
+    const p=document.createElement("p");
+    p.textContent="Read-only draft "+applicationId.slice(0,8)+"… — selected children: "+count;
+    $("case-detail").append(p);
+    if(originalRole==="local-demo-director-a")showAssessmentPreview(school,applicationId);
+    if(originalRole==="local-demo-director-a" && count>0){
+      const selected=r.data.selected_student_ids[0];
+      const url=staffPath(school)+applicationId+"/synthetic/offers/"+selected+"/";
+      const readUrl=url+"read/";
+      let existing=null;
+      try{existing=await api(readUrl);}catch{ /* A read outage is ambiguous. */ }
+      if(state.role!==originalRole)return;
+      if(existing?.ok && validSyntheticOfficerOffer(existing.data,school,applicationId,selected)){
+        const message=document.createElement("p");
+        message.textContent="Fictional $250 need offer independently verified. No funds committed.";
+        $("case-detail").append(message);
+        setActiveStep(7);
+      }else if(existing?.status!==404){
+        const message=document.createElement("p");
+        message.textContent="Offer verification required. Reload selected case before retry.";
+        $("case-detail").append(message);
+      }else{
+        const button=document.createElement("button");
+        button.type="button";button.className="button";
+        button.textContent="Record fictional $250 need offer";
+        button.addEventListener("click",async()=>{
+          if(state.role!==originalRole)return;
+          button.disabled=true;
+          let post=null,saved=null;
+          try{post=await api(url,"POST");}catch{ /* Ambiguous outcome. */ }
+          if(post && !post.ok && post.status<500){
+            log("Fictional offer unavailable HTTP "+post.status,false);
+            return;
+          }
+          try{saved=await api(readUrl);}catch{ /* Require manual reload. */ }
+          if(state.role!==originalRole)return;
+          if(saved?.ok && validSyntheticOfficerOffer(saved.data,school,applicationId,selected) &&
+             (!post?.ok || (post.data?.application_id===saved.data.application_id &&
+                post.data?.student_id===saved.data.student_id &&
+                post.data?.bucket===saved.data.bucket &&
+                post.data?.amount_cents===saved.data.amount_cents &&
+                post.data?.status===saved.data.status))){
+            const message=document.createElement("p");
+            message.textContent="Fictional $250 need offer independently verified. No funds committed.";
+            $("case-detail").append(message);
+            log("Independent officer offer GET verified; no real award or payment");
+            setActiveStep(7);
+          }else{
+            const message=document.createElement("p");
+            message.textContent="Offer verification required. Reload selected case before retry.";
+            $("case-detail").append(message);
+            log("Officer offer POST is not persistence proof; reload before retry",false);
+          }
+        });
+        $("case-detail").append(button);
+      }
+    }
+    log("Authorized school draft case detail: "+count+" selected children");
   }
   async function loadInventory(){
     if(!state.config||state.role==="local-demo-family")return;
+    const originalRole=state.role;
     const school=state.role==="local-demo-director-a"?primary():secondary();
     const r=await api(staffPath(school));
+    if(originalRole!==state.role)return;
     if(!r.ok){log("Inventory request failed HTTP "+r.status,false);return;}
     $("application-count").textContent=r.data.applications.length;
     $("inventory").replaceChildren();
+    $("case-detail").replaceChildren();
     const p=document.createElement("p");p.textContent=r.data.applications.length?
       "Authorized school drafts: "+r.data.applications.map(a=>a.status+" #"+a.id.slice(0,8)).join(", "):
       "No drafts have been created for this school.";
     $("inventory").append(p);
+    for(const application of r.data.applications){
+      const button=document.createElement("button");
+      button.type="button";
+      button.className="button secondary";
+      button.textContent="View selected children";
+      button.addEventListener("click",()=>loadCase(school,application.id,originalRole));
+      $("inventory").append(button);
+    }
     setActiveStep(5);
     log("School-specific director inventory returned HTTP 200");
   }
@@ -224,6 +654,13 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   $("verify-tenant").addEventListener("click",verifyFamilyTenant);
   $("verify-csrf").addEventListener("click",verifyCSRF);
   $("verify-director").addEventListener("click",verifyDirector);
+  $("preview-family-questionnaire").addEventListener("click",previewFamilyQuestionnaire);
+  $("add-fictional-document").addEventListener("click",addFictionalDocument);
+  $("read-fictional-document").addEventListener("click",readFictionalDocument);
+  $("remove-fictional-document").addEventListener("click",removeFictionalDocument);
+  $("family-questionnaire-scenario").addEventListener("change",()=>{$("family-questionnaire-result").textContent="";});
+  $("record-synthetic-receipt").addEventListener("click",recordSyntheticReceipt);
+  $("read-synthetic-offers").addEventListener("click",readSyntheticOffers);
 })();
 </script>
 </body></html>

@@ -84,6 +84,7 @@ class SyntheticBrowserDemoHTTPTests(TestCase):
             "Create / resume annual draft",
             "Select child",
             "Verify School B access is denied",
+            "Selected case detail",
             "No real data is used",
         ):
             self.assertIn(expected, html)
@@ -153,6 +154,22 @@ class SyntheticBrowserDemoHTTPTests(TestCase):
         da = self._login(DEMO_DIRECTOR_A)
         db = self._login(DEMO_DIRECTOR_B)
         self.assertEqual(len(da.get(staff_a).json()["applications"]), 1)
+        case_a = reverse(
+            "jireh_staff_application_detail",
+            kwargs={
+                "school_id": a["id"], "academic_year_id": a["year_id"],
+                "application_id": draft.json()["id"],
+            },
+        )
+        detail = da.get(case_a)
+        self.assertEqual(detail.status_code, 200)
+        self.assertEqual(detail.json()["selected_student_count"], 2)
+        self.assertEqual(
+            set(detail.json()["selected_student_ids"]),
+            {row["id"] for row in students.json()["students"]},
+        )
+        self.assertEqual(family.get(case_a).status_code, 404)
+        self.assertEqual(db.get(case_a).status_code, 404)
         self.assertEqual(da.get(staff_b).status_code, 404)
         self.assertEqual(db.get(staff_a).status_code, 404)
         self.assertEqual(db.get(staff_b).status_code, 200)

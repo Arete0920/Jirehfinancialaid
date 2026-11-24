@@ -3,6 +3,7 @@ name: Jireh foundation checks
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     branches: [main]
 
@@ -44,6 +45,9 @@ jobs:
               sys.exit(1)
           print("Tracked filename hygiene: PASS (not a comprehensive secret scan)")
           PY
+
+      - name: Enforce repository presentation and PR narrative
+        run: python scripts/ci/repository_presentation_gate.py
 
       - name: Check Python syntax
         run: python -m compileall -q src tests
@@ -340,13 +344,34 @@ jobs:
           assert settings.SECURE_SSL_REDIRECT is True
           assert settings.SESSION_COOKIE_SECURE and settings.CSRF_COOKIE_SECURE
           assert settings.DATABASES['default']['OPTIONS']['sslmode'] == 'verify-full'
-          assert len(get_resolver().url_patterns) == 1, 'Only liveness may be routed'
+          assert 'jireh.runtime.telemetry.RuntimeRequestCorrelationMiddleware' in settings.MIDDLEWARE
+          runtime_logger = settings.LOGGING['loggers']['jireh.runtime.request']
+          assert runtime_logger['level'] == 'INFO'
+          assert runtime_logger['propagate'] is False
+          assert settings.LOGGING['handlers']['runtime_request']['class'] == 'logging.StreamHandler'
+          assert settings.LOGGING['formatters']['runtime_json']['format'] == '%(message)s'
+          assert len(get_resolver().url_patterns) == 2, 'Only liveness and readiness may be routed'
           assert resolve('/healthz/').url_name == 'jireh_health'
+          assert resolve('/readyz/').url_name == 'jireh_database_readiness'
+          from unittest.mock import patch
+          from django.db import DatabaseError
           client = Client()
           response = client.get('/healthz/', secure=True, HTTP_HOST='jireh.example.invalid')
           assert response.status_code == 200, response.status_code
           assert response.json() == {'status': 'alive'}
+          from uuid import UUID
+          cid = response['X-Correlation-ID']
+          assert str(UUID(cid)) == cid
+          assert response['X-Correlation-ID'] != 'UNTRUSTED'
           assert response['Cache-Control'].find('no-cache') >= 0
+          # Runtime TLS/host certificate validation is environment-specific:
+          # do not claim a real database roundtrip in this config-only check.
+          with patch('jireh.runtime.urls.connection.cursor', side_effect=DatabaseError('secret')):
+              denied = client.get('/readyz/', secure=True, HTTP_HOST='jireh.example.invalid')
+          assert denied.status_code == 503, denied.status_code
+          assert denied.json() == {'status': 'unavailable'}
+          assert 'secret' not in denied.content.decode()
+          assert 'no-store' in denied['Cache-Control'].lower()
           for path in ('/api/v1/', '/api/v1/schools/', '/admin/', '/login/'):
               try:
                   resolve(path)

@@ -1,29 +1,128 @@
 # Standalone Jireh production readiness — NO-GO
 
 **Status:** NO-GO. **Scope:** `Arete0920/Jirehfinancialaid`, not CROWN.
-**Baseline reviewed:** `bd4a46da837ea43097ad9128de279c0a3bb7dc60`
-(2026-11-22). Keep `JIREH_OPERATOR_CREDENTIAL_RECOVERY_ENABLED` false,
+**Historical exact-main source checkpoint (2026-11-23 ET):**
+`12a4503cc1acf295e3ce52147acf54a7b2c12063` — six completed SUCCESS checks:
+Python 3.12 contracts, Django 5.2, disposable PostgreSQL 16 integrity,
+synthetic Chromium E2E, SonarCloud, and repository presentation.
+This exact commit includes the saved fictional receipt/offer readback in
+[PR #103](https://github.com/Arete0920/Jirehfinancialaid/pull/103),
+with the earlier TLS SMTP simulation in merged
+[PR #101](https://github.com/Arete0920/Jirehfinancialaid/pull/101).
+The director dashboard [PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105)
+is not part of the pinned historical commit; verify its actual merge and exact-main CI separately. PRs #104, #102 and #100 subsequently merged into main; this older checkpoint must not be reported as their post-merge acceptance.
+**Release status remains NO-GO.**
+Keep `JIREH_OPERATOR_CREDENTIAL_RECOVERY_ENABLED` false,
 the other privileged WebAuthn gates disabled, and customer routes unexposed.
 This document does not authorize creating cloud resources, enabling runtime,
 processing payments, collecting real family data, or initiating real recovery.
 
 ## Evidence classification
 
-- **Source/CI evidence (verified):** main commit `bd4a46d` passed four
-  GitHub checks, including 388 Django tests on disposable PostgreSQL 16,
-  a separate Django test run, and standalone runtime route/configuration
-  checks. The checked runtime exposes only `GET/HEAD /healthz/`.
-- **New candidate acceptance:** `test_tenant_http_acceptance.py` exercises
-  synthetic logins and the test-only family/staff routes. This is not
-  production traffic or certification. Its CI result must be recorded for the
-  exact commit before counting it as passing evidence.
+- **Source/CI evidence (verified):** the latest protected-main revision listed
+  above has six successful check contexts, including the exact-SHA localhost
+  browser and disposable PostgreSQL suites. This is evidence for repository
+  source and synthetic acceptance only; no deployed customer journey, target
+  TLS/DB trust chain, monitored service or live tenant isolation was tested.
+- **Synthetic tenant acceptance (verified as test coverage, not production):**
+  `src/jireh/financial_aid/test_tenant_http_acceptance.py` is included in
+  the Django/PostgreSQL source test suite. It exercises synthetic authenticated
+  sessions, two-school denials, separated households sharing a child, revoked
+  grants, CSRF and nonmutation. A green aggregate suite establishes that
+  its included tests did not fail; it is not evidence of deployed tenant
+  isolation or approved live authentication.
+- **Standalone runtime exposure (source only):** `src/jireh/runtime/urls.py`
+  defines only `GET/HEAD /healthz/` (process liveness) and `GET/HEAD /readyz/`
+  (one read-only PostgreSQL `SELECT 1`; generic 503 on database failure).
+  Server-generated privacy-minimized correlation IDs/logging are wired in the
+  closed runtime. These do not establish schema/migration parity, alert
+  delivery or customer routes; test/demo URL routing remains separate.
+- **Browser acceptance (source only):** the protected-main synthetic
+  Chromium [run 45299151221](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45299151221)
+  concluded SUCCESS on the pinned historical source SHA. The browser exercises fictional
+  localhost workflows only, including the encrypted sample-PDF path; it is not
+  a deployable customer browser, real upload or operational security PASS.
+- **Unmerged risk at this checkpoint:**
+  [PR #65](https://github.com/Arete0920/Jirehfinancialaid/pull/65)
+  (six-step CROWN-derived officer wizard; two unclassified SonarCloud SCA
+  dependency-risk records, independently disposition before merge).
+  [PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105)
+  introduces this proposed director dashboard; its own merge must be verified.
+  PRs #100, #101, #102, #103 and #104 are **merged** in later protected-main
+  commits. Never count them as open work or credit their behavior to the earlier
+  source checkpoint above.
 - **Not established:** live hosting, deployed configuration, authenticated
   production APIs, database read isolation, observability, incident response,
   production backups, restore drills, real operator identity verification,
   WebAuthn hardware backup/counter policy, and security operations acceptance.
 
-Passing a unit/integration suite or a 200 from `/healthz/` is never a
-production acceptance decision.
+Passing source CI or a 200 from `/healthz/` or `/readyz/` is never a
+production acceptance decision. The owner expressly defers CompuWerx activity;
+$55 household submission must remain nonfinal until authoritative payment
+reconciliation. No fake paid status, alternate processor or waived payment may
+substitute for this mandatory future acceptance stage.
+
+## Single product-delivery acceptance checklist (no double counting)
+
+**Three separate decisions — not three different products:**
+
+1. **Standalone feature completion:** Implement and test real application
+   behavior using only fictional schools/people, with database readback,
+   school/household authorization, negative cases, and complete browser flows.
+   This can be accomplished without CompuWerx or real family data.
+2. **Deployable synthetic release candidate:** Package and verify the *same*
+   customer application behind a production-equivalent, security-reviewed
+   acceptance environment, with synthetic test records only, live payment
+   collection and final paid submission disabled. No production or Azure
+   resource change is authorized by this checklist.
+3. **Commercial paid application GO:** After owner authorization of the
+   CompuWerx stage, separately certify actual provider identity, durable
+   server-side $55 household fee reconciliation, state transition, and operational
+   controls. A mock-paid browser status is **never** sufficient to mark a
+   customer application finally `SUBMITTED`.
+
+**Synthetic test data is the preferred evidence source throughout.** A
+successful release does not require any pre-existing real family files or
+financial records. The customer environment must still be capable of securing
+them when future customers voluntarily submit applications.
+
+| Priority | Complete customer-journey requirement | Current evidence on verified main | Remaining acceptance / dependency |
+| --- | --- | --- | --- |
+| P0 | Standalone school, household and annual application identity | Unique school/year/household draft, grant checks, multi-child linking, separate-parent negative tests | Accept hosted authentication, exact tenant read/write enforcement, and canonical DB readback |
+| P0 | Saved family financial questionnaire | Seven sections and 31 owner-approved *development* field paths, pure validation, fixed fictional preview | School-scoped encrypted answer persistence, save/resume/correction, versioned questions, negative tests; Q01–Q10 detailed retention/consent/financial policy remains incomplete [#43](https://github.com/Arete0920/Jirehfinancialaid/issues/43) |
+| P0 | Family-to-officer end-to-end presentation | Local Chromium test performs fictional draft, students, receipt, $250 offer, readback; PR #103 merged | Integrate the **same supported workflow** into independently secured customer runtime; no demo-only credentials or URL configuration |
+| P0 | Family consent and final application lifecycle | Synthetic disclosure receipt and offline payment/submission contracts; real `AidApplication` still `DRAFT` | Approved consent version, actor, audit, transactional submission state; preserve mandatory payment reconciliation gate [#45](https://github.com/Arete0920/Jirehfinancialaid/issues/45) |
+| P1 | Supporting documents | Authenticated, encrypted, fixed fictional PDF create/read/delete; scanner controls and local negative tests | Approved real file ingestion, malware scanning, key operations, retention/deletion and access policies [#44](https://github.com/Arete0920/Jirehfinancialaid/issues/44) |
+| P1 | Need assessment and five aid categories | Fixed fictional scenario calculations with versioned bucket contracts | Approve and validate explainable live methodology; do not treat invented coefficients as eligibility [#46](https://github.com/Arete0920/Jirehfinancialaid/issues/46) |
+| P1 | Aid-officer review and offers | School-scoped draft detail, synthetic $250 offer, readback; PR #65 officer wizard unmerged | Review/decision state, two-person audit where applicable, approval workflow, durable results, case reporting and wizard security [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
+| P1 | Director reporting and actual-data truth | Internal scoped workload counts; the PR #105 candidate adds a read-only school-bound dashboard | Verify the PR's merge and exact-main browser navigation, isolation and per-school DB-backed counts; no fallback sample KPIs, real awards, or disbursement claims |
+| P1 | Household identity, invitations, recovery | Internal grants, invitation and email verification, loopback TLS SMTP rehearsal merged in #101 | Operational identity assurance, real mail delivery, MFA/recovery ceremony and helpdesk acceptance [#49](https://github.com/Arete0920/Jirehfinancialaid/issues/49) |
+| P0 | Customer application routing and packaging | Deployed-style Django runtime configuration is fail-closed; production URLConf intentionally includes only `/healthz/` and `/readyz/` | Build/certify secure routes for the actual accepted family/director features; select/approve hosting and target environment |
+| P0 | Security, operations and release certification | Six exact-main source checks pass, including disposable PostgreSQL and Chromium; sanitized request telemetry exists | Validate the 11 **target-environment** D/T/S/M/I/A release acceptance gates below, not merely unit/CI status [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48) |
+| Deferred | $55 paid final submission / CompuWerx | Approved one-fee-per-household policy and offline fail-closed reconciliation primitives | No provider-specific activity before owner releases the hold. A synthetically deployable RC is allowed; paid commercial launch is blocked until provider certification [#50](https://github.com/Arete0920/Jirehfinancialaid/issues/50) |
+
+**No synthetic-only feature counts as customer-ready solely because its CI is
+green.** Conversely, the eleven target-environment checks below are acceptance
+gates, **not eleven failing source tests**. Record product completion, source
+checks, target-environment acceptance, and actual business activation separately.
+
+### Execution order
+
+1. Finish and reconcile existing nonoverlapping open PRs, including the
+   database-truth director dashboard, without duplicated feature branches.
+2. Complete the authorized save/edit/resume financial questionnaire and customer
+   family/officer paths; obtain the specific Q01–Q10 policy decisions needed
+   before any real-financial-answer migrations or retention controls.
+3. Perform secure application integration and synthetic E2E acceptance, with
+   realistic two-school identity, financial, document, failure and recovery cases.
+4. Approve hosting and validate all target-environment operational gates against
+   an immutable release SHA, with synthetic-only records.
+5. Present a deployable **prepayment** release candidate for owner acceptance.
+   Keep customer final paid submission disabled and continue to block live data
+   collection until approved.
+6. Begin CompuWerx contract/API/security work **only upon separate owner
+   authorization**; certify authoritative reconciliation, then reconsider
+   commercial first-client GO.
 
 ## Release-blocking acceptance matrix
 

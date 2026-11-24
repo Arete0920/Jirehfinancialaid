@@ -1,13 +1,17 @@
 # Jireh financial questionnaire — v1 field design candidate
 
-**Status:** Design-only; the product owner approved the **seven sections**, not these
-individual fields, defaults, financial calculations, retention rules, or live data
-collection. **No migrations, APIs, financial storage, or deployed questionnaire.**
+**Status:** Field-list approved for development on November 22, 2026. The product owner approved the **seven sections and all 31 proposed field identifiers**. This approval is for standalone design, validation, and synthetic implementation only; it does **not** specify financial thresholds, final validation policy, consent language, retention periods, identity rules or release permission. **No migrations, APIs, financial storage, or deployed questionnaire are authorized by this catalog.**
 
 **Machine-readable candidate:** [questionnaire_v1_field_catalog.json](questionnaire_v1_field_catalog.json)
 (7 sections, 31 proposed field paths, 10 explicit pending owner decisions).
 The catalog is documentation metadata, **not** a validated JSON Schema, API payload
 contract, user-facing questionnaire, or privacy certification.
+
+## Owner-approved field-list checkpoint (2026-11-22)
+
+All 31 existing field identifiers in the seven approved sections have the catalog lifecycle `approved_for_development`. The catalog status is `FIELD_LIST_APPROVED_DESIGN_ONLY_NOT_COLLECTION`, with an explicit `field_list_approval` record. The field inventory and type names were not added to, removed from, or reinterpreted by this approval. The machine-readable version remains `0.1.0` because policy choices are not finalized.
+
+The Q01–Q10 detailed policy decisions are tracked separately and still require specific values and controls; prior 'pending' text below documents those unresolved choices rather than revoking the field-list approval. This approval permits controlled synthetic design and tests, **not** storing actual family financial answers or activating real application submissions.
 
 ## Proposed structure and source evidence
 

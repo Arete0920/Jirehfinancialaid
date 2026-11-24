@@ -7,7 +7,7 @@ from django.http import Http404
 from jireh.schools.access import require_household_access
 from jireh.schools.models import AcademicYear, HouseholdStudent
 
-from .models import AidApplication, AidApplicationStudent, AidAuditEvent
+from .models import AidApplication, AidApplicationStudent, AidAuditEvent, SyntheticAidSubmission
 
 
 @transaction.atomic
@@ -102,6 +102,8 @@ def select_student_for_draft(
         user=user, school_id=school_id, household_id=household_id,
         academic_year_id=academic_year_id, lock=True,
     )
+    if SyntheticAidSubmission.objects.filter(application_id=draft.pk).exists():
+        raise ValidationError("Synthetic presentation receipt freezes child selection.")
     link = (
         HouseholdStudent.objects.for_school(draft.school_id)
         .filter(household_id=draft.household_id, student_id=student_id)
