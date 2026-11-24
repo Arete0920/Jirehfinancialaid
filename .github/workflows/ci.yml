@@ -363,6 +363,43 @@ jobs:
           print("Setup receipt/preparation reapply: PASS")
           PY
 
+      - name: Verify encrypted questionnaire migration rollback and reapply
+        run: |
+          set -euo pipefail
+          python -m django migrate financial_aid 0007 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              for table in ('financial_aid_syntheticquestionnairedraft',
+                            'financial_aid_syntheticquestionnaireevent'):
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0] is None, "Questionnaire table rollback incomplete"
+              for name in ('jireh_syn_questionnaire_guard()', 'jireh_syn_questionnaire_event_guard()'):
+                  cursor.execute("SELECT to_regprocedure(%s)", [name])
+                  assert cursor.fetchone()[0] is None, "Questionnaire function rollback incomplete"
+          print("Questionnaire rollback: PASS")
+          PY
+          python -m django migrate financial_aid 0008 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              for table, trigger in (
+                  ('financial_aid_syntheticquestionnairedraft', 'jireh_syn_questionnaire_guard'),
+                  ('financial_aid_syntheticquestionnaireevent', 'jireh_syn_questionnaire_event_guard'),
+              ):
+                  cursor.execute(
+                      "SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = to_regclass(%s) "
+                      "AND tgname = %s AND NOT tgisinternal AND tgenabled = 'O'",
+                      [table, trigger],
+                  )
+                  assert cursor.fetchone()[0] == 1, "Questionnaire guard not restored"
+          print("Questionnaire reapply: PASS")
+          PY
+
       - name: Check standalone runtime and closed routes (no deployment)
         env:
           JIREH_ENABLE_RUNTIME: '1'

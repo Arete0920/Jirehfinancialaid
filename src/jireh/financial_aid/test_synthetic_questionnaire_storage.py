@@ -131,6 +131,8 @@ class FictionalQuestionnaireStorageTests(TestCase):
             self.save(1, answers=invalid)
         with self.assertRaisesRegex(QuestionnaireValidationError, "questionnaire_sections_invalid"):
             self.save(1, answers={"consent": True})
+        with self.assertRaisesRegex(QuestionnaireValidationError, "candidate_catalog_invalid"):
+            self.save(1, answers={}, catalog=None)
         with self.assertRaisesRegex(QuestionnaireValidationError, "questionnaire_revision_conflict"):
             self.save(0)
         self.assertEqual(read_fictional_questionnaire(**self.scope()), (1, self.answers))
@@ -205,6 +207,12 @@ class FictionalQuestionnaireStorageTests(TestCase):
             with self.assertRaises(PermissionDenied):
                 self.save()
         with patch.dict(os.environ, {"DJANGO_SETTINGS_MODULE": "jireh.runtime.settings"}):
+            with self.assertRaises(PermissionDenied):
+                self.save()
+        with patch.dict(os.environ, {"DJANGO_SETTINGS_MODULE": ""}):
+            with self.assertRaises(PermissionDenied):
+                self.save()
+        with override_settings(SETTINGS_MODULE="jireh.runtime.settings"):
             with self.assertRaises(PermissionDenied):
                 self.save()
         with self.assertRaisesRegex(QuestionnaireValidationError, "questionnaire_key_invalid"):

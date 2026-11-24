@@ -12,7 +12,9 @@ from django.http import Http404
 
 from jireh.schools.models import HouseholdAccess, School
 from .models import SyntheticQuestionnaireDraft, SyntheticQuestionnaireEvent
-from .questionnaire_candidate import validate_v1_financial_candidate
+from .questionnaire_candidate import (
+    validate_v1_field_catalog, validate_v1_financial_candidate,
+)
 from .questionnaire_validation import QuestionnaireValidationError
 from .services import _require_existing_draft
 
@@ -34,9 +36,12 @@ class FictionalQuestionnairePolicy:
 
 
 def _guard(key):
+    startup = os.environ.get("DJANGO_SETTINGS_MODULE")
+    # Django override_settings uses a UserSettingsHolder whose SETTINGS_MODULE
+    # is None. Still require a known disposable startup module and explicit opt-in.
     if (
-        settings.SETTINGS_MODULE not in _TEST_SETTINGS
-        or os.environ.get("DJANGO_SETTINGS_MODULE") != settings.SETTINGS_MODULE
+        startup not in _TEST_SETTINGS
+        or settings.SETTINGS_MODULE not in (None, startup)
         or getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_STORAGE", False) is not True
     ):
         raise PermissionDenied("Fictional questionnaire storage unavailable.")
@@ -73,6 +78,8 @@ def _encode(answers, catalog, policy):
         raise QuestionnaireValidationError("questionnaire_sections_invalid")
     if type(policy.categories) is not tuple or len(policy.categories) != 4:
         raise QuestionnaireValidationError("questionnaire_policy_invalid")
+    # Empty snapshots also require the frozen development catalog.
+    validate_v1_field_catalog(catalog)
     for section, rows in answers.items():
         if type(rows) is not list or len(rows) > 32:
             raise QuestionnaireValidationError("questionnaire_rows_invalid")
