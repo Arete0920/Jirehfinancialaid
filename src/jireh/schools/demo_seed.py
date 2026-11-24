@@ -22,6 +22,7 @@ DEMO_SCHOOL_B_CODE = "local-jireh-school-b"
 DEMO_PARENT = "local-demo-family"
 DEMO_DIRECTOR_A = "local-demo-director-a"
 DEMO_DIRECTOR_B = "local-demo-director-b"
+DEMO_OPERATOR = "local-demo-platform-operator"
 DEMO_PASSWORD = secrets.token_urlsafe(32)
 
 
@@ -40,6 +41,9 @@ def seed_synthetic_browser_demo(*, grant_family_access=True, grant_first_directo
     )
     director_b = User.objects.create_user(
         username=DEMO_DIRECTOR_B, password=DEMO_PASSWORD,
+    )
+    operator = User.objects.create_user(
+        username=DEMO_OPERATOR, password=DEMO_PASSWORD, is_staff=True,
     )
 
     school_a = School.objects.create(
@@ -105,4 +109,5 @@ def seed_synthetic_browser_demo(*, grant_family_access=True, grant_first_directo
         "parent": parent,
         "director_a": director_a,
         "director_b": director_b,
+        "operator": operator,
     }

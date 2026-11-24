@@ -12,6 +12,7 @@ from .demo_seed import (
     DEMO_PARENT,
     DEMO_DIRECTOR_A,
     DEMO_DIRECTOR_B,
+    DEMO_OPERATOR,
     DEMO_SCHOOL_A_CODE,
     DEMO_SCHOOL_B_CODE,
 )
@@ -41,7 +42,7 @@ def demo_page(request):
 def demo_config(request):
     if not request.user.is_authenticated:
         return JsonResponse({"detail": "Forbidden."}, status=403)
-    if request.user.username not in (DEMO_PARENT, DEMO_DIRECTOR_A, DEMO_DIRECTOR_B):
+    if request.user.username not in (DEMO_PARENT, DEMO_DIRECTOR_A, DEMO_DIRECTOR_B, DEMO_OPERATOR):
         return JsonResponse({"detail": "Forbidden."}, status=403)
 
     a = School.objects.get(code=DEMO_SCHOOL_A_CODE)

@@ -40,6 +40,21 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <header><div><div class="overline">Independent financial aid platform</div><div class="brand">JIREH<span>.</span></div></div><div class="pill">LOCAL SYNTHETIC DEMO · NOT LIVE</div></header>
 <main>
 <div class="intro"><div><div class="overline" style="color:#4d7965">Financial aid · 2026–27</div><h1>Family application walkthrough</h1><p>Experience the verified draft and school-access workflow with fictional people and institutions.</p></div><div class="notice"><strong>Local fictional demo.</strong> Use the seeded examples to explore drafts, receipts, assessment previews and the fixed $250 demonstration offer. All scenarios use disposable data. Real intake, final submission, binding awards and payment are outside this demo’s scope.</div></div>
+<details class="panel" id="presenter-guide" style="margin-bottom:20px">
+<summary><strong>Presenter guide — manual, no autoplay</strong></summary>
+<p class="small">Allow 12–15 minutes, pausing for questions and saved-record verification. This checklist is not an application status or an automated workflow.</p>
+<ol aria-label="Presenter checklist">
+<li><strong>Introduce Jireh.</strong> Standalone financial aid; use only the fictional personas on this workstation.</li>
+<li><strong>Family draft.</strong> Select Family applicant, create or resume the annual draft, select both children, then sign in again to verify the selections persisted.</li>
+<li><strong>Fictional intake.</strong> Validate an example questionnaire; if the encrypted sample PDF controls are available, add, read and delete the fixed example. No actual financial answers or uploads are accepted.</li>
+<li><strong>Receipt and isolation.</strong> Demonstrate the School B and CSRF denials, then attest to and record the fictional receipt. Confirm the application remains a DRAFT.</li>
+<li><strong>School director.</strong> Select School A director, open the case and preview the two fixed assessments. Record the fictional $250 need offer only once; wait for independent saved-record verification.</li>
+<li><strong>Director workload.</strong> Open View verified school workload. Explain that application and household counts differ from child links, and fictional offer face value is not payable aid. Return to the walkthrough.</li>
+<li><strong>Family readback and separate school.</strong> Select Family applicant and read the fictional offer; then select School B director, verify the other school is denied and inspect its empty workload.</li>
+<li><strong>Arete operations.</strong> Select Arete platform operator and open View fictional school readiness. Show the saved fictional registry and the explicit absence of provisioning, integration and billing controls.</li>
+</ol>
+<p class="small"><strong>Close:</strong> No real school activation, live SIS connection, payment, real financial collection or production deployment. Stop if any saved fact or access check fails. Do not expose the loopback server.</p>
+</details>
 <div class="layout">
 <aside class="panel sidebar" aria-label="Journey navigation">
 <div class="small" style="font-weight:750;letter-spacing:.1em;text-transform:uppercase">Walkthrough</div>
@@ -60,6 +75,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <button type="button" data-role="local-demo-family">Family applicant</button>
 <button type="button" data-role="local-demo-director-a">School A director</button>
 <button type="button" data-role="local-demo-director-b">School B director</button>
+<button type="button" data-role="local-demo-platform-operator">Arete platform operator</button>
 </div>
 <div class="statusbar"><span id="identity">No session selected</span><span id="authstatus">Signed out</span></div>
 <div id="family" class="hidden">
@@ -100,6 +116,11 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <ul aria-label="Fictional bucket recommendations" hidden></ul>
 </section>
 </template>
+<div id="operator" class="hidden">
+<h3>Arete platform operator — fictional preview</h3>
+<p>Review saved test school readiness and aid-director grant counts. This panel does not create, provision, activate, integrate, bill or edit schools.</p>
+<div class="actions"><a class="button secondary" href="/local-demo/platform-operations/" id="operator-summary-link">View fictional school readiness</a></div>
+</div>
 <div class="separator"></div><h3>Test activity</h3><div id="events" role="log" aria-label="Synthetic demonstration activity log"><div>Choose a persona to begin. No real data is used.</div></div>
 </section></div>
 </main><footer>Jireh Financial Aid · Standalone development prototype · Local synthetic data only · Production release: NO-GO</footer>
@@ -198,8 +219,13 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   const primary = () => state.config.school_a;
   const secondary = () => state.config.school_b;
   async function logout(){
-    if(!state.role)return;
-    await api("/test-auth/logout/","POST");
+    // Navigation resets JavaScript state but not the server session. Always
+    // obtain CSRF and invalidate the session before selecting a new persona.
+    const ready=await api("/test-auth/login/");
+    if(!ready.ok)throw new Error("Session preparation failed: "+ready.status);
+    const result=await api("/test-auth/logout/","POST");
+    if(!result.ok||result.data?.authenticated!==false)
+      throw new Error("Session logout not verified: "+result.status);
     state.role=null;state.config=null;state.students=[];state.draft=null;state.needsReconciliation=false;state.documentId=null;state.selectedCount=0;state.receiptVerified=false;state.receiptUncertain=false;
     setFictionalDocumentState(null);
     $("synthetic-attestation").checked=false;
@@ -214,25 +240,39 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("authstatus").textContent="Signing in";
       $("family").classList.add("hidden");
       $("director").classList.add("hidden");
+      $("operator").classList.add("hidden");
       $("case-detail").replaceChildren();
       await logout();
-      await api("/test-auth/login/");
+      const ready=await api("/test-auth/login/");
+      if(!ready.ok)throw new Error("Sign-in preparation failed: "+ready.status);
       const r=await fetch("/test-auth/login/",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRFToken":decodeURIComponent(cookie("csrftoken"))},body:JSON.stringify({username:role,password:PASSWORD})});
       const data=await r.json();
       if(!r.ok)throw new Error("Sign-in failed: "+r.status+" "+(data.detail||""));
       const conf=await api("/local-demo/config/");
-      if(!conf.ok)throw new Error("Demo configuration denied: "+conf.status);
+      if(!conf.ok||conf.data?.persona!==role)
+        throw new Error("Demo persona not verified: "+conf.status);
       state.role=role;state.config=conf.data;
       document.querySelectorAll("[data-role]").forEach(b=>b.classList.toggle("selected",b.dataset.role===role));
-      const family=role==="local-demo-family";
+      const family=role==="local-demo-family",operator=role==="local-demo-platform-operator";
       $("family").classList.toggle("hidden",!family);
-      $("director").classList.toggle("hidden",family);
-      $("identity").textContent=family?"Sample Family":role==="local-demo-director-a"?"School A director":"School B director";
+      $("director").classList.toggle("hidden",family||operator);
+      $("operator").classList.toggle("hidden",!operator);
+      $("identity").textContent=family?"Sample Family":operator?"Arete platform operator":role==="local-demo-director-a"?"School A director":"School B director";
       $("authstatus").textContent="Synthetic session active";
       log("Authenticated "+$("identity").textContent);
       if(family){$("school-name").textContent=primary().name;$("draft-status").textContent="Not loaded";await loadHousehold();}
-      else{$("director-school").textContent=(role==="local-demo-director-a"?primary():secondary()).name;$("application-count").textContent="—";$("inventory").textContent="";await loadInventory();}
-    }catch(e){log(e.message,false);}
+      else if(!operator){$("director-school").textContent=(role==="local-demo-director-a"?primary():secondary()).name;$("application-count").textContent="—";$("inventory").textContent="";await loadInventory();}
+    }catch(e){
+      state.role=null;state.config=null;
+      $("family").classList.add("hidden");
+      $("director").classList.add("hidden");
+      $("operator").classList.add("hidden");
+      $("identity").textContent="No session selected";
+      $("authstatus").textContent="Session not verified";
+      document.querySelectorAll("[data-role]").forEach(b=>b.classList.remove("selected"));
+      setActiveStep(1);
+      log(e.message,false);
+    }
   }
   async function loadHousehold(){
     if(!state.config || state.role!=="local-demo-family")return;

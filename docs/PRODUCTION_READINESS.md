@@ -1,21 +1,46 @@
 # Standalone Jireh production readiness — NO-GO
 
 **Status:** NO-GO. **Scope:** `Arete0920/Jirehfinancialaid`, not CROWN.
-**Historical exact-main source checkpoint (2026-11-23 ET):**
-`12a4503cc1acf295e3ce52147acf54a7b2c12063` — six completed SUCCESS checks:
+**Current verified protected-main source checkpoint (2026-11-23 Eastern / 2026-11-24 UTC):**
+[`01dd98e41fce16075f4d4ae74425b64689f3cc75`](https://github.com/Arete0920/Jirehfinancialaid/commit/01dd98e41fce16075f4d4ae74425b64689f3cc75), merged
+[PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105) — **six completed SUCCESS checks**:
 Python 3.12 contracts, Django 5.2, disposable PostgreSQL 16 integrity,
-synthetic Chromium E2E, SonarCloud, and repository presentation.
-This exact commit includes the saved fictional receipt/offer readback in
-[PR #103](https://github.com/Arete0920/Jirehfinancialaid/pull/103),
-with the earlier TLS SMTP simulation in merged
-[PR #101](https://github.com/Arete0920/Jirehfinancialaid/pull/101).
-The director dashboard [PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105)
-is not part of the pinned historical commit; verify its actual merge and exact-main CI separately. PRs #104, #102 and #100 subsequently merged into main; this older checkpoint must not be reported as their post-merge acceptance.
+synthetic localhost Chromium E2E, SonarCloud, and repository presentation.
+Exact-commit runs: [foundation 45313276198](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45313276198),
+[browser 45313276177](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45313276177),
+[presentation 45313276210](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45313276210).
+[PRs #100](https://github.com/Arete0920/Jirehfinancialaid/pull/100),
+[#102](https://github.com/Arete0920/Jirehfinancialaid/pull/102),
+[#103](https://github.com/Arete0920/Jirehfinancialaid/pull/103),
+[#104](https://github.com/Arete0920/Jirehfinancialaid/pull/104), and
+[#105](https://github.com/Arete0920/Jirehfinancialaid/pull/105) are **merged**;
+do not reassign or rebuild their completed source changes.
+**Delivery decision:** the December 1 first-client target is **NO-GO for live paid use** at this checkpoint;
+a synthetic prepayment release candidate requires separate acceptance.
 **Release status remains NO-GO.**
 Keep `JIREH_OPERATOR_CREDENTIAL_RECOVERY_ENABLED` false,
 the other privileged WebAuthn gates disabled, and customer routes unexposed.
 This document does not authorize creating cloud resources, enabling runtime,
 processing payments, collecting real family data, or initiating real recovery.
+
+## Single source of truth and cross-chat coordination
+
+**Authoritative record:** this file is the single Jireh product/release readiness ledger;
+protected `main`, current GitHub [issues](https://github.com/Arete0920/Jirehfinancialaid/issues),
+[PRs](https://github.com/Arete0920/Jirehfinancialaid/pulls), and exact-SHA
+[CI](https://github.com/Arete0920/Jirehfinancialaid/actions) provide the underlying
+engineering evidence, issue ownership, and approved decisions. This is **one
+GitHub system**, not competing status plans maintained in separate sessions.
+Other coordination spaces are navigation/archive aids only.
+
+**Before any change:** refetch protected `main`, open issues/PRs, current head SHAs,
+changed-file overlap, branch protections, and all required check conclusions.
+Only the explicitly scoped implementer changes an active PR; parallel chats
+may provide read-only analysis but cannot assume exclusive ownership.
+Record an accepted decision or scope change in the relevant GitHub issue/PR
+and reconcile this readiness ledger. Historical SHAs here are dated checkpoints,
+not an alternative latest status. No chat can remotely pause other sessions:
+stop duplicate writes through explicit coordination and current GitHub checks.
 
 ## Evidence classification
 
@@ -38,19 +63,23 @@ processing payments, collecting real family data, or initiating real recovery.
   closed runtime. These do not establish schema/migration parity, alert
   delivery or customer routes; test/demo URL routing remains separate.
 - **Browser acceptance (source only):** the protected-main synthetic
-  Chromium [run 45299151221](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45299151221)
-  concluded SUCCESS on the pinned historical source SHA. The browser exercises fictional
-  localhost workflows only, including the encrypted sample-PDF path; it is not
-  a deployable customer browser, real upload or operational security PASS.
-- **Unmerged risk at this checkpoint:**
+  Chromium [run 45313276177](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45313276177)
+  concluded SUCCESS on the current verified protected-main SHA. The browser
+  exercises fictional localhost workflows only, including the encrypted
+  sample-PDF path and readback; it is not a deployable customer browser,
+  real upload or operational security PASS.
+- **Open PR inventory at this checkpoint (verify live before any writes):**
+  [PR #106](https://github.com/Arete0920/Jirehfinancialaid/pull/106)
+  is **OPEN DRAFT** for questionnaire privacy/requiredness metadata and
+  Q01–Q10 governance safeguards; its exact head
+  `192846c05d64bf2c29ad270a1ad6d21f7275ebe8` had six successful
+  CI contexts, but green checks do not make an unmerged draft accepted policy.
   [PR #65](https://github.com/Arete0920/Jirehfinancialaid/pull/65)
-  (six-step CROWN-derived officer wizard; two unclassified SonarCloud SCA
-  dependency-risk records, independently disposition before merge).
-  [PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105)
-  introduces this proposed director dashboard; its own merge must be verified.
-  PRs #100, #101, #102, #103 and #104 are **merged** in later protected-main
-  commits. Never count them as open work or credit their behavior to the earlier
-  source checkpoint above.
+  is **OPEN** for the CROWN-derived officer wizard. Its latest head had
+  successful CI, but two SonarCloud SCA dependency-risk records remain
+  unclassified; obtain their authoritative disposition before merge.
+  PRs #100, #101, #102, #103, #104 and #105 are **MERGED** and not
+  duplicate workstreams.
 - **Not established:** live hosting, deployed configuration, authenticated
   production APIs, database read isolation, observability, incident response,
   production backups, restore drills, real operator identity verification,
@@ -95,7 +124,7 @@ them when future customers voluntarily submit applications.
 | P1 | Supporting documents | Authenticated, encrypted, fixed fictional PDF create/read/delete; scanner controls and local negative tests | Approved real file ingestion, malware scanning, key operations, retention/deletion and access policies [#44](https://github.com/Arete0920/Jirehfinancialaid/issues/44) |
 | P1 | Need assessment and five aid categories | Fixed fictional scenario calculations with versioned bucket contracts | Approve and validate explainable live methodology; do not treat invented coefficients as eligibility [#46](https://github.com/Arete0920/Jirehfinancialaid/issues/46) |
 | P1 | Aid-officer review and offers | School-scoped draft detail, synthetic $250 offer, readback; PR #65 officer wizard unmerged | Review/decision state, two-person audit where applicable, approval workflow, durable results, case reporting and wizard security [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
-| P1 | Director reporting and actual-data truth | Internal scoped workload counts; the PR #105 candidate adds a read-only school-bound dashboard | Verify the PR's merge and exact-main browser navigation, isolation and per-school DB-backed counts; no fallback sample KPIs, real awards, or disbursement claims |
+| P1 | Director reporting and actual-data truth | PR #105 **merged**: source-backed, director-only school/year workload dashboard with synthetic browser acceptance and no invented fallback metrics | Customer-facing route/identity approval and deployment acceptance still outstanding; do not present synthetic workload as actual submitted aid, awards or disbursements |
 | P1 | Household identity, invitations, recovery | Internal grants, invitation and email verification, loopback TLS SMTP rehearsal merged in #101 | Operational identity assurance, real mail delivery, MFA/recovery ceremony and helpdesk acceptance [#49](https://github.com/Arete0920/Jirehfinancialaid/issues/49) |
 | P0 | Customer application routing and packaging | Deployed-style Django runtime configuration is fail-closed; production URLConf intentionally includes only `/healthz/` and `/readyz/` | Build/certify secure routes for the actual accepted family/director features; select/approve hosting and target environment |
 | P0 | Security, operations and release certification | Six exact-main source checks pass, including disposable PostgreSQL and Chromium; sanitized request telemetry exists | Validate the 11 **target-environment** D/T/S/M/I/A release acceptance gates below, not merely unit/CI status [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48) |
@@ -108,11 +137,14 @@ checks, target-environment acceptance, and actual business activation separately
 
 ### Execution order
 
-1. Finish and reconcile existing nonoverlapping open PRs, including the
-   database-truth director dashboard, without duplicated feature branches.
-2. Complete the authorized save/edit/resume financial questionnaire and customer
-   family/officer paths; obtain the specific Q01–Q10 policy decisions needed
-   before any real-financial-answer migrations or retention controls.
+1. Finish independent acceptance of open draft PR #106's questionnaire
+   governance tests without duplicating its files. Keep PR #65's wizard
+   blocked until the two exact SonarCloud SCA dependency-risk records are
+   reviewed and dispositioned. The director dashboard PR #105 is merged.
+2. Complete and test the fictional family questionnaire and family/officer
+   end-to-end journey; obtain specific Q01–Q10 owner/privacy decisions before
+   real financial-answer persistence, migrations, legal consent or customer
+   collection routes.
 3. Perform secure application integration and synthetic E2E acceptance, with
    realistic two-school identity, financial, document, failure and recovery cases.
 4. Approve hosting and validate all target-environment operational gates against
