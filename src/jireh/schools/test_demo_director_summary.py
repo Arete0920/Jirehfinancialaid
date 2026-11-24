@@ -135,6 +135,17 @@ class DirectorDatabaseTruthHTTPTests(TestCase):
             with self.assertRaises(Resolver404):
                 resolve(self.url())
 
+    def test_director_walkthrough_links_to_scoped_saved_summary(self):
+        self.client.force_login(self.demo["director_a"])
+        page = self.client.get("/local-demo/")
+        self.assertEqual(page.status_code, 200)
+        self.assertContains(page, 'id="director-summary-link"')
+        self.assertContains(page, 'href="/local-demo/director-summary/"')
+        summary = self.client.get(self.url())
+        self.assertEqual(summary.status_code, 200)
+        self.assertContains(summary, "Director workload")
+        self.assertContains(summary, "Synthetic Christian Academy")
+
     def test_integrity_failure_yields_unknown_not_zero(self):
         self.client.force_login(self.demo["director_a"])
         with patch("jireh.schools.demo_director_summary.summarize_draft_workload",
