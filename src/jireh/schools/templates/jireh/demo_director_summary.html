@@ -1,0 +1,55 @@
+{% load static %}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Jireh | Fictional director report</title>
+<style nonce="{{ csp_nonce }}">
+:root{color-scheme:light;font-family:system-ui,-apple-system,BlinkMacSystemFont,"Segoe UI",sans-serif;background:#f5f7f6;color:#1b3430}
+*{box-sizing:border-box}
+body{margin:0}
+main{max-width:960px;margin:0 auto;padding:34px 20px 70px}
+header{background:#153d35;color:#fff;padding:22px 24px}
+header div{max-width:920px;margin:auto;display:flex;align-items:center;justify-content:space-between;gap:20px}
+header strong{font-size:23px;letter-spacing:.13em}
+header span{font-size:12px;font-weight:700;letter-spacing:.05em}
+h1{font-size:clamp(26px,4vw,38px);margin:10px 0}
+p{line-height:1.6}
+.eyebrow{letter-spacing:.08em;text-transform:uppercase;font-size:12px;font-weight:700;color:#316f58}
+.intro{margin-bottom:30px}
+.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(210px,1fr));gap:15px}
+.card{background:#fff;border:1px solid #d8e4df;border-radius:12px;padding:22px;min-height:148px}
+.card h2{font-size:14px;margin:0 0 15px;font-weight:600;color:#3d5b52}
+.number{font-variant-numeric:tabular-nums;font-size:34px;font-weight:700}
+.sub{font-size:12px;color:#596b64}
+section{margin-top:24px}
+.warning{background:#fff;border-left:4px solid #9f722e;padding:16px 20px;border-radius:5px}
+a{color:#17634f}
+</style>
+</head>
+<body>
+<header><div><strong>JIREH.</strong><span>LOCAL SYNTHETIC DEMO · NOT LIVE</span></div></header>
+<main>
+<div class="intro">
+<div class="eyebrow">Aid director · Read-only saved-record summary</div>
+<h1>Director workload</h1>
+<p><strong>{{ school_name }}</strong> · {{ year_name }}</p>
+<p>All counts below come from the authorized school's disposable test database. Values are not benchmark estimates, customer results, real submissions, real awards, payments, or disbursements.</p>
+</div>
+<div class="grid" aria-label="School-scoped saved case counts">
+<div class="card"><h2>Draft household applications</h2><div class="number">{{ facts.draft_applications }}</div><div class="sub">One case per household and school year</div></div>
+<div class="card"><h2>Distinct draft households</h2><div class="number">{{ facts.draft_households }}</div><div class="sub">Not a count of children</div></div>
+<div class="card"><h2>Selected household-child links</h2><div class="number">{{ facts.selected_household_child_links }}</div><div class="sub">A shared child can have separate household links</div></div>
+<div class="card"><h2>Fictional receipts</h2><div class="number">{{ facts.fictional_receipts }}</div><div class="sub">Real application status remains DRAFT</div></div>
+<div class="card"><h2>Fictional offered-aid records</h2><div class="number">{{ facts.fictional_offers }}</div><div class="sub">Test-only $250 need examples</div></div>
+<div class="card"><h2>Fictional offer face value</h2><div class="number">&#36;{{ fictional_offer_dollars }}</div><div class="sub">Not accepted, payable, or disbursed cash</div></div>
+</div>
+<section class="warning" aria-label="Limitations">
+<strong>Not a live financial-aid report.</strong>
+<p>The school/year and data source are verified from active director grants and saved fictional records. Missing or inconsistent data fails closed. Real application submissions, actual financial awards, family income and documents, payment success, and cash movement are not reported here.</p>
+</section>
+<section><a href="/local-demo/">Return to the fictional family walkthrough</a></section>
+</main>
+</body></html>
