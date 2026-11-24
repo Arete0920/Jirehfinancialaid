@@ -1,7 +1,7 @@
 # Standalone Jireh production readiness — NO-GO
 
 **Status:** NO-GO. **Scope:** `Arete0920/Jirehfinancialaid`, not CROWN.
-**Latest exact-main source verification (2026-11-23 ET):**
+**Historical exact-main source checkpoint (2026-11-23 ET):**
 `12a4503cc1acf295e3ce52147acf54a7b2c12063` — six completed SUCCESS checks:
 Python 3.12 contracts, Django 5.2, disposable PostgreSQL 16 integrity,
 synthetic Chromium E2E, SonarCloud, and repository presentation.
@@ -10,7 +10,7 @@ This exact commit includes the saved fictional receipt/offer readback in
 with the earlier TLS SMTP simulation in merged
 [PR #101](https://github.com/Arete0920/Jirehfinancialaid/pull/101).
 The director dashboard [PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105)
-is unmerged development work; do not credit it to protected main.
+is not part of the pinned historical commit; verify its actual merge and exact-main CI separately. PRs #104, #102 and #100 subsequently merged into main; this older checkpoint must not be reported as their post-merge acceptance.
 **Release status remains NO-GO.**
 Keep `JIREH_OPERATOR_CREDENTIAL_RECOVERY_ENABLED` false,
 the other privileged WebAuthn gates disabled, and customer routes unexposed.
@@ -38,24 +38,19 @@ processing payments, collecting real family data, or initiating real recovery.
   closed runtime. These do not establish schema/migration parity, alert
   delivery or customer routes; test/demo URL routing remains separate.
 - **Browser acceptance (source only):** the protected-main synthetic
-  Chromium [run 45271109852](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45271109852)
-  concluded SUCCESS on this exact source SHA. The browser exercises fictional
+  Chromium [run 45299151221](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45299151221)
+  concluded SUCCESS on the pinned historical source SHA. The browser exercises fictional
   localhost workflows only, including the encrypted sample-PDF path; it is not
   a deployable customer browser, real upload or operational security PASS.
-- **Parallel work (unmerged at this checkpoint):**
+- **Unmerged risk at this checkpoint:**
   [PR #65](https://github.com/Arete0920/Jirehfinancialaid/pull/65)
-  (six-step CROWN-derived officer wizard; two unclassified SonarCloud SCA risk
-  records; branch substantially behind main);
-  [PR #100](https://github.com/Arete0920/Jirehfinancialaid/pull/100)
-  (synthetic prior-year reuse preflight);
-  [PR #102](https://github.com/Arete0920/Jirehfinancialaid/pull/102)
-  (synthetic document nil-UUID fix);
-  [PR #104](https://github.com/Arete0920/Jirehfinancialaid/pull/104)
-  (synthetic selection-after-receipt HTTP 409);
+  (six-step CROWN-derived officer wizard; two unclassified SonarCloud SCA
+  dependency-risk records, independently disposition before merge).
   [PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105)
-  (director school/year database-truth demo, under review).
-  PRs #101 and #103 **are merged**, not pending. Always verify current PR
-  state and exact-head CI before merge; these are historical snapshots.
+  introduces this proposed director dashboard; its own merge must be verified.
+  PRs #100, #101, #102, #103 and #104 are **merged** in later protected-main
+  commits. Never count them as open work or credit their behavior to the earlier
+  source checkpoint above.
 - **Not established:** live hosting, deployed configuration, authenticated
   production APIs, database read isolation, observability, incident response,
   production backups, restore drills, real operator identity verification,
@@ -100,7 +95,7 @@ them when future customers voluntarily submit applications.
 | P1 | Supporting documents | Authenticated, encrypted, fixed fictional PDF create/read/delete; scanner controls and local negative tests | Approved real file ingestion, malware scanning, key operations, retention/deletion and access policies [#44](https://github.com/Arete0920/Jirehfinancialaid/issues/44) |
 | P1 | Need assessment and five aid categories | Fixed fictional scenario calculations with versioned bucket contracts | Approve and validate explainable live methodology; do not treat invented coefficients as eligibility [#46](https://github.com/Arete0920/Jirehfinancialaid/issues/46) |
 | P1 | Aid-officer review and offers | School-scoped draft detail, synthetic $250 offer, readback; PR #65 officer wizard unmerged | Review/decision state, two-person audit where applicable, approval workflow, durable results, case reporting and wizard security [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
-| P1 | Director reporting and actual-data truth | Internal scoped workload counts; dashboard PR #105 is unmerged | Verify browser navigation and per-school DB-backed counts; no fallback sample KPIs, real awards, or disbursement claims |
+| P1 | Director reporting and actual-data truth | Internal scoped workload counts; the PR #105 candidate adds a read-only school-bound dashboard | Verify the PR's merge and exact-main browser navigation, isolation and per-school DB-backed counts; no fallback sample KPIs, real awards, or disbursement claims |
 | P1 | Household identity, invitations, recovery | Internal grants, invitation and email verification, loopback TLS SMTP rehearsal merged in #101 | Operational identity assurance, real mail delivery, MFA/recovery ceremony and helpdesk acceptance [#49](https://github.com/Arete0920/Jirehfinancialaid/issues/49) |
 | P0 | Customer application routing and packaging | Deployed-style Django runtime configuration is fail-closed; production URLConf intentionally includes only `/healthz/` and `/readyz/` | Build/certify secure routes for the actual accepted family/director features; select/approve hosting and target environment |
 | P0 | Security, operations and release certification | Six exact-main source checks pass, including disposable PostgreSQL and Chromium; sanitized request telemetry exists | Validate the 11 **target-environment** D/T/S/M/I/A release acceptance gates below, not merely unit/CI status [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48) |
