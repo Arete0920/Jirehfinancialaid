@@ -149,10 +149,42 @@ def main():
             page.get_by_role("button", name="Verify CSRF protection").click()
             expect(page.locator("#events")).to_contain_text("PASS: Missing CSRF header rejected (403)")
             page.locator("#synthetic-attestation").check()
-            page.get_by_role("button", name="Record fictional receipt").click()
-            expect(page.locator("#synthetic-family-result")).to_contain_text(
-                "Fictional receipt recorded"
+            receipt_button = page.get_by_role("button", name="Record fictional receipt")
+            receipt_status = page.locator("#synthetic-family-result")
+            def phantom_receipt(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=200, content_type="application/json", body=(
+                        '{"application_id":"00000000-0000-4000-8000-000000000001",'
+                        '"receipt_id":"00000000-0000-4000-8000-000000000002",'
+                        '"consent_version":"synthetic-demo-v1","status":"SYNTHETIC_RECEIPT"}'
+                    ))
+                else:
+                    route.continue_()
+            page.route("**/synthetic/receipt/", phantom_receipt)
+            receipt_button.click()
+            expect(receipt_status).to_contain_text("Receipt verification required")
+            expect(receipt_button).to_be_disabled()
+            page.unroute("**/synthetic/receipt/", phantom_receipt)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(receipt_button).to_be_enabled()
+            def ambiguous_receipt(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=503, content_type="application/json",
+                                  body='{"detail":"Unavailable."}')
+                else:
+                    route.continue_()
+            page.route("**/synthetic/receipt/", ambiguous_receipt)
+            receipt_button.click()
+            expect(receipt_status).to_contain_text("Receipt verification required")
+            expect(receipt_button).to_be_disabled()
+            page.unroute("**/synthetic/receipt/", ambiguous_receipt)
+            page.get_by_role("button", name="Refresh household").click()
+            expect(receipt_button).to_be_enabled()
+            receipt_button.click()
+            expect(receipt_status).to_contain_text(
+                "Fictional receipt independently verified"
             )
+            expect(receipt_button).to_be_disabled()
             expect(page.locator('.step[aria-current="step"]')).to_contain_text(
                 "Fictional receipt"
             )
@@ -229,9 +261,43 @@ def main():
             expect(assessment_result).to_be_empty()
             assessment_button.click()
             expect(assessment_result).to_contain_text("Fictional preview total: $159.67")
-            page.get_by_role("button", name="Record fictional $250 need offer").click()
+            offer_button = page.get_by_role("button", name="Record fictional $250 need offer")
+            def phantom_offer(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=200, content_type="application/json", body=(
+                        '{"application_id":"00000000-0000-4000-8000-000000000001",'
+                        '"student_id":"00000000-0000-4000-8000-000000000002",'
+                        '"bucket":"need","amount_cents":25000,"status":"SYNTHETIC_OFFERED"}'
+                    ))
+                else:
+                    route.continue_()
+            page.route("**/synthetic/offers/*/", phantom_offer)
+            offer_button.click()
             expect(page.locator("#case-detail")).to_contain_text(
-                "Fictional $250 need offer recorded"
+                "Offer verification required"
+            )
+            expect(offer_button).to_be_disabled()
+            page.unroute("**/synthetic/offers/*/", phantom_offer)
+            page.get_by_role("button", name="View selected children").click()
+            offer_button = page.get_by_role("button", name="Record fictional $250 need offer")
+            expect(offer_button).to_be_enabled()
+            def ambiguous_offer(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=503, content_type="application/json",
+                                  body='{"detail":"Unavailable."}')
+                else:
+                    route.continue_()
+            page.route("**/synthetic/offers/*/", ambiguous_offer)
+            offer_button.click()
+            expect(page.locator("#case-detail")).to_contain_text("Offer verification required")
+            expect(offer_button).to_be_disabled()
+            page.unroute("**/synthetic/offers/*/", ambiguous_offer)
+            page.get_by_role("button", name="View selected children").click()
+            offer_button = page.get_by_role("button", name="Record fictional $250 need offer")
+            expect(offer_button).to_be_enabled()
+            offer_button.click()
+            expect(page.locator("#case-detail")).to_contain_text(
+                "Fictional $250 need offer independently verified"
             )
             expect(page.locator('.step[aria-current="step"]')).to_contain_text(
                 "Fictional $250 offer"

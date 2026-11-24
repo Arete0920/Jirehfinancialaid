@@ -22,6 +22,7 @@ from .synthetic_submission import (
 )
 from .synthetic_offers import (
     record_synthetic_officer_offer, read_synthetic_family_offers,
+    read_synthetic_director_offer,
 )
 
 
@@ -192,4 +193,32 @@ def read_synthetic_family_offer_list(
             }
             for row in offers
         ],
+    })
+
+
+@never_cache
+@require_GET
+def read_synthetic_staff_offer(
+    request, school_id, academic_year_id, application_id, student_id
+):
+    """GET-only independent saved-offer readback for fictional director demo."""
+    if request.GET:
+        return JsonResponse({"detail": "Query parameters are not accepted."}, status=400)
+    try:
+        row = read_synthetic_director_offer(
+            user=request.user, school_id=school_id,
+            academic_year_id=academic_year_id, application_id=application_id,
+            student_id=student_id,
+        )
+    except (PermissionDenied, Http404) as error:
+        return _denied(error)
+    return JsonResponse({
+        "demo_only": True,
+        "school_id": str(school_id),
+        "academic_year_id": str(academic_year_id),
+        "application_id": row.application_id,
+        "student_id": row.student_id,
+        "bucket": row.bucket,
+        "amount_cents": row.amount_cents,
+        "status": row.status,
     })
