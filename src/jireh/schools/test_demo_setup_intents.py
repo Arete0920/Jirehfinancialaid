@@ -46,6 +46,23 @@ class SetupIntentTests(TestCase):
             username="other-fixture-staff", is_staff=True,
         )
 
+    def test_fixture_authorization_context(self):
+        from django.conf import settings
+        from .demo_platform_operations import _authorized_operator
+        from .demo_setup_intents import _TEST_SETTINGS
+
+        self.assertIn(settings.SETTINGS_MODULE, _TEST_SETTINGS)
+        self.assertIs(settings.JIREH_SYNTHETIC_SETUP_INTENT_ONLY, True)
+        self.assertEqual(settings.ROOT_URLCONF, "jireh.schools.demo_urls")
+        self.assertIs(settings.JIREH_SYNTHETIC_SUBMISSION_ONLY, True)
+        self.assertIsInstance(self.operator, get_user_model())
+        self.assertTrue(self.operator.is_authenticated)
+        self.assertTrue(self.operator.is_active)
+        self.assertTrue(self.operator.is_staff)
+        self.assertFalse(self.operator.is_superuser)
+        self.assertEqual(self.operator.username, DEMO_OPERATOR)
+        self.assertTrue(_authorized_operator(self.operator))
+
     def test_exact_replay_returns_original_immutable_receipt(self):
         key = uuid4()
         first = record(self.operator, key)
