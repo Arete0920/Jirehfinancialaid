@@ -1,6 +1,7 @@
 """Regression evidence for disposable, non-provisioning school setup receipts."""
 
 import hashlib
+import os
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
 from unittest.mock import patch
@@ -51,7 +52,9 @@ class SetupIntentTests(TestCase):
         from .demo_platform_operations import _authorized_operator
         from .demo_setup_intents import _TEST_SETTINGS
 
-        self.assertIn(settings.SETTINGS_MODULE, _TEST_SETTINGS)
+        startup_module = os.environ.get("DJANGO_SETTINGS_MODULE")
+        self.assertIn(startup_module, _TEST_SETTINGS)
+        self.assertIn(settings.SETTINGS_MODULE, (None, startup_module))
         self.assertIs(settings.JIREH_SYNTHETIC_SETUP_INTENT_ONLY, True)
         self.assertEqual(settings.ROOT_URLCONF, "jireh.schools.demo_urls")
         self.assertIs(settings.JIREH_SYNTHETIC_SUBMISSION_ONLY, True)
@@ -114,6 +117,9 @@ class SetupIntentTests(TestCase):
             with self.assertRaises(PermissionDenied):
                 record(self.operator, uuid4())
         with override_settings(SETTINGS_MODULE="jireh.runtime.settings"):
+            with self.assertRaises(PermissionDenied):
+                record(self.operator, uuid4())
+        with patch.dict(os.environ, {"DJANGO_SETTINGS_MODULE": "jireh.runtime.settings"}):
             with self.assertRaises(PermissionDenied):
                 record(self.operator, uuid4())
         self.assertFalse(SchoolSetupIntent.objects.exists())
