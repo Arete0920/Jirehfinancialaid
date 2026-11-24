@@ -30,8 +30,8 @@ protected `main`, current GitHub [issues](https://github.com/Arete0920/Jirehfina
 [PRs](https://github.com/Arete0920/Jirehfinancialaid/pulls), and exact-SHA
 [CI](https://github.com/Arete0920/Jirehfinancialaid/actions) provide the underlying
 engineering evidence, issue ownership, and approved decisions. This is **one
-GitHub system**, not parallel ChatGPT/Work/Codex status plans.
-The Jireh ChatGPT Space is a navigation/archive aid only.
+GitHub system**, not competing status plans maintained in separate sessions.
+Other coordination spaces are navigation/archive aids only.
 
 **Before any change:** refetch protected `main`, open issues/PRs, current head SHAs,
 changed-file overlap, branch protections, and all required check conclusions.
