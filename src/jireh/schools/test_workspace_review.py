@@ -3,10 +3,12 @@ import json
 import secrets
 from pathlib import Path
 from unittest import skipUnless
+from urllib.parse import urlencode
 from uuid import uuid4
 
 from django.db import IntegrityError, connection, transaction
 from django.test import Client, TestCase, override_settings
+from django.test.client import MULTIPART_CONTENT
 from django.urls import reverse
 
 from jireh.financial_aid.document_lifecycle import create_synthetic_document, delete_synthetic_document
@@ -103,9 +105,21 @@ class WorkspaceReviewTests(TestCase):
         if csrf:
             headers["HTTP_X_CSRFTOKEN"] = self.client.cookies["csrftoken"].value
         return self.client.post(
-            self.url, {"state_digest": digest, "reviewed": reviewed},
+            self.url, urlencode({"state_digest": digest, "reviewed": reviewed}),
+            content_type="application/x-www-form-urlencoded",
             secure=True, **headers,
         )
+
+    def test_confirmation_rejects_multipart(self):
+        self.prepare()
+        response = self.client.post(
+            self.url, {"state_digest": self.state()["digest"], "reviewed": "yes"},
+            content_type=MULTIPART_CONTENT, secure=True,
+            HTTP_ORIGIN="https://testserver",
+            HTTP_X_CSRFTOKEN=self.client.cookies["csrftoken"].value,
+        )
+        self.assertContains(response, "Explicit fictional review required.", status_code=400)
+        self.assertFalse(SyntheticApplicationReview.objects.exists())
 
     def test_incomplete_explicit_confirmation_and_stale_digest(self):
         self.assertContains(self.client.get(self.url, secure=True), "Incomplete rehearsal")
@@ -115,6 +129,7 @@ class WorkspaceReviewTests(TestCase):
         self.assertContains(self.client.get(self.url, secure=True), "$55.00")
         self.assertEqual(self.confirm(digest, reviewed="no").status_code, 400)
         self.assertEqual(self.confirm(digest, csrf=False).status_code, 403)
+        self.assertEqual(self.confirm("invalid").status_code, 409)
         self.assertEqual(self.confirm("é" * 64).status_code, 409)
         self.assertEqual(self.confirm(digest).status_code, 302)
         self.assertEqual(self.confirm(digest).status_code, 302)
