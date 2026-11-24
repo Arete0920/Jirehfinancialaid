@@ -219,8 +219,13 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   const primary = () => state.config.school_a;
   const secondary = () => state.config.school_b;
   async function logout(){
-    if(!state.role)return;
-    await api("/test-auth/logout/","POST");
+    // Navigation resets JavaScript state but not the server session. Always
+    // obtain CSRF and invalidate the session before selecting a new persona.
+    const ready=await api("/test-auth/login/");
+    if(!ready.ok)throw new Error("Session preparation failed: "+ready.status);
+    const result=await api("/test-auth/logout/","POST");
+    if(!result.ok||result.data?.authenticated!==false)
+      throw new Error("Session logout not verified: "+result.status);
     state.role=null;state.config=null;state.students=[];state.draft=null;state.needsReconciliation=false;state.documentId=null;state.selectedCount=0;state.receiptVerified=false;state.receiptUncertain=false;
     setFictionalDocumentState(null);
     $("synthetic-attestation").checked=false;
@@ -238,12 +243,14 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("operator").classList.add("hidden");
       $("case-detail").replaceChildren();
       await logout();
-      await api("/test-auth/login/");
+      const ready=await api("/test-auth/login/");
+      if(!ready.ok)throw new Error("Sign-in preparation failed: "+ready.status);
       const r=await fetch("/test-auth/login/",{method:"POST",credentials:"same-origin",headers:{"Content-Type":"application/json","X-CSRFToken":decodeURIComponent(cookie("csrftoken"))},body:JSON.stringify({username:role,password:PASSWORD})});
       const data=await r.json();
       if(!r.ok)throw new Error("Sign-in failed: "+r.status+" "+(data.detail||""));
       const conf=await api("/local-demo/config/");
-      if(!conf.ok)throw new Error("Demo configuration denied: "+conf.status);
+      if(!conf.ok||conf.data?.persona!==role)
+        throw new Error("Demo persona not verified: "+conf.status);
       state.role=role;state.config=conf.data;
       document.querySelectorAll("[data-role]").forEach(b=>b.classList.toggle("selected",b.dataset.role===role));
       const family=role==="local-demo-family",operator=role==="local-demo-platform-operator";
@@ -255,7 +262,17 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       log("Authenticated "+$("identity").textContent);
       if(family){$("school-name").textContent=primary().name;$("draft-status").textContent="Not loaded";await loadHousehold();}
       else if(!operator){$("director-school").textContent=(role==="local-demo-director-a"?primary():secondary()).name;$("application-count").textContent="—";$("inventory").textContent="";await loadInventory();}
-    }catch(e){log(e.message,false);}
+    }catch(e){
+      state.role=null;state.config=null;
+      $("family").classList.add("hidden");
+      $("director").classList.add("hidden");
+      $("operator").classList.add("hidden");
+      $("identity").textContent="No session selected";
+      $("authstatus").textContent="Session not verified";
+      document.querySelectorAll("[data-role]").forEach(b=>b.classList.remove("selected"));
+      setActiveStep(1);
+      log(e.message,false);
+    }
   }
   async function loadHousehold(){
     if(!state.config || state.role!=="local-demo-family")return;
