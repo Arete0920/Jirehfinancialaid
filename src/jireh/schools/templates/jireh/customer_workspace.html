@@ -95,6 +95,23 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <section class="panel"><h2>Supporting documents</h2><p>Practice with the two generated fictional PDFs. No real document uploads are accepted.</p>
 <a class="button" href="{% url 'jireh_workspace_documents' household.school_id household.pk year.pk %}">Manage supporting documents</a></section>
 {% endif %}
+{% if draft and review_enabled %}
+<section class="panel"><h2>Application review</h2><a href="{% url 'jireh_workspace_review' household.school_id household.pk year.pk %}">Review fictional application</a></section>
+{% endif %}
+{% elif mode == "review" %}
+<p><a href="{% url 'jireh_workspace_family' household.school_id household.pk year.pk %}">Return to annual application</a></p>
+<h1>Review fictional application</h1><p>{{ household.school.name }} · {{ household.name }} · {{ year.name }}</p>
+<section class="panel"><h2>Saved information</h2><p>Financial revision: {{ review.revision }}</p>
+<h3>Children included</h3>{% for child in review.children %}<p>{{ child.first_name }} {{ child.last_name }}</p>{% empty %}<p>None selected.</p>{% endfor %}
+{% for section in review.sections %}<h3>{{ section.name }}</h3>{% for row in section.rows %}<p>{{ row.category }} · ${{ row.amount }} · {{ row.period }}</p>{% empty %}<p>No saved rows.</p>{% endfor %}{% endfor %}
+<h3>Supporting documents</h3>{% for document in review.documents %}<p>Verified fictional PDF version {{ document.version }}</p>{% empty %}<p>None saved.</p>{% endfor %}
+</section>
+<section class="panel"><h2>Review confirmation</h2><p>Annual household application fee at final submission: ${{ review.fee }}. No charge or final submission is available here.</p>
+<p>Rehearsal disclosure: {{ review.version }}. This is not legal consent, verification of actual finances, or approval of aid.</p>
+{% if review.reasons %}<p id="review-status">Incomplete rehearsal</p>{% for reason in review.reasons %}<p>{{ reason }}</p>{% endfor %}
+{% elif review.confirmation %}<p id="review-status">Current fictional review confirmed</p>
+{% else %}<p id="review-status">Review required</p><form method="post">{% csrf_token %}<input type="hidden" name="state_digest" value="{{ review.digest }}"><label><input type="checkbox" name="reviewed" value="yes" required> I reviewed this saved fictional application.</label><button type="submit">Confirm fictional review</button></form>{% endif %}
+<p>Corrections require fresh confirmation. The application remains DRAFT.</p></section>
 {% elif mode == "documents" %}
 <p><a href="{% url 'jireh_workspace_family' household.school_id household.pk year.pk %}">Return to annual application</a></p>
 <h1>Supporting documents</h1><p>{{ household.school.name }} · {{ household.name }} · {{ year.name }}</p>
