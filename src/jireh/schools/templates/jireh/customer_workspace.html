@@ -1,0 +1,159 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Jireh | Financial aid workspace</title>
+<style nonce="{{ csp_nonce }}">
+:root{font-family:system-ui,-apple-system,"Segoe UI",sans-serif;background:#f4f7f4;color:#17382e;line-height:1.55}
+*{box-sizing:border-box}body{margin:0}header{background:#103b31;color:white;padding:16px max(20px,calc((100% - 1000px)/2));display:flex;align-items:center;justify-content:space-between;gap:16px}
+header a{color:white;font-weight:750;letter-spacing:.07em;text-decoration:none;font-size:23px}header a span{color:#e9c17a}
+main{max-width:1000px;margin:auto;padding:24px 20px 48px}h1,h2,h3{line-height:1.2;margin:0 0 12px}h1{font-size:clamp(25px,4vw,36px)}h2{font-size:21px}h3{font-size:16px}
+p{margin:0 0 14px}a{color:#145d43}a:focus-visible,button:focus-visible,input:focus-visible{outline:3px solid #a87c26;outline-offset:3px}
+.panel{background:white;border:1px solid #dce7df;border-radius:12px;padding:22px;margin:16px 0}.notice{background:#fff8e9;color:#624c27;border:1px solid #e8d9b4;padding:13px 16px;border-radius:10px;margin-bottom:24px}
+button,.button{background:#176747;color:white;border:0;border-radius:7px;padding:10px 16px;font:inherit;font-weight:650;cursor:pointer;text-decoration:none;display:inline-block}
+button.secondary{background:#edf3ee;color:#225540}button:disabled{opacity:.6;cursor:not-allowed}header button{background:transparent;color:white;border:1px solid #90b9a7}
+label{display:block;font-weight:650;margin-top:12px}input{font:inherit;border:1px solid #a6b9ad;border-radius:6px;padding:10px;width:100%;margin:5px 0 14px}
+.login{max-width:440px;margin:24px auto}.grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+.metric{background:#edf4ef;padding:15px;border-radius:8px}.metric strong{display:block;font-size:28px}.muted{color:#52665d;font-size:14px}.tag{display:inline-block;border-radius:6px;background:#e9f1e9;padding:4px 8px;font-size:13px;font-weight:650}
+.scope{display:block;padding:12px;border-bottom:1px solid #e1e8e2;text-decoration:none}.scope:hover{background:#f1f7f2}
+.row{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:12px 0;border-bottom:1px solid #e1e8e2}.row:last-child{border-bottom:0}
+.row form{margin:0}#message:empty{display:none}#message{border:1px solid #d9b56d;color:#6d461b;background:#fff8e9;padding:12px;border-radius:8px}
+table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:left;padding:10px;border-bottom:1px solid #dce7df;overflow-wrap:anywhere}th{font-size:14px}td{font-size:14px}.table-wrap{overflow:auto}
+@media(max-width:600px){main{padding:18px 12px}.panel{padding:16px}.row{align-items:flex-start;flex-wrap:wrap}header{padding:14px 16px}}
+</style>
+</head>
+<body>
+<header>
+<a href="{% url 'jireh_workspace' %}">JIREH<span>.</span></a>
+{% if authenticated %}
+<form data-command="logout" method="post" action="{% url 'jireh_workspace_logout' %}">{% csrf_token %}<button type="submit">Sign out</button></form>
+{% endif %}
+</header>
+<main>
+<div class="notice"><strong>Acceptance workspace — fictional records only.</strong> This is not a live customer service. No financial answers, documents, final submission, binding awards or payments are accepted here.</div>
+<div id="message" role="alert" aria-live="polite"></div>
+{% if mode == "login" %}
+<section class="panel login">
+<h1>Sign in</h1><p>Use your assigned account to access your household or school.</p>
+<form data-command="login" action="{% url 'jireh_workspace_login' %}" method="post">
+{% csrf_token %}
+<label for="username">Username</label><input id="username" name="username" type="text" autocomplete="username" maxlength="150" required>
+<label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" maxlength="1024" required>
+<button type="submit">Sign in</button>
+</form>
+</section>
+{% elif mode == "home" %}
+<h1>Your workspace</h1><p>Choose an assigned household or school and academic year.</p>
+{% if not families and not directors %}<section class="panel"><p>No active household or director assignments.</p></section>{% endif %}
+{% if families %}
+<section class="panel"><h2>Family applications</h2>
+{% for scope in families %}
+<a class="scope" href="{% url 'jireh_workspace_family' scope.household__school_id scope.household_id scope.household__school__academic_years__pk %}"><strong>{{ scope.household__name }}</strong> — {{ scope.household__school__name }} · {{ scope.household__school__academic_years__name }}</a>
+{% endfor %}
+</section>
+{% endif %}
+{% if directors %}
+<section class="panel"><h2>School director</h2>
+{% for scope in directors %}
+<a class="scope" href="{% url 'jireh_workspace_director' scope.school_id scope.school__academic_years__pk %}"><strong>{{ scope.school__name }}</strong> · {{ scope.school__academic_years__name }}</a>
+{% endfor %}
+</section>
+{% endif %}
+{% if scopes_truncated %}<p class="muted">Showing up to 100 assigned scopes per role. Contact support for additional assignments.</p>{% endif %}
+{% elif mode == "family" %}
+<p><a href="{% url 'jireh_workspace' %}">Your workspace</a></p>
+<h1>Annual financial aid application</h1><p>{{ household.school.name }} · {{ year.name }} · {{ household.name }}</p>
+<section class="panel"><h2>Application status</h2>
+{% if draft %}
+<p class="tag" id="draft-state">DRAFT — saved</p><p class="muted">Reference: {{ draft.id }}</p>
+<p>This is a saved household draft, not a submitted application.</p>
+{% else %}
+<p id="draft-state">No draft exists for this year.</p>
+<form data-command="mutation" method="post" action="{% url 'jireh_workspace_draft' household.school_id household.pk year.pk %}">{% csrf_token %}<button type="submit">Create annual draft</button></form>
+{% endif %}
+</section>
+<section class="panel"><h2>Children included</h2>
+<p id="selected-count">{{ selected_count }} selected</p>
+{% for child in children %}
+<div class="row"><div><strong>{{ child.first_name }} {{ child.last_name }}</strong></div>
+{% if child.selected %}<span class="tag">Included</span>
+{% elif draft %}
+<form data-command="mutation" method="post" action="{% url 'jireh_workspace_select' household.school_id household.pk year.pk child.id %}">{% csrf_token %}<button type="submit">Include {{ child.first_name }}</button></form>
+{% else %}<span class="muted">Create a draft first</span>{% endif %}
+</div>
+{% empty %}<p>No children are linked to this household.</p>{% endfor %}
+</section>
+<section class="panel"><h2>Financial information and submission</h2><p>Not available in this acceptance workspace. No financial information is requested, and no application can be submitted or charged.</p></section>
+{% elif mode == "director" %}
+<p><a href="{% url 'jireh_workspace' %}">Your workspace</a></p>
+<h1>Director workload</h1><p>{{ school.name }} · {{ year.name }}</p>
+<section class="panel"><h2>Saved draft activity</h2>
+<div class="grid">
+<div class="metric"><strong id="draft-total">{{ workload.draft_application_records }}</strong>Draft applications</div>
+<div class="metric"><strong id="household-total">{{ workload.distinct_draft_households }}</strong>Distinct draft households</div>
+<div class="metric"><strong id="child-total">{{ workload.selected_household_student_links }}</strong>Selected household-child links</div>
+</div><p class="muted">Draft counts only. No submitted applications, payable awards or disbursements are included.</p></section>
+<section class="panel"><h2>Application records</h2>
+{% if inventory.applications %}
+<div class="table-wrap"><table aria-label="Saved application records"><thead><tr><th>Application reference</th><th>Status</th><th>Review</th></tr></thead><tbody>
+{% for case in inventory.applications %}
+<tr><td>{{ case.id }}</td><td>{{ case.status }}</td><td><a href="{% url 'jireh_workspace_case' school.pk year.pk case.id %}">Open case</a></td></tr>
+{% endfor %}
+</tbody></table></div>
+{% if inventory.has_more %}<p class="muted">First 100 records shown. Full pagination is not yet available.</p>{% endif %}
+{% else %}<p>No application records.</p>{% endif %}
+</section>
+{% elif mode == "case" %}
+<p><a href="{% url 'jireh_workspace_director' school.pk year.pk %}">Back to director workload</a></p>
+<h1>Application review</h1><p>{{ school.name }} · {{ year.name }}</p>
+<section class="panel"><h2>Saved case</h2><p class="tag">{{ case.status }}</p><p class="muted">Reference: {{ case.application_id }}</p>
+<div class="metric"><strong id="case-child-count">{{ case.selected_student_count }}</strong>Selected children</div>
+<p>No financial answers or award decision are available in this draft-only workspace.</p></section>
+{% endif %}
+</main>
+<script nonce="{{ csp_nonce }}">
+"use strict";
+const message = document.getElementById("message");
+for (const form of document.querySelectorAll("form[data-command]")) {
+  form.addEventListener("submit", async event => {
+    event.preventDefault();
+    if (document.body.dataset.pending === "yes") return;
+    document.body.dataset.pending = "yes";
+    const buttons = Array.from(document.querySelectorAll("button"));
+    for (const button of buttons) button.disabled = true;
+    message.textContent = "";
+    const command = form.dataset.command;
+    const fields = new FormData(form);
+    const headers = {"X-CSRFToken": fields.get("csrfmiddlewaretoken")};
+    const options = {method:"POST", credentials:"same-origin", cache:"no-store", headers, redirect:"error"};
+    if (command === "login") {
+      headers["Content-Type"] = "application/json";
+      options.body = JSON.stringify({username:fields.get("username"), password:fields.get("password")});
+    }
+    try {
+      const response = await fetch(form.action, options);
+      if (!response.ok) {
+        if (response.status === 401) message.textContent = "Invalid credentials.";
+        else if (response.status === 429) message.textContent = "Too many sign-in attempts. Try again later.";
+        else message.textContent = "Request was not accepted. Reload to verify saved state before trying again.";
+        if (command === "login" && [400,401,429].includes(response.status)) {
+          document.body.dataset.pending = "no";
+          for (const button of buttons) button.disabled = false;
+        }
+        return;
+      }
+      // Never use POST response data as saved state. The next GET renders
+      // authoritative database records, or the actual authenticated session.
+      if (command === "logout" || command === "login") window.location.assign("{% url 'jireh_workspace' %}");
+      else window.location.reload();
+    } catch {
+      message.textContent = "Request outcome could not be verified. Reload before taking further action.";
+    } finally {
+      if (command === "login") form.elements.password.value = "";
+    }
+  });
+}
+</script>
+</body>
+</html>

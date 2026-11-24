@@ -15,6 +15,7 @@ if not _db or not Path(_db).is_absolute():
 from .test_settings import *  # noqa: F403,F401 (test-only baseline)
 
 ROOT_URLCONF = "jireh.schools.demo_urls"
+JIREH_CUSTOMER_WORKSPACE_ACCEPTANCE = True
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 DATABASES = {
     "default": {"ENGINE": "django.db.backends.sqlite3", "NAME": _db},
