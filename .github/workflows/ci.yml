@@ -319,6 +319,50 @@ jobs:
           print("Mailbox guard reapply: PASS")
           PY
 
+      - name: Verify setup receipt and preparation evidence migration replay
+        run: |
+          set -euo pipefail
+          # Disposable CI database only. Restore the full current schema
+          # after the preceding historical migration replay exercises.
+          python -m django migrate --noinput
+          python -m django migrate schools 0022 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              for table in ('schools_schoolsetupintent', 'schools_schoolpreparationevent'):
+                  cursor.execute("SELECT to_regclass(%s)", [table])
+                  assert cursor.fetchone()[0] is None, "Preparation table rollback incomplete"
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger WHERE tgname IN (%s, %s)",
+                  ['jireh_setup_intent_protect_trigger', 'jireh_school_preparation_protect'],
+              )
+              assert cursor.fetchone()[0] == 0, "Preparation trigger rollback incomplete"
+              for name in ('jireh_setup_intent_immutable()', 'jireh_school_preparation_immutable()'):
+                  cursor.execute("SELECT to_regprocedure(%s)", [name])
+                  assert cursor.fetchone()[0] is None, "Preparation function rollback incomplete"
+          print("Setup receipt/preparation rollback: PASS")
+          PY
+          python -m django migrate --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              for table, trigger in (
+                  ('schools_schoolsetupintent', 'jireh_setup_intent_protect_trigger'),
+                  ('schools_schoolpreparationevent', 'jireh_school_preparation_protect'),
+              ):
+                  cursor.execute(
+                      "SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = to_regclass(%s) "
+                      "AND tgname = %s AND NOT tgisinternal AND tgenabled = 'O'",
+                      [table, trigger],
+                  )
+                  assert cursor.fetchone()[0] == 1, "Preparation evidence guard not restored"
+          print("Setup receipt/preparation reapply: PASS")
+          PY
+
       - name: Check standalone runtime and closed routes (no deployment)
         env:
           JIREH_ENABLE_RUNTIME: '1'

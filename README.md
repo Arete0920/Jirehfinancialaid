@@ -2,7 +2,7 @@
 
 Jireh is being developed as an independent financial-aid product for **Christian and Catholic schools**.
 
-**Engineering status (historical exact-main checkpoint, November 23, 2026 ET):** Protected `main@12a4503cc1acf295e3ce52147acf54a7b2c12063` passed six exact-commit source checks: Python, Django, disposable PostgreSQL 16, synthetic Chromium, SonarCloud, and repository presentation. PRs #104, #102 and #100 subsequently merged; their post-merge CI must be verified against each newer main SHA rather than attributed to this older checkpoint. The independent school/household/family/officer workflows include synthetic draft, multi-child selection, fictional financial scenario validation, encrypted fictional-document lifecycle, saved fictional receipt/offer readback, and browser acceptance. The actual standalone runtime still exposes only `GET/HEAD /healthz/` and `/readyz/`: **the synthetic experience is not an approved customer application**. All eleven target-environment acceptance gates still lack environment-specific PASS evidence. The existing [production readiness matrix](docs/PRODUCTION_READINESS.md) separates **completed development**, **deployable synthetic acceptance**, and **paid commercial GO**. No production deployment or real-family processing is authorized.
+**Engineering status:** The [production readiness ledger](docs/PRODUCTION_READINESS.md) is the authoritative dated source/CI and release acceptance record. Standalone school, household, family and director workflows include synthetic draft, multi-child selection, fictional financial validation, encrypted sample-document lifecycle, fictional receipt/offer readback, director workload and operations previews. The actual runtime exposes only `GET/HEAD /healthz/` and `/readyz/`; the synthetic experience is not an approved customer application. The eleven target-environment gates require environment-specific evidence. No production deployment or real-family processing is authorized. Verify current main and exact-commit checks rather than treating an older green run as current evidence.
 
 ## Approved product boundaries
 
@@ -71,13 +71,13 @@ Two **read-only** GET routes, configured in the disposable
 - `/api/v1/schools/<school UUID>/households/<household UUID>/`
 - `/api/v1/schools/<school UUID>/households/<household UUID>/students/`
 
-These endpoints cannot grant access or change records. They have no public
-registration or login endpoint and **are not deployed**. No production
-settings, host authorization, HTTPS, public login, audited grant provisioning,
-or secure financial records are available yet. Never deploy
+These endpoints cannot grant access or change records and **are not deployed**.
+Disposable session authentication and explicit household/director grant checks
+exist in the test URL configuration. The separate closed runtime has secure
+configuration controls but no public login or customer routes. Never deploy
 `test_settings` or interpret passing SQLite tests as PostgreSQL-enforced
-tenant isolation. Authenticated staff access and authorized grant provisioning
-must be implemented and verified separately before commercial use.
+tenant isolation. Hosted authentication, grant provisioning and financial-data
+protection require separate operational acceptance.
 
 
 ## Annual household application draft (internal service only)
@@ -391,7 +391,7 @@ public API exposure, or operational recovery. The proof-preparation service
 returns a short-lived token to an internal trusted caller; only a separately
 certified sender can deliver it to its bound address. Until such delivery
 is certified, no real family should be invited or onboarded. Neither raw
-secret is persisted. Runtime URL routing remains liveness-only.
+secret is persisted. Runtime routing remains limited to liveness and database readiness.
 
 
 ## Optional authenticated SMTP delivery adapter (not activated)
@@ -524,7 +524,7 @@ verified delivery certification, MFA, identity-support procedure, or
 customer activation. Existing enrollment is deliberately immutable;
 contact rotation requires a separately designed and verified workflow.
 It must not be used for real user onboarding until these controls are
-independently accepted. The standalone runtime remains liveness-only.
+independently accepted. The standalone runtime remains limited to liveness and database readiness.
 
 
 ## Audited recovery-contact rotation (internal service; not deployed)

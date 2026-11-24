@@ -1,20 +1,24 @@
 # Standalone Jireh production readiness — NO-GO
 
 **Status:** NO-GO. **Scope:** `Arete0920/Jirehfinancialaid`, not CROWN.
-**Current verified protected-main source checkpoint (2026-11-23 Eastern / 2026-11-24 UTC):**
-[`01dd98e41fce16075f4d4ae74425b64689f3cc75`](https://github.com/Arete0920/Jirehfinancialaid/commit/01dd98e41fce16075f4d4ae74425b64689f3cc75), merged
-[PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105) — **six completed SUCCESS checks**:
-Python 3.12 contracts, Django 5.2, disposable PostgreSQL 16 integrity,
-synthetic localhost Chromium E2E, SonarCloud, and repository presentation.
-Exact-commit runs: [foundation 45313276198](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45313276198),
-[browser 45313276177](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45313276177),
-[presentation 45313276210](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45313276210).
-[PRs #100](https://github.com/Arete0920/Jirehfinancialaid/pull/100),
-[#102](https://github.com/Arete0920/Jirehfinancialaid/pull/102),
-[#103](https://github.com/Arete0920/Jirehfinancialaid/pull/103),
-[#104](https://github.com/Arete0920/Jirehfinancialaid/pull/104), and
-[#105](https://github.com/Arete0920/Jirehfinancialaid/pull/105) are **merged**;
-do not reassign or rebuild their completed source changes.
+**Verified protected-main source checkpoint (2026-11-24 Eastern):**
+[`30d859dd2522e85cc993609a336696e8148cf074`](https://github.com/Arete0920/Jirehfinancialaid/commit/30d859dd2522e85cc993609a336696e8148cf074), merged
+[PR #114](https://github.com/Arete0920/Jirehfinancialaid/pull/114) — **six completed SUCCESS checks**:
+Python 3.12 contracts (185/185), Django 5.2, disposable PostgreSQL 16.16
+(539/539, no skips), synthetic localhost Chromium E2E, SonarCloud, and
+repository presentation. Exact-commit runs:
+[foundation 45400995420](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45400995420),
+[browser 45400995658](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45400995658),
+[presentation 45400995727](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45400995727).
+[PR #106](https://github.com/Arete0920/Jirehfinancialaid/pull/106) (questionnaire governance),
+[#108](https://github.com/Arete0920/Jirehfinancialaid/pull/108) (operations overview),
+[#110](https://github.com/Arete0920/Jirehfinancialaid/pull/110) (proposal validation),
+[#111](https://github.com/Arete0920/Jirehfinancialaid/pull/111) (guided demo),
+[#112](https://github.com/Arete0920/Jirehfinancialaid/pull/112) (immutable receipts),
+[#113](https://github.com/Arete0920/Jirehfinancialaid/pull/113) (validated receipt binding), and
+[#114](https://github.com/Arete0920/Jirehfinancialaid/pull/114) (preparation lifecycle) are merged.
+This is an immutable evidence checkpoint; refetch current main and its checks
+before implementation.
 **Delivery decision:** the December 1 first-client target is **NO-GO for live paid use** at this checkpoint;
 a synthetic prepayment release candidate requires separate acceptance.
 **Release status remains NO-GO.**
@@ -31,7 +35,9 @@ protected `main`, current GitHub [issues](https://github.com/Arete0920/Jirehfina
 [CI](https://github.com/Arete0920/Jirehfinancialaid/actions) provide the underlying
 engineering evidence, issue ownership, and approved decisions. This is **one
 GitHub system**, not competing status plans maintained in separate sessions.
-Other coordination spaces are navigation/archive aids only.
+The owner has consolidated implementation into a single execution conversation.
+Other coordination spaces are navigation/archive aids only; do not initiate
+parallel changes or duplicate earlier implementation.
 
 **Before any change:** refetch protected `main`, open issues/PRs, current head SHAs,
 changed-file overlap, branch protections, and all required check conclusions.
@@ -63,23 +69,34 @@ stop duplicate writes through explicit coordination and current GitHub checks.
   closed runtime. These do not establish schema/migration parity, alert
   delivery or customer routes; test/demo URL routing remains separate.
 - **Browser acceptance (source only):** the protected-main synthetic
-  Chromium [run 45313276177](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45313276177)
+  Chromium [run 45400995658](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45400995658)
   concluded SUCCESS on the current verified protected-main SHA. The browser
   exercises fictional localhost workflows only, including the encrypted
   sample-PDF path and readback; it is not a deployable customer browser,
   real upload or operational security PASS.
-- **Open PR inventory at this checkpoint (verify live before any writes):**
-  [PR #106](https://github.com/Arete0920/Jirehfinancialaid/pull/106)
-  is **OPEN DRAFT** for questionnaire privacy/requiredness metadata and
-  Q01–Q10 governance safeguards; its exact head
-  `192846c05d64bf2c29ad270a1ad6d21f7275ebe8` had six successful
-  CI contexts, but green checks do not make an unmerged draft accepted policy.
-  [PR #65](https://github.com/Arete0920/Jirehfinancialaid/pull/65)
-  is **OPEN** for the CROWN-derived officer wizard. Its latest head had
-  successful CI, but two SonarCloud SCA dependency-risk records remain
-  unclassified; obtain their authoritative disposition before merge.
-  PRs #100, #101, #102, #103, #104 and #105 are **MERGED** and not
-  duplicate workstreams.
+- **PR inventory at this checkpoint (verify live before writes):** zero open PRs.
+  [PR #106](https://github.com/Arete0920/Jirehfinancialaid/pull/106) is merged; metadata guards
+  protect the development field catalog but do not approve Q01–Q10 or
+  authorize collecting real financial answers.
+  [PR #65](https://github.com/Arete0920/Jirehfinancialaid/pull/65) is closed without merging.
+  Preserved head `dc84e3009be9673ceb1b50d0a1e0739fa7b2152d` still has two
+  unresolved SonarCloud dependency-risk records; do not reopen, import its
+  dependency graph or treat its green build as a risk disposition.
+  Reuse the existing Django browser/service implementation for the integrated
+  workspace. Historical branches are references, not required to track main.
+- **Operations preparation (source/CI only):** #108, #110 and #112–#114
+  provide a read-only fictional registry, strict proposal validation, immutable
+  owner-bound receipts and a durable, audited, bounded-retry preparation
+  preflight. PREPARED is code availability at check time, not a reservation,
+  actual school creation or activation. Outstanding provisioning authority
+  and onboarding remain tracked in #109 and #49.
+- **Dependency/security scope:** the active ruleset requires strict current-head
+  Python/Django/PostgreSQL/SonarCloud checks with no bypass actors. Browser and
+  presentation also passed at this checkpoint. The historical PR #65 public OSV
+  scan is not a current-main audit. Separate security-alert inventories were
+  not accessible through the repository connection; do not infer zero alerts
+  from a passing quality gate. Public advisory and package-version evidence
+  cannot replace a comprehensive security or license review.
 - **Not established:** live hosting, deployed configuration, authenticated
   production APIs, database read isolation, observability, incident response,
   production backups, restore drills, real operator identity verification,
@@ -123,9 +140,10 @@ them when future customers voluntarily submit applications.
 | P0 | Family consent and final application lifecycle | Synthetic disclosure receipt and offline payment/submission contracts; real `AidApplication` still `DRAFT` | Approved consent version, actor, audit, transactional submission state; preserve mandatory payment reconciliation gate [#45](https://github.com/Arete0920/Jirehfinancialaid/issues/45) |
 | P1 | Supporting documents | Authenticated, encrypted, fixed fictional PDF create/read/delete; scanner controls and local negative tests | Approved real file ingestion, malware scanning, key operations, retention/deletion and access policies [#44](https://github.com/Arete0920/Jirehfinancialaid/issues/44) |
 | P1 | Need assessment and five aid categories | Fixed fictional scenario calculations with versioned bucket contracts | Approve and validate explainable live methodology; do not treat invented coefficients as eligibility [#46](https://github.com/Arete0920/Jirehfinancialaid/issues/46) |
-| P1 | Aid-officer review and offers | School-scoped draft detail, synthetic $250 offer, readback; PR #65 officer wizard unmerged | Review/decision state, two-person audit where applicable, approval workflow, durable results, case reporting and wizard security [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
+| P1 | Aid-officer review and offers | School-scoped draft detail, synthetic $250 offer, readback; canceled PR #65 retained as reference only | Review/decision state, two-person audit where applicable, approval workflow, durable results, case reporting and wizard security [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
 | P1 | Director reporting and actual-data truth | PR #105 **merged**: source-backed, director-only school/year workload dashboard with synthetic browser acceptance and no invented fallback metrics | Customer-facing route/identity approval and deployment acceptance still outstanding; do not present synthetic workload as actual submitted aid, awards or disbursements |
 | P1 | Household identity, invitations, recovery | Internal grants, invitation and email verification, loopback TLS SMTP rehearsal merged in #101 | Operational identity assurance, real mail delivery, MFA/recovery ceremony and helpdesk acceptance [#49](https://github.com/Arete0920/Jirehfinancialaid/issues/49) |
+| P1 | Independent school operations | Read-only registry, validated immutable setup receipts and audited preparation/retry lifecycle (#108, #110, #112–#114 merged) | Provisioning-specific authority, inactive school creation, separately authorized activation, director onboarding and integration controls [#109](https://github.com/Arete0920/Jirehfinancialaid/issues/109) |
 | P0 | Customer application routing and packaging | Deployed-style Django runtime configuration is fail-closed; production URLConf intentionally includes only `/healthz/` and `/readyz/` | Build/certify secure routes for the actual accepted family/director features; select/approve hosting and target environment |
 | P0 | Security, operations and release certification | Six exact-main source checks pass, including disposable PostgreSQL and Chromium; sanitized request telemetry exists | Validate the 11 **target-environment** D/T/S/M/I/A release acceptance gates below, not merely unit/CI status [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48) |
 | Deferred | $55 paid final submission / CompuWerx | Approved one-fee-per-household policy and offline fail-closed reconciliation primitives | No provider-specific activity before owner releases the hold. A synthetically deployable RC is allowed; paid commercial launch is blocked until provider certification [#50](https://github.com/Arete0920/Jirehfinancialaid/issues/50) |
@@ -137,10 +155,11 @@ checks, target-environment acceptance, and actual business activation separately
 
 ### Execution order
 
-1. Finish independent acceptance of open draft PR #106's questionnaire
-   governance tests without duplicating its files. Keep PR #65's wizard
-   blocked until the two exact SonarCloud SCA dependency-risk records are
-   reviewed and dispositioned. The director dashboard PR #105 is merged.
+1. Integrate existing authorized family draft, student selection, session and
+   director reporting services into a separately guarded customer workspace;
+   reuse the verified browser experience rather than the retired PR #65 graph.
+   Complete provisioning-specific authorization and inactive setup under #109
+   without activating a live school. #106 and #114 are merged.
 2. Complete and test the fictional family questionnaire and family/officer
    end-to-end journey; obtain specific Q01–Q10 owner/privacy decisions before
    real financial-answer persistence, migrations, legal consent or customer
