@@ -9,6 +9,8 @@ policy and active household grants, never from client JSON.
 
 No Django imports, I/O, storage, routes, CROWN coupling, score or payment.
 """
+import hashlib
+import json
 from dataclasses import dataclass
 from uuid import UUID
 
@@ -197,6 +199,45 @@ def validate_v1_field_catalog(catalog: object) -> dict:
             fields[field_id] = field
     if set(fields) != set(V1_FIELD_TYPES):
         _invalid("candidate_catalog_fields_invalid")
+
+    # Freeze only the reviewed *development* governance metadata, not
+    # financial answers, legal consent, or mutable editorial documentation.
+    # These digests must be updated only with explicit owner approval of a
+    # versioned field/policy change; the schema remains NOT FOR COLLECTION.
+    try:
+        governed_fields = [
+            [field["id"], field["required"], field["sensitivity"]]
+            for section in sections for field in section["fields"]
+        ]
+    except (KeyError, TypeError):
+        _invalid("candidate_catalog_governance_drift")
+
+    def fingerprint(value):
+        try:
+            canonical = json.dumps(
+                value, ensure_ascii=False, separators=(",", ":"), allow_nan=False
+            )
+        except (ValueError, TypeError):
+            _invalid("candidate_catalog_policy_drift")
+        return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+    if fingerprint(governed_fields) != (
+        "cc6757ddf5e9fd77c1190e9081088ff4e9f16df8dde337ab71c6cfbcdfc9f165"
+    ):
+        _invalid("candidate_catalog_governance_drift")
+    try:
+        policy_governance = {
+            "schema_version": catalog["schema_version"],
+            "fields": governed_fields,
+            "pending_owner_decisions": catalog["pending_owner_decisions"],
+            "policy_safety_baselines": catalog["policy_safety_baselines"],
+        }
+    except KeyError:
+        _invalid("candidate_catalog_policy_drift")
+    if fingerprint(policy_governance) != (
+        "ec1b5d3d4e779736f7aead5d216c9824ac4609527be05d964e068bf872a1ea5b"
+    ):
+        _invalid("candidate_catalog_policy_drift")
     return fields
 
 
