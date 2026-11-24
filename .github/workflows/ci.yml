@@ -366,6 +366,18 @@ jobs:
       - name: Verify encrypted questionnaire migration rollback and reapply
         run: |
           set -euo pipefail
+          python -m django migrate financial_aid 0008 --noinput
+          python - <<'PY'
+          import django
+          django.setup()
+          from django.db import connection
+          with connection.cursor() as cursor:
+              cursor.execute("SELECT to_regclass('financial_aid_syntheticapplicationreview')")
+              assert cursor.fetchone()[0] is None, "Review table rollback incomplete"
+              cursor.execute("SELECT to_regprocedure('jireh_syn_review_guard()')")
+              assert cursor.fetchone()[0] is None, "Review guard rollback incomplete"
+          print("Fictional review rollback: PASS")
+          PY
           python -m django migrate financial_aid 0007 --noinput
           python - <<'PY'
           import django
@@ -381,7 +393,7 @@ jobs:
                   assert cursor.fetchone()[0] is None, "Questionnaire function rollback incomplete"
           print("Questionnaire rollback: PASS")
           PY
-          python -m django migrate financial_aid 0008 --noinput
+          python -m django migrate financial_aid 0009 --noinput
           python - <<'PY'
           import django
           django.setup()
@@ -397,7 +409,13 @@ jobs:
                       [table, trigger],
                   )
                   assert cursor.fetchone()[0] == 1, "Questionnaire guard not restored"
-          print("Questionnaire reapply: PASS")
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = "
+                  "to_regclass('financial_aid_syntheticapplicationreview') "
+                  "AND tgname = 'jireh_syn_review_guard' AND NOT tgisinternal AND tgenabled = 'O'"
+              )
+              assert cursor.fetchone()[0] == 1, "Review guard not restored"
+          print("Questionnaire and fictional review reapply: PASS")
           PY
 
       - name: Check standalone runtime and closed routes (no deployment)

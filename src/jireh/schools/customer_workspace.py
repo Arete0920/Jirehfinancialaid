@@ -166,6 +166,7 @@ def workspace_family(request, school_id, household_id, academic_year_id):
         draft=draft, children=children, selected_count=len(ids),
         questionnaire_enabled=getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_STORAGE", False) is True,
         documents_enabled=getattr(settings, "JIREH_SYNTHETIC_DOCUMENTS_ONLY", False) is True,
+        review_enabled=getattr(settings, "JIREH_SYNTHETIC_APPLICATION_REVIEW", False) is True,
     )
 
 

@@ -165,7 +165,25 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.reload()
             expect(page.locator('[data-document-version="2"]')).to_be_visible()
             page.screenshot(path=str(output / "customer-workspace-documents.png"), full_page=True)
+            page.get_by_role("link", name="Return to annual application").click()
+            page.get_by_role("link", name="Review fictional application").click()
+            expect(page.locator("#review-status")).to_have_text("Review required")
+            page.get_by_role("checkbox", name="I reviewed this saved fictional application.").check()
+            page.get_by_role("button", name="Confirm fictional review").click()
+            expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
+            page.screenshot(path=str(output / "customer-workspace-review.png"), full_page=True)
+            review_url = page.url
+            page.goto(questionnaire_url)
+            page.locator("#id_income-0-value").fill("765.44")
+            page.get_by_role("button", name="Save fictional answers").click()
+            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 3")
+            page.goto(review_url)
+            expect(page.locator("#review-status")).to_have_text("Review required")
+            page.get_by_role("checkbox", name="I reviewed this saved fictional application.").check()
+            page.get_by_role("button", name="Confirm fictional review").click()
+            expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
             sign_out()
+            assert page.request.get(review_url).status == 403
             assert page.request.get(documents_url).status == 403
             assert page.request.get(corrected_read_url).status == 403
             assert page.request.get(family_url).status == 403
@@ -185,6 +203,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             assert page.request.get(family_url).status == 404
             assert page.request.get(questionnaire_url).status == 404
             assert page.request.get(documents_url).status == 404
+            assert page.request.get(review_url).status == 404
             assert page.request.get(corrected_read_url).status == 404
             sign_out()
 
@@ -201,8 +220,10 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(page.locator("#selected-count")).to_have_text("2 selected")
             assert page.request.get(director_a_url).status == 404
             page.goto(questionnaire_url)
-            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 2")
-            expect(page.locator("#id_income-0-value")).to_have_value("765.43")
+            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 3")
+            expect(page.locator("#id_income-0-value")).to_have_value("765.44")
+            page.goto(review_url)
+            expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
             page.goto(documents_url)
             expect(page.locator("#document-count")).to_have_text("1 listed")
             assert page.request.get(corrected_read_url).body() == corrected

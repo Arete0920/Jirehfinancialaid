@@ -19,6 +19,7 @@ ROOT_URLCONF = "jireh.schools.demo_urls"
 JIREH_CUSTOMER_WORKSPACE_ACCEPTANCE = True
 # Ephemeral key lives only for this disposable, loopback-only demo process.
 JIREH_SYNTHETIC_QUESTIONNAIRE_STORAGE = True
+JIREH_SYNTHETIC_APPLICATION_REVIEW = True
 JIREH_SYNTHETIC_QUESTIONNAIRE_KEY = secrets.token_bytes(32)
 ALLOWED_HOSTS = ["127.0.0.1", "localhost", "testserver"]
 DATABASES = {
