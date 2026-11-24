@@ -7,6 +7,7 @@ from .customer_workspace import (
     acceptance_only, workspace_case, workspace_director, workspace_family, workspace_home,
 )
 from .workspace_questionnaire import workspace_questionnaire
+from .workspace_review import workspace_review
 from .workspace_documents import (
     workspace_documents, workspace_document_sample, workspace_document_upload,
     workspace_document_read, workspace_document_remove,
@@ -35,6 +36,7 @@ urlpatterns = [
          name="jireh_workspace_document_read"),
     path(FAMILY + "documents/<uuid:document_id>/remove/", acceptance_only(workspace_document_remove),
          name="jireh_workspace_document_remove"),
+    path(FAMILY + "review/", acceptance_only(workspace_review), name="jireh_workspace_review"),
     path(DIRECTOR, acceptance_only(workspace_director), name="jireh_workspace_director"),
     path(DIRECTOR + "cases/<uuid:application_id>/", acceptance_only(workspace_case),
          name="jireh_workspace_case"),

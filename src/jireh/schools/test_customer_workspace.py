@@ -174,11 +174,13 @@ class CustomerWorkspaceTests(TestCase):
                      "/workspace/submit/", "/workspace/pay/", "/workspace/awards/"):
             self.assertEqual(self.client.get(path, secure=True).status_code, 404)
 
-    def _questionnaire_payload(self, revision=0, amount="1234.56", initial=0):
+    def _questionnaire_payload(self, revision=0, amount="1234.56", initial=0, *, member):
         data = {"revision": str(revision)}
         for section in ("income", "assets", "liabilities", "expenses"):
             data[f"{section}-TOTAL_FORMS"] = "1"
             data[f"{section}-INITIAL_FORMS"] = str(initial if section == "income" else 0)
+            if section != "expenses":
+                data[f"{section}-0-member"] = member
         data.update({
             "income-0-category": "EMPLOYMENT", "income-0-value": amount,
             "income-0-period_start": "2026-01-01", "income-0-period_end": "2026-12-31",
@@ -201,14 +203,16 @@ class CustomerWorkspaceTests(TestCase):
         self.assertContains(page, "Saved revision: 0")
         self.assertIn("no-store", page["Cache-Control"])
         self.assertEqual(page["Referrer-Policy"], "same-origin")
-        return family
+        income = next(group for group in page.context["questionnaire_groups"]
+                      if group["section"] == "income")
+        return family, income["formset"].forms[0]["member"].value()
 
     def test_questionnaire_http_save_resume_correct_delete(self):
         from django.conf import settings
         from jireh.financial_aid.synthetic_questionnaire_storage import read_fictional_questionnaire
 
-        family = self._start_questionnaire()
-        initial = self._questionnaire_payload()
+        family, member = self._start_questionnaire()
+        initial = self._questionnaire_payload(member=member)
         self.assertEqual(self._questionnaire_post(family, initial).status_code, 302)
         self.assertContains(self._get(family, "jireh_workspace_questionnaire", *self.scope),
                             'value="1234.56"')
@@ -218,15 +222,15 @@ class CustomerWorkspaceTests(TestCase):
                      key=settings.JIREH_SYNTHETIC_QUESTIONNAIRE_KEY)
         revision, saved = read_fictional_questionnaire(**scope)
         self.assertEqual((revision, saved["income"][0]["amount"]), (1, 123456))
-        truncated = self._questionnaire_payload(1, initial=0)
+        truncated = self._questionnaire_payload(1, initial=0, member=member)
         truncated["income-TOTAL_FORMS"] = "0"
         self.assertEqual(self._questionnaire_post(family, truncated).status_code, 400)
         self.assertEqual(read_fictional_questionnaire(**scope), (revision, saved))
-        corrected = self._questionnaire_payload(1, "765.43", initial=1)
+        corrected = self._questionnaire_payload(1, "765.43", initial=1, member=member)
         self.assertEqual(self._questionnaire_post(family, corrected).status_code, 302)
         self.assertContains(self._get(family, "jireh_workspace_questionnaire", *self.scope),
                             'value="765.43"')
-        removed = self._questionnaire_payload(2, "765.43", initial=1)
+        removed = self._questionnaire_payload(2, "765.43", initial=1, member=member)
         removed["income-0-DELETE"] = "on"
         self.assertEqual(self._questionnaire_post(family, removed).status_code, 302)
         self.assertEqual(read_fictional_questionnaire(**scope), (3, {}))
@@ -234,8 +238,8 @@ class CustomerWorkspaceTests(TestCase):
         self.assertEqual(AidApplication.objects.get().status, AidApplication.STATUS_DRAFT)
 
     def test_questionnaire_invalid_csrf_scope_and_revocation_are_nonmutating(self):
-        family = self._start_questionnaire()
-        data = self._questionnaire_payload()
+        family, member = self._start_questionnaire()
+        data = self._questionnaire_payload(member=member)
         self.assertEqual(self._questionnaire_post(family, data, csrf=False).status_code, 403)
         for origin in ("null", "https://unrelated.invalid"):
             with self.subTest(origin=origin):
@@ -246,9 +250,9 @@ class CustomerWorkspaceTests(TestCase):
                     HTTP_X_CSRFTOKEN=family.cookies["csrftoken"].value,
                 )
                 self.assertEqual(response.status_code, 403)
-        invalid = self._questionnaire_payload(amount="1.001")
+        invalid = self._questionnaire_payload(amount="1.001", member=member)
         self.assertEqual(self._questionnaire_post(family, invalid).status_code, 400)
-        invalid = self._questionnaire_payload()
+        invalid = self._questionnaire_payload(member=member)
         invalid["income-0-period_start"] = "2025-01-01"
         self.assertEqual(self._questionnaire_post(family, invalid).status_code, 400)
         self.assertEqual(SyntheticQuestionnaireDraft.objects.count(), 0)

@@ -267,3 +267,13 @@ part of [issue #42](https://github.com/Arete0920/Jirehfinancialaid/issues/42).
 Issue #42 was closed for the previously approved synthetic walkthrough.
 The expanded family → officer → family flow remains tracked under #47 until
 its new browser evidence and presentation claims are separately accepted.
+
+### Fictional application review
+
+The generic family workspace now supports an explicit review of the saved child
+selection, four financial sections and independently retrieved fictional PDFs.
+The rehearsal confirmation is bound to the actor, grant epoch, questionnaire
+revision and document/selection history. Changing any of those facts requires
+another confirmation. The $55 annual household submission fee is a disclosure
+only. The application remains DRAFT; this is not legal consent, a paid receipt,
+a verified financial assessment or permission to collect real records.
