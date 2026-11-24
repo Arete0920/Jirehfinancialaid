@@ -131,7 +131,43 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(page.locator("#id_income-0-value")).to_have_value("765.43")
             expect(page.locator("#id_income-1-category")).to_have_value("")
             page.screenshot(path=str(output / "customer-workspace-questionnaire.png"), full_page=True)
+            page.get_by_role("link", name="Return to annual application").click()
+            page.get_by_role("link", name="Manage supporting documents").click()
+            documents_url = page.url
+            expect(page.locator("#document-count")).to_have_text("0 listed")
+
+            def select_and_save_sample(label, expected_count):
+                with page.expect_download() as downloaded:
+                    page.get_by_role("link", name=label).click()
+                path = downloaded.value.path()
+                original_bytes = path.read_bytes()
+                page.locator("#document-file").set_input_files(str(path))
+                with page.expect_response(lambda res: res.url.endswith("/documents/upload/") and res.request.method == "POST") as uploaded:
+                    page.get_by_role("button", name="Save fictional document").click()
+                assert uploaded.value.status == 200, f"Document upload HTTP {uploaded.value.status}"
+                expect(page.locator("#document-count")).to_have_text(f"{expected_count} listed")
+                return original_bytes
+
+            original = select_and_save_sample("Original fictional PDF", 1)
+            original_row = page.locator('[data-document-version="1"]')
+            original_read_url = BASE + original_row.get_by_role("link", name="Download saved PDF").get_attribute("href")
+            assert page.request.get(original_read_url).body() == original
+            corrected = select_and_save_sample("Corrected fictional PDF", 2)
+            assert corrected != original
+            corrected_row = page.locator('[data-document-version="2"]')
+            corrected_read_url = BASE + corrected_row.get_by_role("link", name="Download saved PDF").get_attribute("href")
+            with page.expect_download() as saved_download:
+                corrected_row.get_by_role("link", name="Download saved PDF").click()
+            assert saved_download.value.path().read_bytes() == corrected
+            page.get_by_role("button", name="Remove version 1").click()
+            expect(page.locator("#document-count")).to_have_text("1 listed")
+            assert page.request.get(original_read_url).status == 404
+            page.reload()
+            expect(page.locator('[data-document-version="2"]')).to_be_visible()
+            page.screenshot(path=str(output / "customer-workspace-documents.png"), full_page=True)
             sign_out()
+            assert page.request.get(documents_url).status == 403
+            assert page.request.get(corrected_read_url).status == 403
             assert page.request.get(family_url).status == 403
             assert page.request.get(questionnaire_url).status == 403
 
@@ -148,6 +184,8 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(page.locator("#case-child-count")).to_have_text("2")
             assert page.request.get(family_url).status == 404
             assert page.request.get(questionnaire_url).status == 404
+            assert page.request.get(documents_url).status == 404
+            assert page.request.get(corrected_read_url).status == 404
             sign_out()
 
             sign_in("local-demo-director-b")
@@ -155,6 +193,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(page.locator("#draft-total")).to_have_text("0")
             assert page.request.get(director_a_url).status == 404
             assert page.request.get(case_url).status == 404
+            assert page.request.get(corrected_read_url).status == 404
             sign_out()
 
             sign_in("local-demo-family")
@@ -164,10 +203,13 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.goto(questionnaire_url)
             expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 2")
             expect(page.locator("#id_income-0-value")).to_have_value("765.43")
+            page.goto(documents_url)
+            expect(page.locator("#document-count")).to_have_text("1 listed")
+            assert page.request.get(corrected_read_url).body() == corrected
             sign_out()
             context.close()
             browser.close()
-        print("CUSTOMER WORKSPACE: generic sign-in, forged-response denial, saved draft, two children, director readback, cross-school denial and logout: PASS", flush=True)
+        print("CUSTOMER WORKSPACE: sign-in, saved draft, financial correction, selected PDF upload, versioned readback/removal, director readback, cross-school denial and logout: PASS", flush=True)
     finally:
         proc.terminate()
         try:

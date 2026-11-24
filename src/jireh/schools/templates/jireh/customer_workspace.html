@@ -91,6 +91,33 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% else %}<p>Financial entry is unavailable until a draft and the disposable acceptance gate are present.</p>{% endif %}
 <p class="muted">No application can be submitted or charged. Household roster, school questions and consent are not yet included.</p>
 </section>
+{% if draft and documents_enabled %}
+<section class="panel"><h2>Supporting documents</h2><p>Practice with the two generated fictional PDFs. No real document uploads are accepted.</p>
+<a class="button" href="{% url 'jireh_workspace_documents' household.school_id household.pk year.pk %}">Manage supporting documents</a></section>
+{% endif %}
+{% elif mode == "documents" %}
+<p><a href="{% url 'jireh_workspace_family' household.school_id household.pk year.pk %}">Return to annual application</a></p>
+<h1>Supporting documents</h1><p>{{ household.school.name }} · {{ household.name }} · {{ year.name }}</p>
+<section class="panel"><h2>Fictional file intake</h2>
+<p>Download either sample, select the downloaded file, and save it. Only the exact generated samples are accepted. Do not select actual tax or financial records.</p>
+<p><a href="{% url 'jireh_workspace_document_sample' household.school_id household.pk year.pk 'original' %}">Original fictional PDF</a> · <a href="{% url 'jireh_workspace_document_sample' household.school_id household.pk year.pk 'corrected' %}">Corrected fictional PDF</a></p>
+<form data-command="document-upload" method="post" action="{% url 'jireh_workspace_document_upload' household.school_id household.pk year.pk %}">
+{% csrf_token %}<input type="hidden" name="request_key" value="{{ document_request_key }}">
+<label for="document-file">Choose fictional PDF</label><input id="document-file" name="document_file" type="file" accept="application/pdf,.pdf" required>
+<button type="submit">Save fictional document</button></form>
+<p class="muted">The file name is not transmitted or retained. The fixed sample allowlist is not antivirus certification.</p>
+</section>
+<section class="panel"><h2>Saved document versions</h2><p id="document-count">{{ documents|length }} listed</p>
+{% for document in documents %}
+<div class="row" data-document-version="{{ document.version }}">
+<div><strong>Fictional PDF · version {{ document.version }}</strong><p class="muted">{{ document.byte_count }} bytes · {% if document.state == "ACTIVE" %}Saved{% else %}Removal pending{% endif %}</p></div>
+{% if document.state == "ACTIVE" %}<a href="{% url 'jireh_workspace_document_read' household.school_id household.pk year.pk document.id %}">Download saved PDF</a>{% endif %}
+<form data-command="document-remove" method="post" action="{% url 'jireh_workspace_document_remove' household.school_id household.pk year.pk document.id %}">{% csrf_token %}<button type="submit" class="secondary">{% if document.state == "ACTIVE" %}Remove version {{ document.version }}{% else %}Retry removal {{ document.version }}{% endif %}</button></form>
+</div>
+{% empty %}<p>No saved fictional documents.</p>{% endfor %}
+{% if documents_truncated %}<p class="muted">Only the 50 most recent active or pending versions are shown.</p>{% endif %}
+<p class="muted">For a correction, save and independently download the corrected version before explicitly removing the superseded version. This disposable rehearsal allows at most 50 saved versions over the life of a draft. No automatic replacement or final application submission occurs.</p>
+</section>
 {% elif mode == "questionnaire" %}
 <p><a href="{% url 'jireh_workspace_family' household.school_id household.pk year.pk %}">Return to annual application</a></p>
 <h1>Financial questionnaire</h1><p>{{ household.school.name }} · {{ household.name }} · {{ year.name }}</p>
@@ -174,6 +201,20 @@ for (const form of document.querySelectorAll("form[data-command]")) {
     if (command === "login") {
       headers["Content-Type"] = "application/json";
       options.body = JSON.stringify({username:fields.get("username"), password:fields.get("password")});
+    } else if (command === "document-upload") {
+      const file = fields.get("document_file");
+      const limit = {{ document_max_bytes|default:4096 }};
+      if (!(file instanceof File) || file.size < 1 || file.size > limit) {
+        message.textContent = "Choose one of the two bounded fictional PDFs.";
+        document.body.dataset.pending = "no";
+        for (const button of buttons) button.disabled = false;
+        return;
+      }
+      headers["Content-Type"] = "application/pdf";
+      headers["X-Document-Request-Key"] = fields.get("request_key");
+      options.body = file;
+    } else if (command === "document-remove") {
+      options.method = "DELETE";
     }
     try {
       const response = await fetch(form.action, options);

@@ -19,6 +19,7 @@ from django.http import Http404
 from django.utils import timezone
 
 from jireh.schools.access import require_household_access
+from jireh.schools.models import HouseholdAccess, School
 from .models import AidApplication, FinancialDocument, FinancialDocumentEvent
 
 
@@ -92,6 +93,18 @@ def _authorized_draft(user, school_id, household_id, academic_year_id, *, lock):
     household = require_household_access(
         user, school_id=school_id, household_id=household_id
     )
+    if lock:
+        # Serialize reads and writes with the school-first grant revocation service.
+        if not School.objects.select_for_update().filter(
+            pk=household.school_id, is_active=True,
+        ).exists():
+            raise Http404("Document application not found.")
+        if not HouseholdAccess.objects.select_for_update().filter(
+            household_id=household.pk, household__school_id=household.school_id,
+            household__is_active=True, user_id=user.pk, user__is_active=True,
+            is_active=True,
+        ).exists():
+            raise Http404("Document application not found.")
     query = AidApplication.objects.for_school(household.school_id).filter(
         household_id=household.pk, academic_year_id=academic_year_id,
         status=AidApplication.STATUS_DRAFT,
@@ -136,6 +149,11 @@ def create_synthetic_document(
         if existing.state != FinancialDocument.STATE_ACTIVE:
             _deny("document_not_active")
         return existing
+
+    # Bound disposable storage even when clients repeatedly request new versions.
+    # Existing idempotent retries were handled above and do not consume capacity.
+    if FinancialDocument.objects.filter(application=application).count() >= 50:
+        _deny("document_version_limit_reached")
 
     detected_type, clean = backend.inspect(data)
     if clean is not True:

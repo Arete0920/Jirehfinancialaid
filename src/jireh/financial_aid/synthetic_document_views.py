@@ -1,14 +1,15 @@
 """Test-only, school-scoped fictional document HTTP lifecycle.
 
-This adapter accepts NO uploaded bytes: the only document is a fixed, generated
-PDF with no financial information. The disposable backend uses actual AES-GCM
-for local evidence; its fixed-fixture scanner is NOT antivirus or production
-malware certification. Production URLConf never imports this module.
+The existing API creates only a server-generated fictional PDF. The separate
+workspace upload adapter may accept the exact bytes of two server-generated
+fictional PDFs. The shared fixed-fixture allowlist is NOT antivirus. Neither
+adapter is imported by the production URLConf.
 """
 import json
 import secrets
 import tempfile
 from functools import lru_cache
+from threading import Lock
 from uuid import UUID
 
 from django.conf import settings
@@ -46,9 +47,11 @@ _POLICY = SyntheticDocumentPolicy(
 )
 
 
-def _fictional_pdf():
-    """Generate a tiny valid, one-page PDF without personal or financial data."""
-    stream = b"BT /F1 12 Tf 40 730 Td (JIREH FICTIONAL SAMPLE - NOT A TAX RECORD) Tj ET"
+def _fictional_pdf(*, corrected=False):
+    """Generate one of two fixed PDFs without personal or financial data."""
+    label = (b"JIREH FICTIONAL SAMPLE CORRECTED - NOT A TAX RECORD" if corrected
+             else b"JIREH FICTIONAL SAMPLE - NOT A TAX RECORD")
+    stream = b"BT /F1 12 Tf 40 730 Td (" + label + b") Tj ET"
     objects = (
         b"<< /Type /Catalog /Pages 2 0 R >>",
         b"<< /Type /Pages /Kids [3 0 R] /Count 1 >>",
@@ -74,13 +77,15 @@ def _fictional_pdf():
 
 
 _FIXTURE = _fictional_pdf()
+_CORRECTED_FIXTURE = _fictional_pdf(corrected=True)
+_ALLOWED_FIXTURES = (_FIXTURE, _CORRECTED_FIXTURE)
 
 
 class _FixtureOnlyScanner:
     """Never represent this allowlist test double as a malware scanner."""
 
     def scan(self, data):
-        return type(data) is bytes and data == _FIXTURE
+        return type(data) is bytes and data in _ALLOWED_FIXTURES
 
 
 @lru_cache(maxsize=1)
@@ -93,7 +98,7 @@ def _local_backend():
         root=temporary.name,
         encryption_key=secrets.token_bytes(32),
         scanner=_FixtureOnlyScanner(),
-        max_bytes=len(_FIXTURE),
+        max_bytes=_POLICY.maximum_bytes,
     )
     return temporary, backend
 
@@ -118,8 +123,14 @@ def _draft(request, school_id, household_id, academic_year_id):
     return draft
 
 
+_BACKEND_LOCK = Lock()
+
+
 def _backend():
-    return _local_backend()[1]
+    # lru_cache may call its function twice on concurrent initial misses.
+    # Ensure all requests use the same ephemeral root and encryption key.
+    with _BACKEND_LOCK:
+        return _local_backend()[1]
 
 
 def _error(exc):
