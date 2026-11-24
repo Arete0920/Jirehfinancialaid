@@ -1,0 +1,35 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Jireh | Fictional platform operations</title>
+<style nonce="{{ csp_nonce }}">
+:root{color-scheme:light;font-family:system-ui,-apple-system,sans-serif;color:#173f35;background:#f5f8f6}
+*{box-sizing:border-box}body{margin:0}header{background:#123b32;color:white;padding:22px max(24px,6vw);display:flex;justify-content:space-between;gap:15px;flex-wrap:wrap}
+main{max-width:1120px;margin:auto;padding:34px 24px}h1{font-size:clamp(26px,4vw,39px);margin:8px 0}p{line-height:1.6}
+.small{font-size:13px;color:#536d64}.notice{padding:15px;border:1px solid #d9ad6b;background:#fffaf0;border-radius:8px;margin:20px 0}
+table{width:100%;border-collapse:collapse;background:white;box-shadow:0 2px 20px #123b3210}
+th,td{text-align:left;padding:15px;border-bottom:1px solid #e2ebe5}th{background:#eaf4ed;font-size:13px}
+.panel{padding:20px;border:1px solid #d6e6dc;border-radius:10px;background:white;margin-top:20px}
+a{color:#216247}strong{font-weight:700}@media(max-width:760px){table{display:block;overflow-x:auto}}
+</style>
+</head>
+<body>
+<header><strong>JIREH. · PLATFORM OPERATIONS</strong><span>LOCAL SYNTHETIC DEMO · NOT LIVE</span></header>
+<main>
+<p class="small">Arete-only fictional operator preview</p>
+<h1>School readiness overview</h1>
+<p>School names, active flags, academic years and director grant counts come from saved records in the disposable demonstration database.</p>
+<div class="notice"><strong>Not a provisioning system.</strong> No school can be created, activated, billed, connected to an SIS, or provisioned from this page. The account used here is fictional and cannot access a production route.</div>
+<table aria-label="Saved synthetic school inventory">
+<thead><tr><th>School</th><th>School code</th><th>State</th><th>Academic year</th><th>Active aid directors</th><th>Setup</th><th>SIS integration</th></tr></thead>
+<tbody>
+{% for school in schools %}
+<tr><td>{{ school.name }}</td><td>{{ school.code }}</td><td>{% if school.active %}Active test school{% else %}Inactive test school{% endif %}</td><td>{{ school.academic_year }}</td><td>{{ school.director_grants }}</td><td>{{ school.setup }}</td><td>{{ school.integration }}</td></tr>
+{% endfor %}
+</tbody></table>
+<section class="panel"><h2>Next implementation gates</h2>
+<p>Audited, idempotent school provisioning; verified operator authorization; two-person first-director approval; optional school-scoped SIS connector contracts; operational monitoring; and protected deployment acceptance remain incomplete.</p></section>
+<p class="small">No household names, applications, financial records, authentication secrets, payments or partner credentials are included.</p>
+<p><a href="/local-demo/">Return to the fictional walkthrough</a></p>
+</main></body></html>

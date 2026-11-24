@@ -60,6 +60,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <button type="button" data-role="local-demo-family">Family applicant</button>
 <button type="button" data-role="local-demo-director-a">School A director</button>
 <button type="button" data-role="local-demo-director-b">School B director</button>
+<button type="button" data-role="local-demo-platform-operator">Arete platform operator</button>
 </div>
 <div class="statusbar"><span id="identity">No session selected</span><span id="authstatus">Signed out</span></div>
 <div id="family" class="hidden">
@@ -100,6 +101,11 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <ul aria-label="Fictional bucket recommendations" hidden></ul>
 </section>
 </template>
+<div id="operator" class="hidden">
+<h3>Arete platform operator — fictional preview</h3>
+<p>Review saved test school readiness and aid-director grant counts. This panel does not create, provision, activate, integrate, bill or edit schools.</p>
+<div class="actions"><a class="button secondary" href="/local-demo/platform-operations/" id="operator-summary-link">View fictional school readiness</a></div>
+</div>
 <div class="separator"></div><h3>Test activity</h3><div id="events" role="log" aria-label="Synthetic demonstration activity log"><div>Choose a persona to begin. No real data is used.</div></div>
 </section></div>
 </main><footer>Jireh Financial Aid · Standalone development prototype · Local synthetic data only · Production release: NO-GO</footer>
@@ -214,6 +220,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("authstatus").textContent="Signing in";
       $("family").classList.add("hidden");
       $("director").classList.add("hidden");
+      $("operator").classList.add("hidden");
       $("case-detail").replaceChildren();
       await logout();
       await api("/test-auth/login/");
@@ -224,14 +231,15 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       if(!conf.ok)throw new Error("Demo configuration denied: "+conf.status);
       state.role=role;state.config=conf.data;
       document.querySelectorAll("[data-role]").forEach(b=>b.classList.toggle("selected",b.dataset.role===role));
-      const family=role==="local-demo-family";
+      const family=role==="local-demo-family",operator=role==="local-demo-platform-operator";
       $("family").classList.toggle("hidden",!family);
-      $("director").classList.toggle("hidden",family);
-      $("identity").textContent=family?"Sample Family":role==="local-demo-director-a"?"School A director":"School B director";
+      $("director").classList.toggle("hidden",family||operator);
+      $("operator").classList.toggle("hidden",!operator);
+      $("identity").textContent=family?"Sample Family":operator?"Arete platform operator":role==="local-demo-director-a"?"School A director":"School B director";
       $("authstatus").textContent="Synthetic session active";
       log("Authenticated "+$("identity").textContent);
       if(family){$("school-name").textContent=primary().name;$("draft-status").textContent="Not loaded";await loadHousehold();}
-      else{$("director-school").textContent=(role==="local-demo-director-a"?primary():secondary()).name;$("application-count").textContent="—";$("inventory").textContent="";await loadInventory();}
+      else if(!operator){$("director-school").textContent=(role==="local-demo-director-a"?primary():secondary()).name;$("application-count").textContent="—";$("inventory").textContent="";await loadInventory();}
     }catch(e){log(e.message,false);}
   }
   async function loadHousehold(){

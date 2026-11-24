@@ -339,6 +339,17 @@ def main():
                 "PASS: Another school's director inventory denied (404)"
             )
             page.screenshot(path=str(output / "other-school-journey.png"), full_page=True)
+            page.get_by_role("button", name="Arete platform operator").click()
+            expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
+            expect(page.locator("#operator")).to_be_visible()
+            page.locator("#operator-summary-link").click()
+            expect(page.get_by_role("heading", name="School readiness overview")).to_be_visible()
+            expect(page.locator('table[aria-label="Saved synthetic school inventory"] tbody tr')).to_have_count(2)
+            expect(page.get_by_text("Not a provisioning system.")).to_be_visible()
+            expect(page.get_by_text("Synthetic Christian Academy")).to_be_visible()
+            expect(page.get_by_text("Synthetic School B")).to_be_visible()
+            page.screenshot(path=str(output / "platform-operations-preview.png"), full_page=True)
+            print("CHROMIUM OPERATIONS: two saved fictional schools; no creation or integrations", flush=True)
             context.close()
             browser.close()
     finally:
