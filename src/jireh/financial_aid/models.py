@@ -526,3 +526,62 @@ class SyntheticQuestionnaireEvent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Questionnaire revision evidence is immutable.")
+
+SYNTHETIC_REVIEW_VERSION = "fictional-review-v1"
+
+
+class SyntheticApplicationReview(UUIDStampedModel):
+    """Immutable rehearsal confirmation, never consent or final submission."""
+
+    questionnaire = models.ForeignKey(
+        SyntheticQuestionnaireDraft, on_delete=models.PROTECT, related_name="reviews",
+    )
+    actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    questionnaire_revision = models.PositiveIntegerField()
+    state_digest = models.CharField(max_length=64)
+    disclosure_version = models.CharField(max_length=32, default=SYNTHETIC_REVIEW_VERSION)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["questionnaire", "actor_user", "state_digest"],
+                name="jireh_syn_review_actor_state_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(questionnaire_revision__gt=0, disclosure_version="fictional-review-v1"),
+                name="jireh_syn_review_revision_version",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        from re import fullmatch
+        from jireh.schools.models import HouseholdAccess
+
+        if not isinstance(self.state_digest, str) or not fullmatch(r"[0-9a-f]{64}", self.state_digest):
+            raise ValidationError("Invalid fictional review evidence.")
+        if not self.questionnaire_id or not self.actor_user_id:
+            return
+        snapshot = self.questionnaire
+        draft = snapshot.application
+        if (
+            self.questionnaire_revision != snapshot.revision
+            or draft.status != AidApplication.STATUS_DRAFT
+            or draft.household.school_id != draft.school_id
+            or draft.academic_year.school_id != draft.school_id
+            or not draft.school.is_active
+            or not draft.household.is_active
+            or not self.actor_user.is_active
+            or not HouseholdAccess.objects.filter(
+                household_id=draft.household_id, user_id=self.actor_user_id, is_active=True,
+            ).exists()
+        ):
+            raise ValidationError("Invalid fictional review scope.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Fictional review evidence is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Fictional review evidence is immutable.")
