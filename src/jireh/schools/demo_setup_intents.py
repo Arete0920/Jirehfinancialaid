@@ -6,6 +6,7 @@ and provisioning-specific MFA must be bound to a future authorized service.
 A fingerprint supplied here is not proof that a real candidate was validated.
 """
 
+import os
 import re
 from uuid import UUID
 
@@ -31,7 +32,13 @@ def record_synthetic_setup_intent(*, operator, idempotency_key, candidate_digest
     suite must explicitly opt in using its disposable settings. Never use a
     caller-provided operator or fingerprint as proof of live authorization.
     """
-    if (settings.SETTINGS_MODULE not in _TEST_SETTINGS
+    # Django's override_settings wraps Settings in UserSettingsHolder,
+    # where SETTINGS_MODULE is None. Require the actual startup module
+    # and reject any conflicting explicit settings-module override.
+    startup_module = os.environ.get("DJANGO_SETTINGS_MODULE")
+    configured_module = settings.SETTINGS_MODULE
+    if (startup_module not in _TEST_SETTINGS
+            or configured_module not in (None, startup_module)
             or getattr(settings, "JIREH_SYNTHETIC_SETUP_INTENT_ONLY", False) is not True
             or not isinstance(operator, get_user_model())
             or not _authorized_operator(operator)):
