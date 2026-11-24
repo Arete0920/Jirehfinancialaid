@@ -18,6 +18,7 @@ from jireh.financial_aid.synthetic_document_views import (
 from jireh.financial_aid.synthetic_demo_views import (
     record_synthetic_family_receipt, read_synthetic_family_receipt,
     record_synthetic_staff_offer, read_synthetic_family_offer_list,
+    read_synthetic_staff_offer,
     read_synthetic_staff_assessment,
 )
 
@@ -146,5 +147,11 @@ urlpatterns = [
         "aid-applications/<uuid:application_id>/synthetic/offers/"
         "<uuid:student_id>/",
         record_synthetic_staff_offer, name="jireh_test_synthetic_officer_offer",
+    ),
+    path(
+        "api/v1/schools/<uuid:school_id>/academic-years/<uuid:academic_year_id>/"
+        "aid-applications/<uuid:application_id>/synthetic/offers/"
+        "<uuid:student_id>/read/",
+        read_synthetic_staff_offer, name="jireh_test_synthetic_officer_offer_read",
     ),
 ]
