@@ -1,6 +1,6 @@
 """Four-section editable fictional questionnaire inside the customer workspace.
 
-The trusted fixture policy and contributor identifier are never client inputs.
+The server derives the fixture policy and the allowed contributors for each draft.
 No live collection, attestation, submission, assessment or payment is enabled.
 """
 import json
@@ -34,6 +34,16 @@ _MEMBER_FIELD = {
     "assets": "owner_member_id",
     "liabilities": "responsible_member_id",
 }
+_MEMBER_LABEL = {
+    "income": "Fictional income contributor",
+    "assets": "Fictional asset owner",
+    "liabilities": "Fictional person responsible for liability",
+}
+_FICTIONAL_CONTRIBUTORS = (
+    # Keep the original fixture ID so existing encrypted rows retain their attribution.
+    ("fictional-contributor-v1", "Fictional contributor 1"),
+    ("fictional-contributor-2-v1", "Fictional contributor 2"),
+)
 _CATALOG = Path(__file__).resolve().parents[3] / "docs" / "questionnaire_v1_field_catalog.json"
 _MAX_ROWS = 32
 # These are explicitly fictional rehearsal parameters, not approved live policy.
@@ -60,7 +70,7 @@ class FictionalAmountForm(forms.Form):
         min_value=Decimal("0"), max_value=Decimal("1000000"),
     )
 
-    def __init__(self, *args, section, **kwargs):
+    def __init__(self, *args, section, contributors, **kwargs):
         super().__init__(*args, **kwargs)
         self.fields["category"].choices = [
             ("", "Choose category"),
@@ -71,6 +81,12 @@ class FictionalAmountForm(forms.Form):
             self.fields["period_end"] = _date_field("Period end")
         else:
             self.fields["as_of_date"] = _date_field("Balance as of")
+        if section in _MEMBER_FIELD:
+            self.fields["member"] = forms.ChoiceField(
+                label=_MEMBER_LABEL[section], choices=contributors,
+                error_messages={"invalid_choice": "Choose a contributor listed for this draft."},
+            )
+            self.initial.setdefault("member", contributors[0][0])
 
 
 class RevisionForm(forms.Form):
@@ -89,15 +105,18 @@ def _initial(section, rows):
     result = []
     for row in rows:
         dates = ("period_start", "period_end") if section in _FLOW else ("as_of_date",)
-        result.append({
+        initial = {
             "category": row["category"],
             "value": Decimal(row["amount" if section in _FLOW else "balance"]) / 100,
             **{name: row[name] for name in dates},
-        })
+        }
+        if section in _MEMBER_FIELD:
+            initial["member"] = row[_MEMBER_FIELD[section]]
+        result.append(initial)
     return result
 
 
-def _formsets(saved, data=None):
+def _formsets(saved, contributors, data=None):
     return [
         {
             "section": section,
@@ -105,14 +124,14 @@ def _formsets(saved, data=None):
             "count": len(saved.get(section, [])),
             "formset": _AmountFormSet(
                 data=data, prefix=section, initial=_initial(section, saved.get(section, [])),
-                form_kwargs={"section": section},
+                form_kwargs={"section": section, "contributors": contributors},
             ),
         }
         for section, title in _SECTIONS
     ]
 
 
-def _rows(groups, member):
+def _rows(groups):
     answers = {}
     for group in groups:
         section = group["section"]
@@ -134,7 +153,7 @@ def _rows(groups, member):
                     as_of_date=values["as_of_date"].isoformat(),
                 )
             if section in _MEMBER_FIELD:
-                row[_MEMBER_FIELD[section]] = member
+                row[_MEMBER_FIELD[section]] = values["member"]
             rows.append(row)
         if rows:
             answers[section] = rows
@@ -181,24 +200,25 @@ def workspace_questionnaire(request, school_id, household_id, academic_year_id):
     except ImportError:
         return _unavailable()
     key = getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_KEY", None)
-    member = str(uuid5(draft.pk, "fictional-contributor-v1"))
+    contributors = tuple((str(uuid5(draft.pk, fixture_id)), label)
+                         for fixture_id, label in _FICTIONAL_CONTRIBUTORS)
     policy = FictionalQuestionnairePolicy(
         reporting_year=_REPORTING_YEAR, min_cents=0, max_cents=_MAX_CENTS,
         categories=tuple(_categories(section) for section, _ in _SECTIONS),
-        member_ids=(member,),
+        member_ids=tuple(member_id for member_id, _ in contributors),
     )
     try:
         revision, saved = read_fictional_questionnaire(**scope, key=key)
         catalog = json.loads(_CATALOG.read_text(encoding="utf-8"))
         # Never silently substitute a different contributor on correction.
-        if any(row.get(field) != member
+        if any(row.get(field) not in policy.member_ids
                for section, field in _MEMBER_FIELD.items()
                for row in saved.get(section, [])):
             return _unavailable()
     except (QuestionnaireValidationError, OSError, UnicodeError, json.JSONDecodeError):
         return _unavailable()
     if request.method != "POST":
-        return _render(request, draft, _formsets(saved),
+        return _render(request, draft, _formsets(saved, contributors),
                        RevisionForm(initial={"revision": revision}), revision)
     if request.content_type != "application/x-www-form-urlencoded":
         return HttpResponse("Invalid fictional form.", status=400)
@@ -207,7 +227,7 @@ def workspace_questionnaire(request, school_id, household_id, academic_year_id):
         return HttpResponse("Invalid revision.", status=400)
     if revision_form.cleaned_data["revision"] != revision:
         return HttpResponse("Saved draft changed. Return to the questionnaire and reload.", status=409)
-    groups = _formsets(saved, request.POST)
+    groups = _formsets(saved, contributors, request.POST)
     valid = [group["formset"].is_valid() for group in groups]
     # Management fields are client-controlled. A truncated formset must never
     # silently remove existing financial rows; explicit DELETE is required.
@@ -221,7 +241,7 @@ def workspace_questionnaire(request, school_id, household_id, academic_year_id):
     try:
         save_fictional_questionnaire(
             **scope, key=key, expected_revision=revision,
-            catalog=catalog, policy=policy, answers=_rows(groups, member),
+            catalog=catalog, policy=policy, answers=_rows(groups),
         )
     except QuestionnaireValidationError as exc:
         if str(exc) == "questionnaire_revision_conflict":
