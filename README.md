@@ -38,6 +38,16 @@ To rehearse first-director approval before the household invitation, install the
 PYTHONPATH=src python -m django test jireh.schools.test_first_director_mfa.FirstDirectorOnboardingTests --settings=jireh.schools.test_settings
 ```
 
+With the same test dependencies, run the TLS SMTP rehearsal to exercise Django's
+mail client against an authenticated loopback server with a disposable certificate.
+It verifies two-code redemption after successful delivery, rejects untrusted or
+wrong-host certificates, and checks that SMTP rejection invalidates the rejected
+invitation or mailbox code.
+
+```bash
+PYTHONPATH=src python -m django test jireh.schools.test_smtp_tls_rehearsal --settings=jireh.schools.test_settings
+```
+
 **Data boundary:** An academic year, household and student belong to one school. A student may be linked to more than one household (such as separated parents), but that relationship **does not grant access to another household's financial records**. The current `for_school` ORM helpers and school-checked linking service are internal safeguards, **not authentication or complete database-enforced tenant isolation**. A later authenticated API must enforce school and household authorization independently; no public or production endpoint is enabled by these models. Never use bulk or raw writes to bypass the link service.
 
 All changes should use a narrow, reversible pull request (normally fewer than 20 changed files), targeted tests, and evidence for the exact commit. The product owner is a solo developer: automated checks and advisory engineering feedback are useful, but must not be misrepresented as independent human approval.
