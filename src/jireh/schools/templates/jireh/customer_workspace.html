@@ -104,6 +104,10 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <section class="panel"><h2>Saved information</h2><p>Financial revision: {{ review.revision }}</p>
 <h3>Children included</h3>{% for child in review.children %}<p>{{ child.first_name }} {{ child.last_name }}</p>{% empty %}<p>None selected.</p>{% endfor %}
 {% for section in review.sections %}<h3>{{ section.name }}</h3>{% for row in section.rows %}<p>{{ row.category }} · ${{ row.amount }} · {{ row.period }}</p>{% empty %}<p>No saved rows.</p>{% endfor %}{% endfor %}
+{% if review.school_questions %}
+<h3>Fictional school questions</h3>
+{% for question in review.school_questions %}<p>{{ question.label }} · {{ question.value }} · {{ question.version }}</p>{% endfor %}
+{% endif %}
 <h3>Supporting documents</h3>{% for document in review.documents %}<p>Verified fictional PDF version {{ document.version }}</p>{% empty %}<p>None saved.</p>{% endfor %}
 </section>
 <section class="panel"><h2>Review confirmation</h2><p>Annual household application fee at final submission: ${{ review.fee }}. No charge or final submission is available here.</p>
@@ -155,6 +159,12 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <button type="button" class="secondary" data-add-row>Add {{ group.title|lower }} row</button>
 </section>
 {% endfor %}
+{% if school_question_form.fields %}
+<section class="panel"><h2>Fictional school questions</h2>
+<p class="muted">Optional examples for this school and year.</p>
+{{ school_question_form.as_p }}
+</section>
+{% endif %}
 <button type="submit">Save fictional answers</button>
 </form>
 <p class="muted">Saved answers are not a completed application, legal attestation or payment. Select Delete on a row and save to remove it.</p>

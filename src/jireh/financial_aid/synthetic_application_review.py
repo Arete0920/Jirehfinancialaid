@@ -12,6 +12,7 @@ from django.db import transaction
 from jireh.schools.models import HouseholdAccess
 from .document_lifecycle import read_synthetic_document
 from .fees import quote_application_submission_fee
+from .fictional_school_questions import fictional_question_label, school_questions_for_draft
 from .models import (
     AidApplicationStudent, FinancialDocument, SyntheticApplicationReview,
     SyntheticQuestionnaireDraft, SYNTHETIC_REVIEW_VERSION,
@@ -58,6 +59,7 @@ def _review_state(*, user, school_id, household_id, academic_year_id, key):
     snapshot = SyntheticQuestionnaireDraft.objects.filter(application=draft).first()
     answers = _decrypt(snapshot, draft, key) if snapshot else {}
     sections = _financial_sections(answers)
+    school_questions = school_questions_for_draft(draft, answers.get("school_questions", []))
     selections = list(AidApplicationStudent.objects.for_school(draft.school_id).filter(
         application=draft, household_student__household_id=draft.household_id,
     ).select_related("household_student__student").order_by("pk"))
@@ -105,6 +107,11 @@ def _review_state(*, user, school_id, household_id, academic_year_id, key):
         "draft": draft, "snapshot": snapshot, "digest": digest,
         "revision": snapshot.revision if snapshot else 0,
         "children": children, "sections": sections, "documents": active,
+        "school_questions": [
+            {"label": fictional_question_label(answer.definition), "version": answer.definition.version,
+             "value": ("Yes" if answer.value else "No") if type(answer.value) is bool else answer.value}
+            for answer in school_questions.saved
+        ],
         "reasons": reasons, "confirmation": confirmation,
         "fee": _money(fee.amount_cents),
         "version": SYNTHETIC_REVIEW_VERSION,

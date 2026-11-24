@@ -114,6 +114,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.locator("#id_expenses-0-value").fill("200")
             page.locator("#id_expenses-0-period_start").fill("2026-01-01")
             page.locator("#id_expenses-0-period_end").fill("2026-01-31")
+            page.get_by_label("Include the example checklist?").select_option("no")
             with page.expect_response(lambda res: res.url == questionnaire_url and res.request.method == "POST") as written:
                 page.get_by_role("button", name="Save fictional answers").click()
             assert written.value.status == 302, f"Questionnaire save HTTP {written.value.status}"
@@ -124,6 +125,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(page.locator("#id_assets-0-category")).to_have_value("CASH")
             expect(page.locator("#id_liabilities-0-category")).to_have_value("MORTGAGE")
             expect(page.locator("#id_expenses-0-category")).to_have_value("HOUSING")
+            expect(page.get_by_label("Include the example checklist?")).to_have_value("no")
             page.locator("#id_income-0-value").fill("765.43")
             page.locator("#id_income-1-DELETE").check()
             page.get_by_role("button", name="Save fictional answers").click()
@@ -174,11 +176,12 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.screenshot(path=str(output / "customer-workspace-review.png"), full_page=True)
             review_url = page.url
             page.goto(questionnaire_url)
-            page.locator("#id_income-0-value").fill("765.44")
+            page.get_by_label("Include the example checklist?").select_option("yes")
             page.get_by_role("button", name="Save fictional answers").click()
             expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 3")
             page.goto(review_url)
             expect(page.locator("#review-status")).to_have_text("Review required")
+            expect(page.get_by_text("Include the example checklist? · Yes · v1", exact=True)).to_be_visible()
             page.get_by_role("checkbox", name="I reviewed this saved fictional application.").check()
             page.get_by_role("button", name="Confirm fictional review").click()
             expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
@@ -221,7 +224,8 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             assert page.request.get(director_a_url).status == 404
             page.goto(questionnaire_url)
             expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 3")
-            expect(page.locator("#id_income-0-value")).to_have_value("765.44")
+            expect(page.locator("#id_income-0-value")).to_have_value("765.43")
+            expect(page.get_by_label("Include the example checklist?")).to_have_value("yes")
             page.goto(review_url)
             expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
             page.goto(documents_url)
