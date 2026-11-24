@@ -476,3 +476,53 @@ class FinancialDocumentEvent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Document audit events are append-only.")
+
+
+class SyntheticQuestionnaireDraft(UUIDStampedModel):
+    """One encrypted, disposable financial-answer snapshot per annual draft.
+
+    No legal consent, verification, live collection or scoring is represented.
+    The separate revision events contain metadata only, not prior answers.
+    """
+
+    application = models.OneToOneField(
+        AidApplication, on_delete=models.PROTECT,
+        related_name="synthetic_questionnaire",
+    )
+    revision = models.PositiveIntegerField()
+    ciphertext = models.BinaryField(max_length=32796, editable=False)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(revision__gt=0), name="jireh_syn_questionnaire_revision_positive",
+            ),
+        ]
+
+
+class SyntheticQuestionnaireEvent(UUIDStampedModel):
+    """Append-only actor and revision evidence; no values or consent."""
+
+    questionnaire = models.ForeignKey(
+        SyntheticQuestionnaireDraft, on_delete=models.PROTECT, related_name="events",
+    )
+    actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    revision = models.PositiveIntegerField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["questionnaire", "revision"], name="jireh_syn_questionnaire_event_unique",
+            ),
+            models.CheckConstraint(
+                condition=Q(revision__gt=0), name="jireh_syn_questionnaire_event_positive",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Questionnaire revision evidence is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Questionnaire revision evidence is immutable.")
