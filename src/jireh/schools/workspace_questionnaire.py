@@ -17,6 +17,9 @@ from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_http_methods
 
+from jireh.financial_aid.fictional_school_questions import (
+    fictional_question_label, school_questions_for_draft,
+)
 from jireh.financial_aid.questionnaire_candidate import V1_ENUM_CHOICES
 from jireh.financial_aid.questionnaire_validation import QuestionnaireValidationError
 from jireh.financial_aid.services import selected_student_ids_for_draft
@@ -95,6 +98,49 @@ class RevisionForm(forms.Form):
     )
 
 
+_BOOLEAN_INPUTS = {"yes": True, "no": False}
+
+
+class SchoolQuestionForm(forms.Form):
+    def __init__(self, question_set, data=None):
+        super().__init__(data=data, prefix="school")
+        saved = {answer.definition.definition_id: answer.value for answer in question_set.saved}
+        for definition in question_set.definitions:
+            field = f"question-{definition.question_key}"
+            value = saved.get(definition.definition_id)
+            options = {"required": False, "label": fictional_question_label(definition),
+                       "error_messages": {"invalid_choice": "Choose a listed fictional answer."}}
+            if definition.answer_type == "boolean":
+                self.fields[field] = forms.TypedChoiceField(
+                    choices=(("", "Unanswered"), ("yes", "Yes"), ("no", "No")),
+                    coerce=_BOOLEAN_INPUTS.__getitem__, empty_value=None, **options,
+                )
+                self.initial[field] = "yes" if value is True else "no" if value is False else ""
+            else:
+                self.fields[field] = forms.ChoiceField(
+                    choices=(("", "Unanswered"), *((item, item) for item in definition.enum_options)),
+                    **options,
+                )
+                self.initial[field] = value or ""
+            self.fields[f"{field}-version"] = forms.CharField(
+                max_length=160, strip=False, widget=forms.HiddenInput(),
+            )
+            self.initial[f"{field}-version"] = definition.version
+        self.definitions = question_set.definitions
+
+    def rows(self):
+        rows = []
+        for definition in self.definitions:
+            field = f"question-{definition.question_key}"
+            if self.cleaned_data[f"{field}-version"] != definition.version:
+                raise QuestionnaireValidationError("school_question_binding_invalid")
+            answer = self.cleaned_data[field]
+            if answer is not None and answer != "":
+                rows.append({"definition_id": str(definition.definition_id),
+                             "definition_version": definition.version, "answer": answer})
+        return rows
+
+
 _AmountFormSet = formset_factory(
     FictionalAmountForm, extra=1, can_delete=True, max_num=_MAX_ROWS,
     validate_max=True, absolute_max=_MAX_ROWS,
@@ -131,6 +177,15 @@ def _formsets(saved, contributors, data=None):
     ]
 
 
+def _financial_field_names(groups):
+    names = set()
+    for group in groups:
+        formset = group["formset"]
+        for form in (formset.management_form, *formset.forms):
+            names.update(field.html_name for field in form)
+    return names
+
+
 def _rows(groups):
     answers = {}
     for group in groups:
@@ -160,10 +215,11 @@ def _rows(groups):
     return answers
 
 
-def _render(request, draft, groups, revision_form, revision, *, error="", status=200):
+def _render(request, draft, groups, revision_form, revision, *, school_form, error="", status=200):
     response = _page(
         request, "questionnaire", household=draft.household, year=draft.academic_year,
         questionnaire_groups=groups, revision_form=revision_form, saved_revision=revision,
+        school_question_form=school_form,
         questionnaire_error=error, max_questionnaire_rows=_MAX_ROWS,
         reporting_year=_REPORTING_YEAR,
     )
@@ -209,6 +265,7 @@ def workspace_questionnaire(request, school_id, household_id, academic_year_id):
     )
     try:
         revision, saved = read_fictional_questionnaire(**scope, key=key)
+        questions = school_questions_for_draft(draft, saved.get("school_questions", []))
         catalog = json.loads(_CATALOG.read_text(encoding="utf-8"))
         # Never silently substitute a different contributor on correction.
         if any(row.get(field) not in policy.member_ids
@@ -219,34 +276,52 @@ def workspace_questionnaire(request, school_id, household_id, academic_year_id):
         return _unavailable()
     if request.method != "POST":
         return _render(request, draft, _formsets(saved, contributors),
-                       RevisionForm(initial={"revision": revision}), revision)
+                       RevisionForm(initial={"revision": revision}), revision,
+                       school_form=SchoolQuestionForm(questions))
     if request.content_type != "application/x-www-form-urlencoded":
         return HttpResponse("Invalid fictional form.", status=400)
     revision_form = RevisionForm(request.POST)
-    if not revision_form.is_valid():
+    if len(request.POST.getlist("revision")) != 1 or not revision_form.is_valid():
         return HttpResponse("Invalid revision.", status=400)
     if revision_form.cleaned_data["revision"] != revision:
         return HttpResponse("Saved draft changed. Return to the questionnaire and reload.", status=409)
     groups = _formsets(saved, contributors, request.POST)
+    school_form = SchoolQuestionForm(questions)
+    expected_school_fields = {school_form.add_prefix(name) for name in school_form.fields}
+    posted_fields = set(request.POST)
+    allowed_fields = {"revision", "csrfmiddlewaretoken"} | expected_school_fields | _financial_field_names(groups)
+    if posted_fields - allowed_fields or any(len(request.POST.getlist(name)) != 1 for name in posted_fields):
+        return HttpResponse("Invalid fictional form.", status=400)
+    school_fields = posted_fields & expected_school_fields
+    if school_fields:
+        school_form = SchoolQuestionForm(questions, request.POST)
+    school_valid = not school_fields or (school_fields == expected_school_fields and school_form.is_valid())
     valid = [group["formset"].is_valid() for group in groups]
     # Management fields are client-controlled. A truncated formset must never
     # silently remove existing financial rows; explicit DELETE is required.
-    if not all(valid) or any(
+    if not school_valid or not all(valid) or any(
         group["formset"].initial_form_count() != group["count"]
         or group["formset"].total_form_count() < group["count"]
         for group in groups
     ):
         return _render(request, draft, groups, revision_form, revision,
-                       error="Correct the highlighted fictional rows.", status=400)
+                       school_form=school_form, error="Correct the highlighted fictional rows.", status=400)
     try:
+        answers = _rows(groups)
+        if school_fields:
+            answers["school_questions"] = school_form.rows()
         save_fictional_questionnaire(
             **scope, key=key, expected_revision=revision,
-            catalog=catalog, policy=policy, answers=_rows(groups),
+            catalog=catalog, policy=policy, answers=answers,
         )
     except QuestionnaireValidationError as exc:
-        if str(exc) == "questionnaire_revision_conflict":
+        code = str(exc)
+        if code == "questionnaire_revision_conflict":
             return HttpResponse("Saved draft changed. Return to the questionnaire and reload.", status=409)
+        error = "Fictional rows do not satisfy the reviewed test policy."
+        if code == "school_question_binding_invalid":
+            error = "School question versions do not match. Reload the questionnaire and try again."
         return _render(request, draft, groups, revision_form, revision,
-                       error="Fictional rows do not satisfy the reviewed test policy.", status=400)
+                       school_form=school_form, error=error, status=400)
     # Never render uncommitted form input as success. GET reloads encrypted DB state.
     return redirect("jireh_workspace_questionnaire", school_id, household_id, academic_year_id)

@@ -11,6 +11,7 @@ from django.db import transaction
 from django.http import Http404
 
 from jireh.schools.models import HouseholdAccess, School
+from .fictional_school_questions import school_questions_for_draft
 from .models import SyntheticQuestionnaireDraft, SyntheticQuestionnaireEvent
 from .questionnaire_candidate import (
     validate_v1_field_catalog, validate_v1_financial_candidate,
@@ -78,16 +79,18 @@ def _locked_draft(user, school_id, household_id, academic_year_id):
     )
 
 
-def _encode(answers, catalog, policy):
+def _encode(answers, catalog, policy, *, draft, previous):
     if type(policy) is not FictionalQuestionnairePolicy:
         raise QuestionnaireValidationError("questionnaire_policy_invalid")
-    if type(answers) is not dict or not set(answers).issubset(_SECTIONS):
+    if type(answers) is not dict or set(answers) - {*_SECTIONS, "school_questions"}:
         raise QuestionnaireValidationError("questionnaire_sections_invalid")
     if type(policy.categories) is not tuple or len(policy.categories) != 4:
         raise QuestionnaireValidationError("questionnaire_policy_invalid")
     # Empty snapshots also require the frozen development catalog.
     validate_v1_field_catalog(catalog)
     for section, rows in answers.items():
+        if section == "school_questions":
+            continue
         if type(rows) is not list or len(rows) > 32:
             raise QuestionnaireValidationError("questionnaire_rows_invalid")
         for row in rows:
@@ -98,6 +101,11 @@ def _encode(answers, catalog, policy):
                 reporting_year=policy.reporting_year,
                 authorized_member_ids=policy.member_ids,
             )
+    if "school_questions" in answers or "school_questions" in previous:
+        saved_questions = previous.get("school_questions", [])
+        question_rows = answers.get("school_questions", saved_questions)
+        school_questions_for_draft(draft, saved_questions).validate(question_rows)
+        answers = {**answers, "school_questions": question_rows}
     try:
         payload = json.dumps(
             answers, sort_keys=True, separators=(",", ":"), allow_nan=False,
@@ -141,9 +149,8 @@ def save_fictional_questionnaire(
     current = row.revision if row else 0
     if current != expected_revision:
         raise QuestionnaireValidationError("questionnaire_revision_conflict")
-    if row is not None:
-        _decrypt(row, draft, key)
-    payload = _encode(answers, catalog, policy)
+    previous = _decrypt(row, draft, key) if row is not None else {}
+    payload = _encode(answers, catalog, policy, draft=draft, previous=previous)
     revision = current + 1
     nonce = os.urandom(12)
     ciphertext = nonce + AESGCM(key).encrypt(nonce, payload, _aad(draft, revision))
