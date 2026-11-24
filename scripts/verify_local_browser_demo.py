@@ -29,6 +29,108 @@ def wait_for_demo(proc):
     raise RuntimeError("Synthetic demo server did not become ready on loopback")
 
 
+def verify_customer_workspace(sync_playwright, expect, output, runner):
+    """Use a fresh disposable database, independent of the guided demo."""
+    proc = subprocess.Popen(runner, cwd=ROOT)
+    try:
+        wait_for_demo(proc)
+        # The older loopback-only fixture page already exposes its generated
+        # throwaway password. Read it here solely for generic sign-in testing.
+        # The customer workspace never includes fixture credentials.
+        import json
+        import re
+        with urllib.request.urlopen(BASE + "/local-demo/", timeout=5) as response:
+            fixture = response.read().decode("utf-8")
+        match = re.search(r'const PASSWORD = "([^"]+)";', fixture)
+        if match is None:
+            raise RuntimeError("Disposable fixture credential unavailable")
+        password = json.loads('"' + match.group(1) + '"')
+        with sync_playwright() as playwright:
+            browser = playwright.chromium.launch(headless=True)
+            context = browser.new_context(viewport={"width": 1280, "height": 900})
+            page = context.new_page()
+
+            def sign_in(username):
+                page.goto(BASE + "/workspace/")
+                expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
+                page.get_by_label("Username").fill(username)
+                page.get_by_label("Password").fill(password)
+                page.get_by_role("button", name="Sign in", exact=True).click()
+                expect(page.get_by_role("heading", name="Your workspace")).to_be_visible()
+
+            def sign_out():
+                page.get_by_role("button", name="Sign out").click()
+                expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
+
+            sign_in("local-demo-family")
+            expect(page.get_by_role("heading", name="Family applications")).to_be_visible()
+            expect(page.get_by_role("heading", name="School director")).to_have_count(0)
+            page.get_by_role("link", name=re.compile("Sample Family")).click()
+            family_url = page.url
+            expect(page.locator("#draft-state")).to_have_text("No draft exists for this year.")
+
+            def phantom_create(route):
+                if route.request.method == "POST":
+                    route.fulfill(status=200, content_type="application/json",
+                                  body='{"id":"fictional-phantom","status":"DRAFT"}')
+                else:
+                    route.continue_()
+
+            page.route("**/workspace/family/**/draft/", phantom_create)
+            with page.expect_navigation():
+                page.get_by_role("button", name="Create annual draft").click()
+            expect(page.locator("#draft-state")).to_have_text("No draft exists for this year.")
+            page.unroute("**/workspace/family/**/draft/", phantom_create)
+            page.get_by_role("button", name="Create annual draft").click()
+            expect(page.locator("#draft-state")).to_have_text("DRAFT — saved")
+            page.get_by_role("button", name="Include Jordan").click()
+            expect(page.locator("#selected-count")).to_have_text("1 selected")
+            page.get_by_role("button", name="Include Taylor").click()
+            expect(page.locator("#selected-count")).to_have_text("2 selected")
+            page.reload()
+            expect(page.locator("#selected-count")).to_have_text("2 selected")
+            page.screenshot(path=str(output / "customer-workspace-family.png"), full_page=True)
+            sign_out()
+            assert page.request.get(family_url).status == 403
+
+            sign_in("local-demo-director-a")
+            expect(page.get_by_role("heading", name="Family applications")).to_have_count(0)
+            page.get_by_role("link", name=re.compile("Synthetic Christian Academy")).click()
+            director_a_url = page.url
+            expect(page.locator("#draft-total")).to_have_text("1")
+            expect(page.locator("#household-total")).to_have_text("1")
+            expect(page.locator("#child-total")).to_have_text("2")
+            page.screenshot(path=str(output / "customer-workspace-director.png"), full_page=True)
+            page.get_by_role("link", name="Open case").click()
+            case_url = page.url
+            expect(page.locator("#case-child-count")).to_have_text("2")
+            assert page.request.get(family_url).status == 404
+            sign_out()
+
+            sign_in("local-demo-director-b")
+            page.get_by_role("link", name=re.compile("Synthetic School B")).click()
+            expect(page.locator("#draft-total")).to_have_text("0")
+            assert page.request.get(director_a_url).status == 404
+            assert page.request.get(case_url).status == 404
+            sign_out()
+
+            sign_in("local-demo-family")
+            page.goto(family_url)
+            expect(page.locator("#selected-count")).to_have_text("2 selected")
+            assert page.request.get(director_a_url).status == 404
+            sign_out()
+            context.close()
+            browser.close()
+        print("CUSTOMER WORKSPACE: generic sign-in, forged-response denial, saved draft, two children, director readback, cross-school denial and logout: PASS", flush=True)
+    finally:
+        proc.terminate()
+        try:
+            proc.wait(timeout=10)
+        except subprocess.TimeoutExpired:
+            proc.kill()
+            proc.wait()
+
+
 def main():
     try:
         from playwright.sync_api import sync_playwright, expect
@@ -463,6 +565,7 @@ def main():
             proc.kill()
             proc.wait()
 
+    verify_customer_workspace(sync_playwright, expect, output, runner)
     print("Browser demo passed. Synthetic-only screenshots and video:", output)
 
 
