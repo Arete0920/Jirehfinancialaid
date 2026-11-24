@@ -94,6 +94,51 @@ class CandidateCatalogContractTests(unittest.TestCase):
                     validate_v1_field_catalog(record)
                 self.assertTrue(str(caught.exception).startswith("candidate_catalog_"))
 
+    def test_privacy_classification_and_requiredness_are_locked_for_all_31_fields(self):
+        """Changing a reviewed privacy or requiredness label is catalog drift."""
+        approved = catalog()
+        for section_index, section in enumerate(approved["sections"]):
+            for field_index, field in enumerate(section["fields"]):
+                for key, changed in (
+                    ("required", "UNREVIEWED_CHANGED"),
+                    ("sensitivity", "public"),
+                ):
+                    with self.subTest(field=field["id"], metadata=key):
+                        self.assertNotEqual(field[key], changed)
+                        altered = copy.deepcopy(approved)
+                        altered["sections"][section_index]["fields"][field_index][key] = changed
+                        with self.assertRaisesRegex(
+                            QuestionnaireValidationError,
+                            "^candidate_catalog_governance_drift$",
+                        ):
+                            validate_v1_field_catalog(altered)
+
+    def test_policy_decisions_must_remain_explicitly_unapproved_for_design_only(self):
+        """No silent removal of unresolved policy gates or live label changes."""
+        mutations = (
+            lambda c: c.update(schema_version="1.0.0"),
+            lambda c: c.pop("pending_owner_decisions"),
+            lambda c: c["pending_owner_decisions"].pop(),
+            lambda c: c["pending_owner_decisions"].append(
+                copy.deepcopy(c["pending_owner_decisions"][0])
+            ),
+            lambda c: c["pending_owner_decisions"][0].update(status="APPROVED"),
+            lambda c: c["policy_safety_baselines"].update(
+                status="LIVE_COLLECTION_APPROVED"
+            ),
+            lambda c: c["policy_safety_baselines"]["decisions"]["Q07"][
+                "outstanding_authorizations"
+            ].clear(),
+        )
+        for mutate in mutations:
+            with self.subTest(mutate=mutate):
+                altered = catalog()
+                mutate(altered)
+                with self.assertRaisesRegex(
+                    QuestionnaireValidationError, "^candidate_catalog_policy_drift$"
+                ):
+                    validate_v1_field_catalog(altered)
+
     def test_catalog_does_not_authorize_live_data_collection_or_scoring(self):
         item = catalog()
         self.assertTrue(item["requirements"]["no_production_routes"])
