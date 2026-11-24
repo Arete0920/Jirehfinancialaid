@@ -151,6 +151,52 @@ class FictionalOfferHTTPTests(TestCase):
         self.assertEqual(SyntheticAidSubmission.objects.count(), 1)
         self.assertEqual(SyntheticAidOffer.objects.count(), 1)
 
+    def test_director_saved_offer_get_is_scoped_and_get_only(self):
+        family = self.client_as(self.parent)
+        director = self.client_as(self.director)
+        other_director = self.client_as(self.other_director)
+        self.select_child()
+        read_url = self.url_director() + "read/"
+        self.assertEqual(director.get(read_url).status_code, 404)
+        self.assertEqual(family.get(read_url).status_code, 404)
+        self.assertEqual(other_director.get(read_url).status_code, 404)
+        self.assertEqual(director.get(read_url + "?debug=true").status_code, 400)
+        self.assertEqual(director.post(
+            read_url, HTTP_X_CSRFTOKEN=director.cookies["csrftoken"].value
+        ).status_code, 405)
+        self.assertEqual(self.post_attestation(family).status_code, 200)
+        self.assertEqual(director.get(read_url).status_code, 404)
+        self.assertEqual(self.post_officer(director).status_code, 200)
+        saved = director.get(read_url)
+        self.assertEqual(saved.status_code, 200)
+        self.assertIn("no-store", saved["Cache-Control"].lower())
+        self.assertEqual(saved.json(), {
+            "demo_only": True, "school_id": str(self.school.pk),
+            "academic_year_id": str(self.year.pk),
+            "application_id": str(self.app.pk),
+            "student_id": str(self.child.pk), "bucket": "need",
+            "amount_cents": 25000, "status": "SYNTHETIC_OFFERED",
+        })
+        self.assertEqual(family.get(read_url).status_code, 404)
+        self.assertEqual(other_director.get(read_url).status_code, 404)
+        self.assertEqual(
+            director.get(self.url_director(school=self.other_school.pk) + "read/").status_code,
+            404,
+        )
+        self.assertEqual(
+            director.get(self.url_director(year=self.other_year.pk) + "read/").status_code,
+            404,
+        )
+        self.assertEqual(
+            director.get(self.url_director(student=self.other_child.pk) + "read/").status_code,
+            404,
+        )
+        SchoolStaffAccess.objects.filter(
+            school=self.school, user=self.director
+        ).update(is_active=False)
+        self.assertEqual(director.get(read_url).status_code, 404)
+        self.assertEqual(SyntheticAidOffer.objects.count(), 1)
+
     def test_csrf_protected_post_and_explicit_fictional_attestation(self):
         family = self.client_as(self.parent)
         self.select_child()
