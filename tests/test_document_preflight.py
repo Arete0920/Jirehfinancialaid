@@ -104,6 +104,23 @@ class DocumentPreflightTests(unittest.TestCase):
             application_id=APPLICATION_A.upper(),
         )
 
+    def test_nil_uuid_rejected_for_every_document_scope_identifier(self):
+        nil = "00000000-0000-0000-0000-000000000000"
+        for name, code in (
+            ("school_id", "document_school_invalid"),
+            ("academic_year_id", "document_year_invalid"),
+            ("household_id", "document_household_invalid"),
+            ("application_id", "document_application_invalid"),
+        ):
+            with self.subTest(scope=name):
+                self.assert_rejected(code, **{name: nil})
+        for name, code in (
+            ("school_id", "document_policy_school_invalid"),
+            ("academic_year_id", "document_policy_year_invalid"),
+        ):
+            with self.subTest(policy_scope=name):
+                self.assert_rejected(code, policy=policy(**{name: nil}))
+
     def test_explicit_media_policy_only(self):
         for options in (
             None, (), [], ("application/pdf", "application/pdf"),
