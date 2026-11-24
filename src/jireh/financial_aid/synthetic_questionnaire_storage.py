@@ -39,8 +39,15 @@ def _guard(key):
     startup = os.environ.get("DJANGO_SETTINGS_MODULE")
     # Django override_settings uses a UserSettingsHolder whose SETTINGS_MODULE
     # is None. Still require a known disposable startup module and explicit opt-in.
+    disposable_demo = (
+        startup == "jireh.schools.demo_settings"
+        and os.environ.get("JIREH_LOCAL_DEMO_ONLY") == "YES-SYNTHETIC-ONLY"
+        and settings.ROOT_URLCONF == "jireh.schools.demo_urls"
+        and settings.DATABASES["default"]["ENGINE"] == "django.db.backends.sqlite3"
+        and str(settings.DATABASES["default"]["NAME"]) == os.environ.get("JIREH_LOCAL_DEMO_DB")
+    )
     if (
-        startup not in _TEST_SETTINGS
+        (startup not in _TEST_SETTINGS and not disposable_demo)
         or settings.SETTINGS_MODULE not in (None, startup)
         or getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_STORAGE", False) is not True
     ):

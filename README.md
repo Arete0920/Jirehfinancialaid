@@ -20,7 +20,7 @@ The five bucket identifiers follow `backend/financial_aid/models.py` in CROWN at
 
 ## Development checks
 
-Python **3.12** is the initial supported test runtime. The original contract tests use only the standard library. School and household database tests use Django **5.2.18** (the exact version pinned in the current CROWN backend):
+Python **3.12** is the initial supported test runtime. The original contract tests use only the standard library. School and household database tests use Django **5.2.19** (standalone 5.2 LTS security patch):
 
 ```bash
 PYTHONPATH=src python -m unittest discover -s tests -v

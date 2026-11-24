@@ -1,8 +1,9 @@
 """Generic customer workspace acceptance adapter.
 
 Reuse the existing authenticated, school-scoped HTTP handlers. The server
-renders persisted readback, not client-reported success. No fixture accounts,
-financial collection, synthetic offers, provisioning or payment are exposed.
+renders persisted readback, not client-reported success. Fictional financial
+rows are accepted only under an explicit disposable questionnaire gate.
+No fixture credentials, live collection, awards, provisioning or payment.
 Only disposable tests and the explicitly loopback-only demo may route this
 candidate. The closed standalone runtime never imports it.
 """
@@ -163,6 +164,7 @@ def workspace_family(request, school_id, household_id, academic_year_id):
     return _page(
         request, "family", household=household, year=year,
         draft=draft, children=children, selected_count=len(ids),
+        questionnaire_enabled=getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_STORAGE", False) is True,
     )
 
 

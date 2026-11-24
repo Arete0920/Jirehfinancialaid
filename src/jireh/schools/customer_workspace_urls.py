@@ -6,6 +6,7 @@ from jireh.financial_aid.student_views import select_student
 from .customer_workspace import (
     acceptance_only, workspace_case, workspace_director, workspace_family, workspace_home,
 )
+from .workspace_questionnaire import workspace_questionnaire
 from .session_views import test_family_login, test_family_logout
 
 FAMILY = "workspace/family/<uuid:school_id>/<uuid:household_id>/<uuid:academic_year_id>/"
@@ -19,6 +20,8 @@ urlpatterns = [
     path(FAMILY + "draft/", acceptance_only(family_annual_draft), name="jireh_workspace_draft"),
     path(FAMILY + "students/<uuid:student_id>/", acceptance_only(select_student),
          name="jireh_workspace_select"),
+    path(FAMILY + "questionnaire/", acceptance_only(workspace_questionnaire),
+         name="jireh_workspace_questionnaire"),
     path(DIRECTOR, acceptance_only(workspace_director), name="jireh_workspace_director"),
     path(DIRECTOR + "cases/<uuid:application_id>/", acceptance_only(workspace_case),
          name="jireh_workspace_case"),

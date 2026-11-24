@@ -1,12 +1,17 @@
 """HTTPS-mode HTTP acceptance for the generic workspace; never a live service."""
 import json
+import secrets
+from urllib.parse import urlencode
 from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
 
-from jireh.financial_aid.models import AidApplication, AidApplicationStudent
+from jireh.financial_aid.models import (
+    AidApplication, AidApplicationStudent, SyntheticQuestionnaireDraft,
+    SyntheticQuestionnaireEvent,
+)
 from jireh.schools.demo_seed import DEMO_PASSWORD, seed_synthetic_browser_demo
 from jireh.schools.grant_admin import revoke_household_access
 from jireh.schools.models import Household, HouseholdAccess, Student
@@ -16,6 +21,8 @@ from jireh.schools.services import link_student_to_household
 @override_settings(
     ROOT_URLCONF="jireh.schools.customer_workspace_urls",
     JIREH_CUSTOMER_WORKSPACE_ACCEPTANCE=True,
+    JIREH_SYNTHETIC_QUESTIONNAIRE_STORAGE=True,
+    JIREH_SYNTHETIC_QUESTIONNAIRE_KEY=secrets.token_bytes(32),
     TEMPLATES=[{
         "BACKEND": "django.template.backends.django.DjangoTemplates",
         "DIRS": [], "APP_DIRS": True, "OPTIONS": {},
@@ -166,3 +173,92 @@ class CustomerWorkspaceTests(TestCase):
         for path in ("/local-demo/", "/test-auth/login/", "/api/v1/",
                      "/workspace/submit/", "/workspace/pay/", "/workspace/awards/"):
             self.assertEqual(self.client.get(path, secure=True).status_code, 404)
+
+    def _questionnaire_payload(self, revision=0, amount="1234.56", initial=0):
+        data = {"revision": str(revision)}
+        for section in ("income", "assets", "liabilities", "expenses"):
+            data[f"{section}-TOTAL_FORMS"] = "1"
+            data[f"{section}-INITIAL_FORMS"] = str(initial if section == "income" else 0)
+        data.update({
+            "income-0-category": "EMPLOYMENT", "income-0-value": amount,
+            "income-0-period_start": "2026-01-01", "income-0-period_end": "2026-12-31",
+        })
+        return data
+
+    def _questionnaire_post(self, client, data, scope=None, csrf=True):
+        headers = {"HTTP_X_CSRFTOKEN": client.cookies["csrftoken"].value} if csrf else {}
+        return client.post(
+            reverse("jireh_workspace_questionnaire", args=scope or self.scope),
+            data=urlencode(data), content_type="application/x-www-form-urlencoded",
+            secure=True, HTTP_REFERER="https://testserver/workspace/", **headers,
+        )
+
+    def _start_questionnaire(self):
+        family = self._client("parent")
+        self._get(family, "jireh_workspace_family", *self.scope)
+        self.assertEqual(self._post(family, "jireh_workspace_draft", *self.scope).status_code, 200)
+        page = self._get(family, "jireh_workspace_questionnaire", *self.scope)
+        self.assertContains(page, "Saved revision: 0")
+        self.assertIn("no-store", page["Cache-Control"])
+        return family
+
+    def test_questionnaire_http_save_resume_correct_delete(self):
+        from django.conf import settings
+        from jireh.financial_aid.synthetic_questionnaire_storage import read_fictional_questionnaire
+
+        family = self._start_questionnaire()
+        initial = self._questionnaire_payload()
+        self.assertEqual(self._questionnaire_post(family, initial).status_code, 302)
+        self.assertContains(self._get(family, "jireh_workspace_questionnaire", *self.scope),
+                            'value="1234.56"')
+        self.assertEqual(self._questionnaire_post(family, initial).status_code, 409)
+        scope = dict(user=self.fixture["parent"], school_id=self.scope[0],
+                     household_id=self.scope[1], academic_year_id=self.scope[2],
+                     key=settings.JIREH_SYNTHETIC_QUESTIONNAIRE_KEY)
+        revision, saved = read_fictional_questionnaire(**scope)
+        self.assertEqual((revision, saved["income"][0]["amount"]), (1, 123456))
+        corrected = self._questionnaire_payload(1, "765.43", initial=1)
+        self.assertEqual(self._questionnaire_post(family, corrected).status_code, 302)
+        self.assertContains(self._get(family, "jireh_workspace_questionnaire", *self.scope),
+                            'value="765.43"')
+        removed = self._questionnaire_payload(2, "765.43", initial=1)
+        removed["income-0-DELETE"] = "on"
+        self.assertEqual(self._questionnaire_post(family, removed).status_code, 302)
+        self.assertEqual(read_fictional_questionnaire(**scope), (3, {}))
+        self.assertEqual(SyntheticQuestionnaireEvent.objects.count(), 3)
+        self.assertEqual(AidApplication.objects.get().status, AidApplication.STATUS_DRAFT)
+
+    def test_questionnaire_invalid_csrf_scope_and_revocation_are_nonmutating(self):
+        family = self._start_questionnaire()
+        data = self._questionnaire_payload()
+        self.assertEqual(self._questionnaire_post(family, data, csrf=False).status_code, 403)
+        invalid = self._questionnaire_payload(amount="1.001")
+        self.assertEqual(self._questionnaire_post(family, invalid).status_code, 400)
+        invalid = self._questionnaire_payload()
+        invalid["income-0-period_start"] = "2025-01-01"
+        self.assertEqual(self._questionnaire_post(family, invalid).status_code, 400)
+        self.assertEqual(SyntheticQuestionnaireDraft.objects.count(), 0)
+        self.assertEqual(self._questionnaire_post(family, data).status_code, 302)
+        for scope in (
+            (self.scope[0], self.separate.pk, self.scope[2]),
+            (self.fixture["school_b"].pk, self.fixture["household_b"].pk,
+             self.fixture["year_b"].pk),
+            (self.scope[0], self.scope[1], self.fixture["year_b"].pk),
+        ):
+            self.assertEqual(self._get(family, "jireh_workspace_questionnaire", *scope).status_code, 404)
+            self.assertEqual(self._questionnaire_post(family, data, scope=scope).status_code, 404)
+        for role in ("director_a", "director_b", "operator"):
+            client = self._client(role)
+            self._get(client, "jireh_workspace")
+            self.assertEqual(self._get(client, "jireh_workspace_questionnaire", *self.scope).status_code, 404)
+            self.assertEqual(self._questionnaire_post(client, data).status_code, 404)
+        with override_settings(JIREH_SYNTHETIC_QUESTIONNAIRE_STORAGE=False):
+            self.assertEqual(self._get(family, "jireh_workspace_questionnaire", *self.scope).status_code, 403)
+        revoke_household_access(
+            actor=self.fixture["director_a"], school_id=self.scope[0],
+            household_id=self.scope[1], subject_user_id=self.fixture["parent"].pk,
+        )
+        self.assertEqual(self._get(family, "jireh_workspace_questionnaire", *self.scope).status_code, 404)
+        self.assertEqual(self._questionnaire_post(family, data).status_code, 404)
+        self.assertEqual(SyntheticQuestionnaireDraft.objects.get().revision, 1)
+        self.assertEqual(SyntheticQuestionnaireEvent.objects.count(), 1)
