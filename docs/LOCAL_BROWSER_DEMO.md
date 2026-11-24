@@ -111,8 +111,13 @@ python -m pip install --only-binary=:all: --require-hashes -r requirements.txt -
 If these optional preproduction crypto dependencies are not installed, the
 other fictional demo workflows remain available; the document create action
 returns an unavailable response without writing a document.
-No files are uploaded, customer routes activated or actual financial records
-persisted. The temporary files disappear when the local process exits.
+No files are uploaded or production customer routes activated. The generic
+acceptance workspace includes four editable fictional financial sections with
+encrypted, revision-bound persistence when its existing crypto dependencies
+are installed. Do not enter real records. The key and temporary database are
+disposable; a fresh process creates a new demo. This is not the complete
+31-field questionnaire, approved consent, production key management, or live
+collection. The temporary files disappear when the local process exits.
 
 Django HTTP tests cover exact family-grant authorization, School B denial,
 revoke-with-existing-file, malformed input, CSRF, idempotent create/delete,

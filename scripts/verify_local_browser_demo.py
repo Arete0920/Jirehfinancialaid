@@ -90,8 +90,50 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.reload()
             expect(page.locator("#selected-count")).to_have_text("2 selected")
             page.screenshot(path=str(output / "customer-workspace-family.png"), full_page=True)
+            with page.expect_response(lambda res: res.url.endswith("/questionnaire/") and res.request.method == "GET") as loaded:
+                page.get_by_role("link", name="Open financial questionnaire").click()
+            assert loaded.value.headers.get("referrer-policy") == "same-origin"
+            questionnaire_url = page.url
+            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 0")
+            page.locator("#id_income-0-category").select_option("EMPLOYMENT")
+            page.locator("#id_income-0-value").fill("1234.56")
+            page.locator("#id_income-0-period_start").fill("2026-01-01")
+            page.locator("#id_income-0-period_end").fill("2026-12-31")
+            page.get_by_role("button", name="Add income row").click()
+            page.locator("#id_income-1-category").select_option("SUPPORT")
+            page.locator("#id_income-1-value").fill("100")
+            page.locator("#id_income-1-period_start").fill("2026-01-01")
+            page.locator("#id_income-1-period_end").fill("2026-12-31")
+            page.locator("#id_assets-0-category").select_option("CASH")
+            page.locator("#id_assets-0-value").fill("500")
+            page.locator("#id_assets-0-as_of_date").fill("2026-06-30")
+            page.locator("#id_liabilities-0-category").select_option("MORTGAGE")
+            page.locator("#id_liabilities-0-value").fill("900")
+            page.locator("#id_liabilities-0-as_of_date").fill("2026-06-30")
+            page.locator("#id_expenses-0-category").select_option("HOUSING")
+            page.locator("#id_expenses-0-value").fill("200")
+            page.locator("#id_expenses-0-period_start").fill("2026-01-01")
+            page.locator("#id_expenses-0-period_end").fill("2026-01-31")
+            with page.expect_response(lambda res: res.url == questionnaire_url and res.request.method == "POST") as written:
+                page.get_by_role("button", name="Save fictional answers").click()
+            assert written.value.status == 302, f"Questionnaire save HTTP {written.value.status}"
+            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 1")
+            page.reload()
+            expect(page.locator("#id_income-0-value")).to_have_value("1234.56")
+            expect(page.locator("#id_income-1-category")).to_have_value("SUPPORT")
+            expect(page.locator("#id_assets-0-category")).to_have_value("CASH")
+            expect(page.locator("#id_liabilities-0-category")).to_have_value("MORTGAGE")
+            expect(page.locator("#id_expenses-0-category")).to_have_value("HOUSING")
+            page.locator("#id_income-0-value").fill("765.43")
+            page.locator("#id_income-1-DELETE").check()
+            page.get_by_role("button", name="Save fictional answers").click()
+            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 2")
+            expect(page.locator("#id_income-0-value")).to_have_value("765.43")
+            expect(page.locator("#id_income-1-category")).to_have_value("")
+            page.screenshot(path=str(output / "customer-workspace-questionnaire.png"), full_page=True)
             sign_out()
             assert page.request.get(family_url).status == 403
+            assert page.request.get(questionnaire_url).status == 403
 
             sign_in("local-demo-director-a")
             expect(page.get_by_role("heading", name="Family applications")).to_have_count(0)
@@ -105,6 +147,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             case_url = page.url
             expect(page.locator("#case-child-count")).to_have_text("2")
             assert page.request.get(family_url).status == 404
+            assert page.request.get(questionnaire_url).status == 404
             sign_out()
 
             sign_in("local-demo-director-b")
@@ -118,6 +161,9 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.goto(family_url)
             expect(page.locator("#selected-count")).to_have_text("2 selected")
             assert page.request.get(director_a_url).status == 404
+            page.goto(questionnaire_url)
+            expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 2")
+            expect(page.locator("#id_income-0-value")).to_have_value("765.43")
             sign_out()
             context.close()
             browser.close()
