@@ -69,7 +69,7 @@ def acceptance_only(view):
             response = HttpResponseNotFound()
         response["X-Content-Type-Options"] = "nosniff"
         response["X-Frame-Options"] = "DENY"
-        response["Referrer-Policy"] = "no-referrer"
+        response.setdefault("Referrer-Policy", "no-referrer")
         response["X-Robots-Tag"] = "noindex, nofollow"
         return response
     return guarded

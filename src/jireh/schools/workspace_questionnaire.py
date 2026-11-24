@@ -149,6 +149,9 @@ def _render(request, draft, groups, revision_form, revision, *, error="", status
         reporting_year=_REPORTING_YEAR,
     )
     response.status_code = status
+    # Native same-origin form POSTs need an Origin/Referer accepted by CSRF.
+    # Never send the questionnaire URL as a referrer to another origin.
+    response["Referrer-Policy"] = "same-origin"
     return response
 
 
@@ -206,7 +209,13 @@ def workspace_questionnaire(request, school_id, household_id, academic_year_id):
         return HttpResponse("Saved draft changed. Return to the questionnaire and reload.", status=409)
     groups = _formsets(saved, request.POST)
     valid = [group["formset"].is_valid() for group in groups]
-    if not all(valid):
+    # Management fields are client-controlled. A truncated formset must never
+    # silently remove existing financial rows; explicit DELETE is required.
+    if not all(valid) or any(
+        group["formset"].initial_form_count() != group["count"]
+        or group["formset"].total_form_count() < group["count"]
+        for group in groups
+    ):
         return _render(request, draft, groups, revision_form, revision,
                        error="Correct the highlighted fictional rows.", status=400)
     try:

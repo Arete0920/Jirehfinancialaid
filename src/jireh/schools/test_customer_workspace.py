@@ -200,6 +200,7 @@ class CustomerWorkspaceTests(TestCase):
         page = self._get(family, "jireh_workspace_questionnaire", *self.scope)
         self.assertContains(page, "Saved revision: 0")
         self.assertIn("no-store", page["Cache-Control"])
+        self.assertEqual(page["Referrer-Policy"], "same-origin")
         return family
 
     def test_questionnaire_http_save_resume_correct_delete(self):
@@ -217,6 +218,10 @@ class CustomerWorkspaceTests(TestCase):
                      key=settings.JIREH_SYNTHETIC_QUESTIONNAIRE_KEY)
         revision, saved = read_fictional_questionnaire(**scope)
         self.assertEqual((revision, saved["income"][0]["amount"]), (1, 123456))
+        truncated = self._questionnaire_payload(1, initial=0)
+        truncated["income-TOTAL_FORMS"] = "0"
+        self.assertEqual(self._questionnaire_post(family, truncated).status_code, 400)
+        self.assertEqual(read_fictional_questionnaire(**scope), (revision, saved))
         corrected = self._questionnaire_payload(1, "765.43", initial=1)
         self.assertEqual(self._questionnaire_post(family, corrected).status_code, 302)
         self.assertContains(self._get(family, "jireh_workspace_questionnaire", *self.scope),
@@ -232,6 +237,15 @@ class CustomerWorkspaceTests(TestCase):
         family = self._start_questionnaire()
         data = self._questionnaire_payload()
         self.assertEqual(self._questionnaire_post(family, data, csrf=False).status_code, 403)
+        for origin in ("null", "https://unrelated.invalid"):
+            with self.subTest(origin=origin):
+                response = family.post(
+                    reverse("jireh_workspace_questionnaire", args=self.scope),
+                    data=urlencode(data), content_type="application/x-www-form-urlencoded",
+                    secure=True, HTTP_ORIGIN=origin,
+                    HTTP_X_CSRFTOKEN=family.cookies["csrftoken"].value,
+                )
+                self.assertEqual(response.status_code, 403)
         invalid = self._questionnaire_payload(amount="1.001")
         self.assertEqual(self._questionnaire_post(family, invalid).status_code, 400)
         invalid = self._questionnaire_payload()

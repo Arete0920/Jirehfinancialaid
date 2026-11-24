@@ -90,7 +90,9 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.reload()
             expect(page.locator("#selected-count")).to_have_text("2 selected")
             page.screenshot(path=str(output / "customer-workspace-family.png"), full_page=True)
-            page.get_by_role("link", name="Open financial questionnaire").click()
+            with page.expect_response(lambda res: res.url.endswith("/questionnaire/") and res.request.method == "GET") as loaded:
+                page.get_by_role("link", name="Open financial questionnaire").click()
+            assert loaded.value.headers.get("referrer-policy") == "same-origin"
             questionnaire_url = page.url
             expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 0")
             page.locator("#id_income-0-category").select_option("EMPLOYMENT")
@@ -112,7 +114,9 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.locator("#id_expenses-0-value").fill("200")
             page.locator("#id_expenses-0-period_start").fill("2026-01-01")
             page.locator("#id_expenses-0-period_end").fill("2026-01-31")
-            page.get_by_role("button", name="Save fictional answers").click()
+            with page.expect_response(lambda res: res.url == questionnaire_url and res.request.method == "POST") as written:
+                page.get_by_role("button", name="Save fictional answers").click()
+            assert written.value.status == 302, f"Questionnaire save HTTP {written.value.status}"
             expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 1")
             page.reload()
             expect(page.locator("#id_income-0-value")).to_have_value("1234.56")
