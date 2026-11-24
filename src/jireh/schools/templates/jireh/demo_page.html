@@ -107,7 +107,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 "use strict";
 (() => {
   const PASSWORD = "{{ demo_password|escapejs }}";
-  const state = {role: null, config: null, students: [], draft: null, needsReconciliation: false, documentId: null};
+  const state = {role: null, config: null, students: [], draft: null, needsReconciliation: false, documentId: null, selectedCount: 0, receiptVerified: false, receiptUncertain: false};
   const $ = id => document.getElementById(id);
   const setActiveStep = step => {
     document.querySelectorAll(".step[data-step]").forEach(node => {
@@ -137,9 +137,55 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     data.academic_year_id === school.year_id &&
     (postedId === null || data.id === postedId)
   );
+  const validUuid = value => typeof value==="string" &&
+    /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/.test(value) &&
+    value!=="00000000-0000-0000-0000-000000000000";
+  const validSyntheticReceipt = (data, school, postedId=null) =>
+    data?.status==="SYNTHETIC_RECEIPT" &&
+    data.application_id===state.draft?.id && state.draft?.school_id===school.id &&
+    state.draft?.household_id===school.household_id &&
+    state.draft?.academic_year_id===school.year_id && validUuid(data.receipt_id) &&
+    data.consent_version==="synthetic-demo-v1" &&
+    (postedId===null || data.receipt_id===postedId);
+  const validSyntheticOfficerOffer = (data, school, applicationId, studentId) =>
+    data?.demo_only===true && data.school_id===school.id &&
+    data.academic_year_id===school.year_id &&
+    data.application_id===applicationId && data.student_id===studentId &&
+    data.status==="SYNTHETIC_OFFERED" && data.bucket==="need" &&
+    data.amount_cents===25000;
+  const setReceiptButton = () => {
+    $("record-synthetic-receipt").disabled=
+      state.role!=="local-demo-family" || !state.draft || state.needsReconciliation ||
+      state.selectedCount===0 || state.receiptVerified || state.receiptUncertain;
+  };
+  async function refreshSyntheticReceipt(){
+    if(state.role!=="local-demo-family" || !state.draft) return;
+    const school=primary(),originalDraftId=state.draft.id;
+    state.receiptUncertain=true;
+    setReceiptButton();
+    let read=null;
+    try{read=await api(path(school,school.household_id,school.year_id)+"synthetic/receipt/read/");}
+    catch{ /* A failed independent read is not proof of absence. */ }
+    if(state.role!=="local-demo-family" || state.draft?.id!==originalDraftId)return;
+    if(read?.ok && validSyntheticReceipt(read.data,school)){
+      state.receiptVerified=true;state.receiptUncertain=false;
+      $("synthetic-family-result").textContent=
+        "Fictional receipt independently verified. Application remains DRAFT.";
+      setActiveStep(6);
+    }else if(read?.status===404){
+      state.receiptVerified=false;state.receiptUncertain=false;
+      $("synthetic-family-result").textContent="No fictional receipt recorded.";
+    }else{
+      state.receiptVerified=false;state.receiptUncertain=true;
+      $("synthetic-family-result").textContent=
+        "Receipt verification required. Refresh household before retry.";
+    }
+    setReceiptButton();
+  }
   function requireDraftReadback() {
     state.draft = null;
     state.needsReconciliation = true;
+    state.receiptVerified=false;state.receiptUncertain=true;state.selectedCount=0;
     $("draft-status").textContent = "Verification required";
     $("create-draft").disabled = true;
     $("record-synthetic-receipt").disabled = true;
@@ -154,7 +200,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   async function logout(){
     if(!state.role)return;
     await api("/test-auth/logout/","POST");
-    state.role=null;state.config=null;state.students=[];state.draft=null;state.needsReconciliation=false;state.documentId=null;
+    state.role=null;state.config=null;state.students=[];state.draft=null;state.needsReconciliation=false;state.documentId=null;state.selectedCount=0;state.receiptVerified=false;state.receiptUncertain=false;
     setFictionalDocumentState(null);
     $("synthetic-attestation").checked=false;
     $("synthetic-family-result").replaceChildren();
@@ -207,8 +253,8 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     $("draft-status").textContent=draft.ok?draft.data.status:"Not created";
     renderStudents();
     setActiveStep(state.draft ? 3 : 2);
-    if(state.draft){await refreshSelections();await refreshFictionalDocuments();}
-    else{state.documentId=null;setFictionalDocumentState(null);}
+    if(state.draft){await refreshSelections();await refreshFictionalDocuments();await refreshSyntheticReceipt();}
+    else{state.documentId=null;setFictionalDocumentState(null);state.selectedCount=0;state.receiptVerified=false;state.receiptUncertain=false;setReceiptButton();}
     $("create-draft").disabled=false;
     $("preview-family-questionnaire").disabled=!state.draft;
     $("family-questionnaire-result").textContent="";
@@ -233,12 +279,13 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
   }
   async function refreshSelections(){
     const a=primary(),r=await api(path(a,a.household_id,a.year_id)+"students/");
-    if(!r.ok)return;
+    if(!r.ok){state.selectedCount=0;setReceiptButton();return;}
+    state.selectedCount=r.data.student_ids.length;
     document.querySelectorAll("#children .child").forEach((item,index)=>{
       const chosen=r.data.student_ids.includes(state.students[index].id);
       const btn=item.querySelector("button");btn.textContent=chosen?"Selected ✓":"Select child";btn.disabled=chosen;
     });
-    $("record-synthetic-receipt").disabled=!r.data.student_ids.length;
+    setReceiptButton();
     if(r.data.student_ids.length) setActiveStep(4);
   }
   async function createDraft(){
@@ -265,7 +312,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
       $("draft-status").textContent=saved.data.status;
       setActiveStep(3);
       log("Annual draft active: "+saved.data.id.slice(0,8)+"… — independently verified saved record");
-      renderStudents();await refreshSelections();await refreshFictionalDocuments();
+      renderStudents();await refreshSelections();await refreshFictionalDocuments();await refreshSyntheticReceipt();
     }catch(error){
       // Ambiguous writes cannot be retried until an independent read verifies.
       requireDraftReadback();
@@ -389,19 +436,33 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     }
   }
   async function recordSyntheticReceipt(){
-    if(state.role!=="local-demo-family"||!state.draft)return;
+    if(state.role!=="local-demo-family"||!state.draft||state.receiptVerified||state.receiptUncertain)return;
     if(!$("synthetic-attestation").checked){
       log("Check the explicit fictional-attestation box first",false);
       return;
     }
-    const a=primary(),r=await api(
-      path(a,a.household_id,a.year_id)+"synthetic/receipt/",
-      "POST",true,{"accuracy_attested":true}
-    );
-    if(!r.ok){log("Fictional receipt unavailable HTTP "+r.status,false);return;}
-    $("synthetic-family-result").textContent="Fictional receipt recorded. Application remains DRAFT.";
-    log("Fictional submission receipt saved and replay-safe; no legal submission");
-    setActiveStep(6);
+    const a=primary(),url=path(a,a.household_id,a.year_id)+"synthetic/receipt/",originalDraftId=state.draft.id;
+    state.receiptUncertain=true;setReceiptButton();
+    let post=null,read=null;
+    try{post=await api(url,"POST",true,{"accuracy_attested":true});}catch{ /* Ambiguous outcome. */ }
+    if(state.role!=="local-demo-family" || state.draft?.id!==originalDraftId)return;
+    if(post && !post.ok && post.status<500){
+      state.receiptUncertain=false;setReceiptButton();
+      log("Fictional receipt unavailable HTTP "+post.status,false);return;
+    }
+    try{read=await api(url+"read/");}catch{ /* Require explicit refresh. */ }
+    if(state.role!=="local-demo-family" || state.draft?.id!==originalDraftId)return;
+    if(read?.ok && validSyntheticReceipt(read.data,a,post?.ok?post.data?.receipt_id:null)){
+      state.receiptVerified=true;state.receiptUncertain=false;setReceiptButton();
+      $("synthetic-family-result").textContent=
+        "Fictional receipt independently verified. Application remains DRAFT.";
+      log("Independent fictional receipt GET verified; no legal submission or payment");
+      setActiveStep(6);
+      return;
+    }
+    $("synthetic-family-result").textContent=
+      "Receipt verification required. Refresh household before retry.";
+    log("Receipt POST is not persistence proof; refresh before retry",false);
   }
   async function readSyntheticOffers(){
     if(state.role!=="local-demo-family"||!state.config)return;
@@ -492,22 +553,56 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
     $("case-detail").append(p);
     if(originalRole==="local-demo-director-a")showAssessmentPreview(school,applicationId);
     if(originalRole==="local-demo-director-a" && count>0){
-      const button=document.createElement("button");
-      button.type="button";button.className="button";
-      button.textContent="Record fictional $250 need offer";
-      button.addEventListener("click",async()=>{
-        if(state.role!==originalRole)return;
-        const selected=r.data.selected_student_ids[0];
-        const result=await api(staffPath(school)+applicationId+
-          "/synthetic/offers/"+selected+"/","POST");
-        if(!result.ok){log("Fictional offer unavailable HTTP "+result.status,false);return;}
+      const selected=r.data.selected_student_ids[0];
+      const url=staffPath(school)+applicationId+"/synthetic/offers/"+selected+"/";
+      const readUrl=url+"read/";
+      let existing=null;
+      try{existing=await api(readUrl);}catch{ /* A read outage is ambiguous. */ }
+      if(state.role!==originalRole)return;
+      if(existing?.ok && validSyntheticOfficerOffer(existing.data,school,applicationId,selected)){
         const message=document.createElement("p");
-        message.textContent="Fictional $250 need offer recorded for one selected child. No funds committed.";
+        message.textContent="Fictional $250 need offer independently verified. No funds committed.";
         $("case-detail").append(message);
-        log("Synthetic officer offer recorded; amount $250; no ledger or payment");
         setActiveStep(7);
-      });
-      $("case-detail").append(button);
+      }else if(existing?.status!==404){
+        const message=document.createElement("p");
+        message.textContent="Offer verification required. Reload selected case before retry.";
+        $("case-detail").append(message);
+      }else{
+        const button=document.createElement("button");
+        button.type="button";button.className="button";
+        button.textContent="Record fictional $250 need offer";
+        button.addEventListener("click",async()=>{
+          if(state.role!==originalRole)return;
+          button.disabled=true;
+          let post=null,saved=null;
+          try{post=await api(url,"POST");}catch{ /* Ambiguous outcome. */ }
+          if(post && !post.ok && post.status<500){
+            log("Fictional offer unavailable HTTP "+post.status,false);
+            return;
+          }
+          try{saved=await api(readUrl);}catch{ /* Require manual reload. */ }
+          if(state.role!==originalRole)return;
+          if(saved?.ok && validSyntheticOfficerOffer(saved.data,school,applicationId,selected) &&
+             (!post?.ok || (post.data?.application_id===saved.data.application_id &&
+                post.data?.student_id===saved.data.student_id &&
+                post.data?.bucket===saved.data.bucket &&
+                post.data?.amount_cents===saved.data.amount_cents &&
+                post.data?.status===saved.data.status))){
+            const message=document.createElement("p");
+            message.textContent="Fictional $250 need offer independently verified. No funds committed.";
+            $("case-detail").append(message);
+            log("Independent officer offer GET verified; no real award or payment");
+            setActiveStep(7);
+          }else{
+            const message=document.createElement("p");
+            message.textContent="Offer verification required. Reload selected case before retry.";
+            $("case-detail").append(message);
+            log("Officer offer POST is not persistence proof; reload before retry",false);
+          }
+        });
+        $("case-detail").append(button);
+      }
     }
     log("Authorized school draft case detail: "+count+" selected children");
   }
