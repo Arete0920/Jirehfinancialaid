@@ -5,7 +5,7 @@ POST adds one pre-linked child to that same draft, idempotently. No read or
 write in this module grants household access or changes tuition or payment.
 """
 
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, JsonResponse
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
@@ -53,6 +53,8 @@ def select_student(request, school_id, household_id, academic_year_id, student_i
         return JsonResponse({"detail": "Forbidden."}, status=403)
     except Http404:
         return JsonResponse({"detail": "Not found."}, status=404)
+    except ValidationError:
+        return JsonResponse({"detail": "Student selection unavailable."}, status=409)
     return JsonResponse(
         {
             "application_id": str(selection.application_id),
