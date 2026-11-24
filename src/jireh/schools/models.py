@@ -1369,3 +1369,48 @@ class OperatorWebAuthnRecoveryReplacement(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Recovery replacement evidence cannot be deleted.")
+
+
+class SchoolSetupIntent(UUIDStampedModel):
+    """Immutable receipt for an unapproved school setup proposal.
+
+    The initial preparation record is its own audit receipt: actor, exact
+    candidate fingerprint, request key and timestamps commit together. This
+    is not a runnable job, a verified authorization, or a School identity.
+    A later separately approved service must bind verified operator authority
+    and a validated candidate to any execution decision.
+    """
+
+    proposed_by = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT,
+        related_name="jireh_school_setup_intents",
+    )
+    idempotency_key = models.UUIDField(unique=True)
+    candidate_digest = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(idempotency_key=uuid.UUID(int=0)),
+                name="jireh_setup_intent_key_nonzero",
+            ),
+            models.CheckConstraint(
+                condition=Q(candidate_digest__regex=r"^[0-9a-f]{64}$"),
+                name="jireh_setup_intent_digest",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if (not isinstance(self.candidate_digest, str)
+                or len(self.candidate_digest) != 64
+                or any(c not in "0123456789abcdef" for c in self.candidate_digest)):
+            raise ValidationError("Invalid setup candidate fingerprint.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("School setup intent evidence is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("School setup intent evidence cannot be deleted.")

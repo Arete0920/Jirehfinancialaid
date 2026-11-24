@@ -54,6 +54,52 @@ def main():
             page.goto(BASE + "/local-demo/", wait_until="networkidle")
             expect(page.get_by_text("LOCAL SYNTHETIC DEMO")).to_be_visible()
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Choose a persona")
+
+            # The presenter guide is a manual checklist, not an authorization or
+            # progress mechanism. Opening it must not select a persona.
+            guide = page.locator("#presenter-guide")
+            guide.locator("summary").click()
+            expect(guide).to_have_attribute("open", "")
+            expect(guide.get_by_role("list", name="Presenter checklist").get_by_role("listitem")).to_have_count(8)
+            expect(page.locator("#authstatus")).to_have_text("Signed out")
+            expect(page.locator('.step[aria-current="step"]')).to_contain_text("Choose a persona")
+            page.screenshot(path=str(output / "manual-presenter-guide.png"), full_page=True)
+            guide.locator("summary").click()
+
+            def summary_status(path):
+                return page.evaluate("""async path => {
+                    const response = await fetch(path, {
+                        credentials: "same-origin", cache: "no-store"
+                    });
+                    return response.status;
+                }""", path)
+
+            director_url = "/local-demo/director-summary/"
+            operations_url = "/local-demo/platform-operations/"
+            assert summary_status(director_url) == 403, "Anonymous director report exposed"
+            assert summary_status(operations_url) == 403, "Anonymous operator report exposed"
+
+            def verify_director_report(school_name, expected, filename):
+                page.get_by_role("link", name="View verified school workload").click()
+                expect(page.get_by_role("heading", name="Director workload")).to_be_visible()
+                expect(page.get_by_text(school_name, exact=True)).to_be_visible()
+                expect(page.get_by_text("Not a live financial-aid report.")).to_be_visible()
+                labels = (
+                    "Draft household applications",
+                    "Distinct draft households",
+                    "Selected household-child links",
+                    "Fictional receipts",
+                    "Fictional offered-aid records",
+                    "Fictional offer face value",
+                )
+                for label, value in zip(labels, expected, strict=True):
+                    card = page.locator(".card").filter(
+                        has=page.get_by_role("heading", name=label, exact=True)
+                    )
+                    expect(card.locator(".number")).to_have_text(value)
+                page.screenshot(path=str(output / filename), full_page=True)
+                page.get_by_role("link", name="Return to the fictional family walkthrough").click()
+
             page.get_by_role("button", name="Family applicant").click()
             expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             expect(page.locator("#school-name")).to_have_text("Synthetic Christian Academy")
@@ -216,6 +262,8 @@ def main():
             family_workload = workload(school_a)
             assert family_workload["status"] == 404, "Family must not see staff workload"
             assert family_workload["data"] == {"detail": "Not found."}
+            assert summary_status(director_url) == 404, "Family saw a director report"
+            assert summary_status(operations_url) == 403, "Family saw an operator report"
 
             page.get_by_role("button", name="School A director").click()
             expect(page.locator("#application-count")).to_have_text("1")
@@ -234,6 +282,38 @@ def main():
             assert "no-store" in school_a_workload["cacheControl"].lower()
             assert workload(school_b)["status"] == 404, "Director A saw School B workload"
             print("CHROMIUM WORKLOAD A: family denied, director scoped, count 1/1/2, cross-school denied", flush=True)
+            assert summary_status(operations_url) == 403, "Director saw an operator report"
+            verify_director_report(
+                "Synthetic Christian Academy", ("1", "1", "2", "1", "0", "$0.00"),
+                "director-workload-before-offer.png",
+            )
+
+            # Returning to the walkthrough clears browser state, not the
+            # authenticated server session. A failed logout must not permit
+            # another login or expose any stale persona panel.
+            assert summary_status(director_url) == 200
+            login_posts = []
+            def observe_login(route):
+                if route.request.method == "POST":
+                    login_posts.append(True)
+                route.continue_()
+
+            def unavailable_logout(route):
+                route.fulfill(status=503, content_type="application/json",
+                              body='{"detail":"Unavailable."}')
+
+            page.route("**/test-auth/login/", observe_login)
+            page.route("**/test-auth/logout/", unavailable_logout)
+            page.get_by_role("button", name="School A director").click()
+            expect(page.locator("#authstatus")).to_have_text("Session not verified")
+            expect(page.locator("#director")).to_be_hidden()
+            expect(page.locator("#family")).to_be_hidden()
+            expect(page.locator("#operator")).to_be_hidden()
+            assert not login_posts, "Sign-in attempted despite unverified logout"
+            page.unroute("**/test-auth/logout/", unavailable_logout)
+            page.unroute("**/test-auth/login/", observe_login)
+            page.get_by_role("button", name="School A director").click()
+            expect(page.locator("#application-count")).to_have_text("1")
             page.get_by_role("button", name="View selected children").click()
             expect(page.locator("#case-detail")).to_contain_text("selected children: 2")
             expect(page.locator('.step[aria-current="step"]')).to_contain_text("Director review")
@@ -308,6 +388,10 @@ def main():
                 "PASS: Another school's director inventory denied (404)"
             )
             page.screenshot(path=str(output / "director-journey.png"), full_page=True)
+            verify_director_report(
+                "Synthetic Christian Academy", ("1", "1", "2", "1", "1", "$250.00"),
+                "director-workload-after-offer.png",
+            )
             page.get_by_role("button", name="Family applicant").click()
             expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             page.get_by_role("button", name="Read fictional offered aid").click()
@@ -339,6 +423,36 @@ def main():
                 "PASS: Another school's director inventory denied (404)"
             )
             page.screenshot(path=str(output / "other-school-journey.png"), full_page=True)
+            verify_director_report(
+                "Synthetic School B", ("0", "0", "0", "0", "0", "$0.00"),
+                "director-workload-school-b.png",
+            )
+            page.get_by_role("button", name="Arete platform operator").click()
+            expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
+            expect(page.locator("#operator")).to_be_visible()
+            assert summary_status(director_url) == 404, "Operator saw a school director report"
+            page.locator("#operator-summary-link").click()
+            expect(page.get_by_role("heading", name="School readiness overview")).to_be_visible()
+            expect(page.locator('table[aria-label="Saved synthetic school inventory"] tbody tr')).to_have_count(2)
+            expect(page.get_by_text("Not a provisioning system.")).to_be_visible()
+            expect(page.get_by_text("Synthetic Christian Academy")).to_be_visible()
+            expect(page.get_by_text("Synthetic School B")).to_be_visible()
+            inventory = page.get_by_role("table", name="Saved synthetic school inventory")
+            for school_name in ("Synthetic Christian Academy", "Synthetic School B"):
+                row = inventory.get_by_role("row").filter(has_text=school_name)
+                expect(row.get_by_role("cell", name="2026-27", exact=True)).to_be_visible()
+                expect(row.get_by_role("cell", name="Fictional seed only", exact=True)).to_be_visible()
+                expect(row.get_by_role("cell", name="Not configured", exact=True)).to_be_visible()
+            page.screenshot(path=str(output / "platform-operations-preview.png"), full_page=True)
+            print("CHROMIUM OPERATIONS: two saved fictional schools; no creation or integrations", flush=True)
+            page.get_by_role("link", name="Return to the fictional walkthrough").click()
+            page.get_by_role("button", name="Family applicant").click()
+            expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
+            page.get_by_role("button", name="Read fictional offered aid").click()
+            expect(page.locator("#synthetic-family-result")).to_contain_text(
+                "Fictional offered aid: $250.00 need"
+            )
+            print("CHROMIUM NAVIGATION: failed logout denies sign-in; dashboard and operator return verified", flush=True)
             context.close()
             browser.close()
     finally:
