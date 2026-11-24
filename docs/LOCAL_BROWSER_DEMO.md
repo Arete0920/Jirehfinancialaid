@@ -1,7 +1,7 @@
 # Jireh — localhost synthetic browser demonstration
 
 **Status:** Test-only, not a deployed or production-ready application.
-**Presentation:** Owner approved the original synthetic walkthrough on November 22, 2026. The expanded fictional $250 sequence requires its own exact-commit browser evidence and approval of updated claims.
+**Presentation:** Owner approved the original synthetic walkthrough on November 22, 2026. The expanded family, school-director and Arete-operator presentation requires exact-commit browser evidence and separate owner approval of the expanded claims and audience. Use the manual presenter guide in the local browser; there is no autoplay.
 
 This prototype renders an actual local browser interface backed by the same
 Django household, annual draft, selected-student and school-director endpoints
@@ -31,33 +31,62 @@ server.** The synthetic usernames and per-process randomly generated
 credentials are not customer authentication; localhost sessions use test-only cookies
 over loopback HTTP. Do not use on untrusted workstations or with real data.
 
-## Browser walkthrough
+## Guided sales presentation — live presenter, manual pacing
 
-1. **Family applicant:** Sign in using the synthetic family persona. The UI
-   reads the authorized household and linked children.
-2. **Create/resume draft:** Create an annual DRAFT for one school and year.
-   Repeating the action returns the same draft.
-3. **Select two children:** Each child is selected idempotently and linked
-   to that family draft.
-4. **Fictional encrypted document:** In the family panel, create a fixed,
-   server-generated fictional PDF, read it back through school/household/year
-   authorization and authenticated AES-GCM decryption, and securely delete it.
-   The test browser verifies the document is no longer readable. No upload
-   widget or client-supplied document bytes are accepted. The local synthetic
-   fixture allowlist is **not** production antivirus scanning.
-5. **Cross-school and CSRF checks:** The UI deliberately exercises rejected
-   School B access and rejects a request missing its CSRF header.
-6. **Fictional receipt:** Check the explicit synthetic attestation and select
-   **Record fictional receipt**. The same receipt is returned on retry; the real
-   application still displays `DRAFT`.
-7. **School A director:** Switch personas and review the draft's selected children.
-   Select **Record fictional $250 need offer** to create a school-scoped,
-   idempotent, test-only offer. No school money is committed.
-8. **Family readback:** Switch back to **Family applicant** and select
-   **Read fictional offered aid**; the authorized family sees only its
-   synthetic $250 offer.
-9. **School B director:** See that this director cannot read School A's
-   inventory and has no School B drafts.
+Allow about 12–15 minutes plus questions. On a trusted workstation, start the
+loopback demo and expand **Presenter guide — manual, no autoplay**. Do not
+record a click-through as a substitute for a presenter verifying the actual
+saved results. The walkthrough is an engineering demonstration, not a live
+customer offering or a production acceptance decision.
+
+Opening: "Jireh is designed as an independent financial-aid solution.
+Today I will demonstrate a fictional family's annual draft, the school's
+review and the Arete operations view. All people, schools, amounts and
+records shown here are fictional; no real application or payment is processed."
+
+| Chapter | Presenter action | Required observation before continuing |
+| --- | --- | --- |
+| 1. Family draft (2 min) | Select **Family applicant**, create/resume the annual draft, select both children; sign in again. | Synthetic Christian Academy; one saved DRAFT; both selections persist. |
+| 2. Fictional intake (2 min) | Select a fixed example scenario and **Validate fictional questionnaire**. On supported Linux/WSL2 with the pinned crypto dependencies, add, read and delete the fixed fictional PDF. | Example validation only, no answers saved; encrypted sample independently read and deleted. No real upload control or production scanning claim. |
+| 3. Receipt and tenant boundary (2 min) | Verify School B access and CSRF denial, then attest and select **Record fictional receipt**. | Cross-school 404, missing-CSRF 403, independently verified receipt; application remains DRAFT. |
+| 4. Director review (3 min) | Select **School A director**, open **View selected children**, preview both fixed assessment scenarios, and record the fictional $250 need offer once. | Two child links; $92.00 Modest and $159.67 Moderate test-policy previews; $250 independently verified fictional offer, not a recommendation derived from either preview. |
+| 5. Director workload (1–2 min) | Open **View verified school workload**. Explain each saved metric and return to the walkthrough. | For this fresh one-household scenario: 1 draft, 1 distinct household, 2 child links, 1 fictional receipt, 1 fictional offer, $250.00 fictional face value. No real submitted, accepted, payable or disbursed aid. |
+| 6. Family readback and isolation (2 min) | Select **Family applicant**, read fictional offered aid; select **School B director**, verify other-school denial and open its workload. | Family sees its own $250.00 need example; School B's six workload metrics are zero, with its own school heading. |
+| 7. Arete command center (1–2 min) | Return, select **Arete platform operator**, and open **View fictional school readiness**. | Exactly two saved fictional schools, their academic years and director-grant counts, setup marked Fictional seed only and SIS marked Not configured. No provisioning or activation control. |
+
+Pause after each chapter. If a required observation fails or independent
+readback is uncertain, stop rather than repeatedly submitting a write.
+Do not skip the family readback or School B check. If the optional encrypted
+document prerequisites are absent, disclose the limitation and omit that
+chapter's document action; do not claim that document behavior was demonstrated.
+
+### CROWN behavioral reuse (no CROWN runtime dependencies)
+
+- The [CROWN school/year dashboard read model](https://github.com/Arete0920/Crown-CSMS/blob/46b56609fe18360299b08eabaa8bccdffb356a0e/backend/crown_api/dashboards/financial_aid_live.py)
+  supplies the design principle of counting records rather than students or
+  cash, enforcing school/year scope and rejecting inconsistent records. The
+  standalone Jireh director report uses Jireh's grants and saved fictional records
+  ([merged PR #105](https://github.com/Arete0920/Jirehfinancialaid/pull/105)).
+- The [CROWN platform-operations registry](https://github.com/Arete0920/Crown-CSMS/blob/46b56609fe18360299b08eabaa8bccdffb356a0e/frontend/dashboards/src/views/platformOps/PlatformOpsHome.jsx)
+  supplies the registry and status-view pattern only. Jireh's isolated fictional
+  overview ([merged PR #108](https://github.com/Arete0920/Jirehfinancialaid/pull/108))
+  uses independent Jireh school, academic-year and grant records. It does not
+  reuse CROWN tenant profiles, HTTP services, payment fields or creation controls.
+- The outstanding job architecture and two-person provisioning authority stay
+  in [issue #109](https://github.com/Arete0920/Jirehfinancialaid/issues/109).
+  No claim of operational school provisioning follows from viewing the registry.
+
+### Expanded engineering checkpoint
+
+The source baseline for this expanded script is [main at PR #108's merge](https://github.com/Arete0920/Jirehfinancialaid/commit/761d5d65b9c39b5a416c6b100de9a3a71b8dc7c6).
+Its [PR-head foundation](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45319138524),
+[browser](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45319138509)
+and [repository presentation](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45319138474)
+workflows concluded success. They are not post-merge or expanded-script evidence.
+The expanded browser test must independently capture the manual guide, the
+director dashboard before and after the offer, School B's empty dashboard and
+the operator registry. Retain the exact-SHA run, screenshots and video; no
+expanded presentation is accepted until those results and the claims are reviewed.
 
 ## Fictional document safety boundary
 
@@ -104,7 +133,8 @@ python scripts/verify_local_browser_demo.py
 ```
 
 The script starts the same loopback-only disposable demo, drives a Chromium
-session and asserts the visible family and director workflows. On success,
+session and asserts the visible family, director, school-isolation, manual
+presenter guide and operator workflows. On success,
 it writes synthetic-only screenshots and video under
 `artifacts/synthetic-demo/`. **That run is not yet certified until its
 logs, screenshots and video are captured and independently inspected.**
@@ -162,11 +192,13 @@ demo URL. Do not imply that a viewer can sign into a hosted product.
 
 ### Required closing disclosure
 
-> "Financial questions and documents, legally binding consent and submission,
-> financial need calculations for real families, real award decisions, payments,
-> real-school onboarding, and hosted customer access are **not implemented**. The
-> fictional $250 offer is synthetic test evidence only, not a funding promise.
-> Production acceptance is incomplete. No real family data may be entered."
+> "We demonstrated fixed fictional questionnaire examples, a fixed encrypted
+> sample document when supported, a fictional receipt and offer, school-scoped
+> director reporting, and a read-only Arete registry. Real financial-answer
+> collection, customer document uploads, legal consent and final submission,
+> binding award decisions, payment, real-school provisioning, live SIS
+> connections, and hosted customer access are not enabled. The fictional
+> $250 offer is not a funding promise. No real family data may be entered."
 
 **No unverified claims:** Do not describe the financial aid form as completed,
 the award engine as operating, the synthetic login as production identity
@@ -177,17 +209,21 @@ separate evidence and approvals.
 
 ### Sign-off and stop conditions
 
-- [x] Exact-main automated browser and foundation checks captured; screenshots
-  inspected as described above.
-- [ ] Product owner approves the **opening, walkthrough, closing disclosure,
-  audience and technical-preview designation** in
-  [issue #42](https://github.com/Arete0920/Jirehfinancialaid/issues/42).
+- [x] Historical original-workflow exact-main browser and foundation evidence
+  captured and screenshots inspected as described above.
+- [ ] Expanded exact-commit browser and foundation checks pass; review the
+  guide, director before/after/empty reports, operator screenshots and video.
+- [ ] Product owner approves the expanded **opening, walkthrough, closing
+  disclosure, audience and technical-preview designation** in
+  [issue #47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) and
+  [issue #109](https://github.com/Arete0920/Jirehfinancialaid/issues/109).
 - [ ] Presenter completes a dry-run using the exact checked-out commit,
   confirms every demonstrated status, and records date, SHA and result.
 - [ ] Confirm the session uses synthetic personas only and a trusted,
   loopback-only workstation (or screen share of that workstation).
 - [ ] Record the approved demo date, presenter, and any observed deviation
-  with evidence in issue #42.
+  with evidence in the applicable open issue (#47 or #109); retain #42 as
+  the historical baseline approval.
 
 If any test fails, a real person/school record appears, a forbidden route
 becomes accessible, or evidence no longer matches the checkout, **stop
@@ -205,12 +241,14 @@ packet is intentionally distinct from the eleven production release gates in
   Modest, including a **$50.00** capped hardship line, and **$159.67** for Moderate.
   These read-only results use fixed fictional inputs. The separate $250 offer in
   the walkthrough uses its own fixed example amount.
-- **Not implemented here:** Financial questionnaire, tax document upload,
-  legal consent/final submission, assessment of real families, binding school
-  award decisions, fees/payment, real onboarding, SIS integrations or production.
-- **Synthetic-only expansion under verification:** Immutable fictional receipt,
-  director-authorized fixed $250 example and family-scoped metadata readback;
-  not a financial aid award, ledger posting or actual application submission.
+- **Synthetic-only source features:** Fixed questionnaire validation without
+  saving answers, fixed encrypted sample lifecycle, immutable fictional receipt,
+  director-authorized fixed $250 example, family-scoped readback, school/year
+  workload report and read-only Arete school registry. These are not real
+  submissions, awards, ledger postings or operational provisioning.
+- **Not enabled:** Real questionnaire intake, tax document uploads, legal
+  consent/final submission, live family assessment, binding awards, fees/payment,
+  actual school activation, live SIS integrations or production customer routes.
 - **Not represented:** Production security sign-off, real-world identity
   verification, monitoring, incident response, document protection, and
   recoverability.
