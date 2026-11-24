@@ -287,6 +287,31 @@ def main():
                 "Synthetic Christian Academy", ("1", "1", "2", "1", "0", "$0.00"),
                 "director-workload-before-offer.png",
             )
+
+            # Returning to the walkthrough clears browser state, not the
+            # authenticated server session. A failed logout must not permit
+            # another login or expose any stale persona panel.
+            assert summary_status(director_url) == 200
+            login_posts = []
+            def observe_login(route):
+                if route.request.method == "POST":
+                    login_posts.append(True)
+                route.continue_()
+
+            def unavailable_logout(route):
+                route.fulfill(status=503, content_type="application/json",
+                              body='{"detail":"Unavailable."}')
+
+            page.route("**/test-auth/login/", observe_login)
+            page.route("**/test-auth/logout/", unavailable_logout)
+            page.get_by_role("button", name="School A director").click()
+            expect(page.locator("#authstatus")).to_have_text("Session not verified")
+            expect(page.locator("#director")).to_be_hidden()
+            expect(page.locator("#family")).to_be_hidden()
+            expect(page.locator("#operator")).to_be_hidden()
+            assert not login_posts, "Sign-in attempted despite unverified logout"
+            page.unroute("**/test-auth/logout/", unavailable_logout)
+            page.unroute("**/test-auth/login/", observe_login)
             page.get_by_role("button", name="School A director").click()
             expect(page.locator("#application-count")).to_have_text("1")
             page.get_by_role("button", name="View selected children").click()
@@ -420,6 +445,14 @@ def main():
                 expect(row.get_by_role("cell", name="Not configured", exact=True)).to_be_visible()
             page.screenshot(path=str(output / "platform-operations-preview.png"), full_page=True)
             print("CHROMIUM OPERATIONS: two saved fictional schools; no creation or integrations", flush=True)
+            page.get_by_role("link", name="Return to the fictional walkthrough").click()
+            page.get_by_role("button", name="Family applicant").click()
+            expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
+            page.get_by_role("button", name="Read fictional offered aid").click()
+            expect(page.locator("#synthetic-family-result")).to_contain_text(
+                "Fictional offered aid: $250.00 need"
+            )
+            print("CHROMIUM NAVIGATION: failed logout denies sign-in; dashboard and operator return verified", flush=True)
             context.close()
             browser.close()
     finally:
