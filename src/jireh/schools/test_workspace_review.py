@@ -223,6 +223,81 @@ class WorkspaceReviewTests(TestCase):
         self.assertNotContains(page, "Private contributor review")
         self.assertNotContains(page, "Record fictional $250 need offer")
 
+    def test_school_director_resolves_the_hold_and_family_sees_a_neutral_update(self):
+        from .models import FictionalContributorDecision, FictionalContributorException
+
+        marker = FictionalContributorException.objects.create(application=self.draft, requested_by=self.scope["user"])
+        case_scope = {"school_id": self.draft.school_id, "academic_year_id": self.draft.academic_year_id,
+                      "application_id": self.draft.pk}
+        case_url = reverse("jireh_workspace_case", kwargs=case_scope)
+        url = reverse("jireh_workspace_contributor_decision", kwargs=case_scope)
+        token = self.client.cookies["csrftoken"].value
+
+        def decide(decision="alternate_evidence_accepted", csrf=True):
+            body = urlencode({"decision": decision, **({"csrfmiddlewaretoken": token} if csrf else {})})
+            return self.client.post(url, body, secure=True, HTTP_ORIGIN="https://testserver",
+                                    content_type="application/x-www-form-urlencoded")
+
+        self.assertEqual(decide().status_code, 404)
+        director = self.fixture["director_a"]
+        self.client.force_login(director)
+        permission = Permission.objects.get(content_type__app_label="schools", codename="view_fictionalcontributorexception")
+        director.user_permissions.remove(permission)
+        self.assertEqual(decide().status_code, 404)
+        director.user_permissions.add(permission)
+        self.client.force_login(self.fixture["director_b"])
+        self.assertEqual(decide().status_code, 404)
+        self.client.force_login(director)
+        self.assertEqual(decide(csrf=False).status_code, 403)
+        self.assertEqual(decide("private evidence").status_code, 400)
+        for _ in range(2):
+            self.assertRedirects(decide(), case_url, fetch_redirect_response=False)
+        self.assertEqual(decide("contributor_exception_approved").status_code, 409)
+        stored = FictionalContributorDecision.objects.get(marker=marker)
+        self.assertEqual(stored.decided_by_id, director.pk)
+        self.assertContains(self.client.get(case_url, secure=True), "Alternate evidence accepted")
+
+        self.client.force_login(self.scope["user"])
+        family_page = self.client.get(self.url, secure=True)
+        self.assertContains(family_page, "Additional review completed.")
+        self.assertNotContains(family_page, "Alternate evidence accepted")
+        preflight = read_fictional_submission_preflight(**self.scope, key=self.key)
+        self.assertNotIn("submission_additional_review_pending", preflight.blocking_codes)
+        self.assertIn("submission_payment_unreconciled", preflight.blocking_codes)
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
+
+    @skipUnless(connection.vendor == "postgresql", "PostgreSQL trigger evidence")
+    def test_postgresql_director_decision_requires_permission_and_releases_only_the_review_hold(self):
+        from .models import FictionalContributorDecision, FictionalContributorException
+
+        select_student_for_draft(**self.scope, student_id=self.children[0].pk)
+        marker = FictionalContributorException.objects.create(application=self.draft, requested_by=self.scope["user"])
+        permission = Permission.objects.get(content_type__app_label="schools", codename="view_fictionalcontributorexception")
+        director = self.fixture["director_a"]
+        director.user_permissions.remove(permission)
+        other_director = self.fixture["director_b"]
+        other_director.user_permissions.add(permission)
+        outcome = FictionalContributorDecision.Outcome.CONTRIBUTOR_EXCEPTION
+        for actor in (director, other_director, self.scope["user"]):
+            with self.subTest(actor=actor.pk), self.assertRaisesMessage(IntegrityError, "Invalid contributor decision scope"), transaction.atomic():
+                FictionalContributorDecision.objects.bulk_create([
+                    FictionalContributorDecision(marker=marker, decided_by=actor, outcome=outcome),
+                ])
+        director.user_permissions.add(permission)
+        decision = FictionalContributorDecision.objects.create(marker=marker, decided_by=director, outcome=outcome)
+        with self.assertRaisesMessage(IntegrityError, "Contributor review decision is immutable"), transaction.atomic():
+            FictionalContributorDecision.objects.filter(pk=decision.pk).update(
+                outcome=FictionalContributorDecision.Outcome.ALTERNATE_EVIDENCE,
+            )
+        with self.assertRaisesMessage(IntegrityError, "Contributor review decision is immutable"), transaction.atomic():
+            FictionalContributorDecision.objects.filter(pk=decision.pk).delete()
+        receipt = record_synthetic_demo_submission(**self.scope, accuracy_attested=True)
+        self.assertEqual(receipt.application_id, self.draft.pk)
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+
     def test_confirmation_rejects_multipart(self):
         self.prepare()
         response = self.client.post(
