@@ -104,3 +104,67 @@ class SavedNeedWorkspaceTests(TestCase):
                 self.assertContains(self.get_case(), "Saved-evidence calculation unavailable.")
             with self.settings(ROOT_URLCONF="jireh.runtime.urls"):
                 self.assertEqual(self.get_case().status_code, 404)
+
+
+    def test_revision_bound_projection_is_explicit_and_never_allocates_funds(self):
+        from dataclasses import replace
+        from jireh.financial_aid.annual_school_plan import FICTIONAL_15145_PLAN
+        from jireh.financial_aid.school_plan_revisions import record_fictional_school_plan
+
+        self.save(0, self.answers)
+        url = reverse("jireh_workspace_case_projection", args=(
+            self.fixture.school_id, self.fixture.academic_year_id, self.draft.pk,
+        ))
+        data = {"questionnaire_revision": "1", "plan_revision": "1",
+                "committed": "10000.00", "proposed": "2500.00"}
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
+            director = Client(enforce_csrf_checks=True)
+            director.force_login(self.demo["director_a"])
+            page = director.get(self.url, secure=True)
+            self.assertContains(page, "Project fictional need aid")
+            headers = {"HTTP_X_CSRFTOKEN": director.cookies["csrftoken"].value,
+                       "HTTP_REFERER": "https://testserver" + self.url}
+            self.assertEqual(director.get(url, secure=True).status_code, 405)
+            self.assertEqual(director.post(url, data, secure=True).status_code, 403)
+            def post(values):
+                return director.post(url, values, secure=True, **headers)
+            response = post(data)
+            self.assertContains(response, 'id="projection-household-balance">$22,325.00</strong>')
+            self.assertContains(response, 'id="projection-remaining-budget">$237,500.00</strong>')
+            self.assertContains(response, "No funds have been allocated.")
+            self.assertIn("no-store", response["Cache-Control"])
+            for invalid in ({"proposed": "-1"}, {"proposed": "1e3"}, {"committed": "1.001"},
+                            {"plan_revision": "0"}, {"unexpected": "1"}, {"proposed": ["1", "2"]}):
+                self.assertEqual(post({**data, **invalid}).status_code, 400)
+            for invalid in ({"proposed": "13959.01"}, {"committed": "249000.00"},
+                            {"questionnaire_revision": "2"}, {"plan_revision": "2"}):
+                denied = post({**data, **invalid})
+                self.assertContains(denied, "Projection unavailable.", status_code=409)
+                self.assertNotContains(denied, 'id="projection-remaining-budget"', status_code=409)
+            from unittest.mock import patch
+            with patch("jireh.schools.saved_need_workspace.contributor_review_pending", return_value=True):
+                self.assertEqual(post(data).status_code, 409)
+            changed = copy.deepcopy(self.answers)
+            changed["income"][0]["amount"] = 5_000_000
+            self.save(1, changed)
+            self.assertEqual(post(data).status_code, 409)
+            updated = {**data, "questionnaire_revision": "2"}
+            self.assertEqual(post(updated).status_code, 200)
+            record_fictional_school_plan(
+                user=self.demo["director_a"], school_id=self.fixture.school_id,
+                academic_year_id=self.fixture.academic_year_id,
+                plan=replace(FICTIONAL_15145_PLAN, annual_aid_budget_cents=30_000_000),
+            )
+            self.assertEqual(post(updated).status_code, 409)
+            self.assertContains(post({**updated, "plan_revision": "2"}),
+                                'id="projection-remaining-budget">$287,500.00</strong>')
+            for role in ("parent", "director_b", "operator"):
+                other = Client()
+                other.force_login(self.demo[role])
+                self.assertEqual(other.post(url, data, secure=True).status_code, 404)
+            with self.settings(ROOT_URLCONF="jireh.runtime.urls"):
+                self.assertEqual(post(data).status_code, 404)
+        self.assertFalse(SyntheticAidOffer.objects.exists())
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
