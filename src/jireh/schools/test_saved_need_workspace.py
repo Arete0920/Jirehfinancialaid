@@ -257,7 +257,6 @@ class SavedNeedWorkspaceTests(TestCase):
         from django.db import IntegrityError, connection, transaction
         from django.contrib.auth.models import Permission
         from jireh.financial_aid.models import FictionalNeedDecision
-        from jireh.financial_aid.synthetic_submission import record_synthetic_demo_submission
         from .fictional_need_decisions import record_fictional_need_decision, read_decision_budget
         from .fictional_income_reviews import record_income_evidence
 
@@ -266,10 +265,12 @@ class SavedNeedWorkspaceTests(TestCase):
                      year_id=self.fixture.academic_year_id, application_id=self.draft.pk,
                      expected_revision=0, questionnaire_revision=1, plan_revision=1,
                      amount_cents=250_000)
-        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture,
+                           JIREH_SYNTHETIC_APPLICATION_REVIEW=True,
+                           JIREH_SYNTHETIC_DOCUMENTS_ONLY=True):
             with self.assertRaises(ValidationError):
                 record_fictional_need_decision(**scope)
-            record_synthetic_demo_submission(**self.scope, accuracy_attested=True)
+            self._prepare_current_review_and_receipt(save=False)
             director = self.demo["director_a"]
             permission = Permission.objects.get(
                 content_type__app_label="financial_aid", content_type__model="fictionalneeddecision",
@@ -343,3 +344,102 @@ class SavedNeedWorkspaceTests(TestCase):
         self.assertFalse(SyntheticAidOffer.objects.exists())
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+
+    def _prepare_current_review_and_receipt(self, *, save=True):
+        from uuid import uuid4
+        from django.conf import settings
+        from jireh.financial_aid.document_lifecycle import create_synthetic_document
+        from jireh.financial_aid.synthetic_application_review import (
+            confirm_fictional_application_review, read_fictional_application_review,
+        )
+        from jireh.financial_aid.synthetic_document_views import _ALLOWED_FIXTURES, _POLICY, _backend
+
+        if save:
+            self.save(0, self.answers)
+        create_synthetic_document(
+            **self.scope, request_key=str(uuid4()), category="FICTIONAL_TAX",
+            data=_ALLOWED_FIXTURES[0], policy=_POLICY, backend=_backend(),
+        )
+        review_scope = dict(**self.scope, key=settings.JIREH_SYNTHETIC_QUESTIONNAIRE_KEY)
+        state = read_fictional_application_review(**review_scope)
+        self.assertEqual(state["reasons"], [])
+        confirm_fictional_application_review(**review_scope, expected_digest=state["digest"], reviewed=True)
+        family = Client(enforce_csrf_checks=True)
+        family.force_login(self.demo["parent"])
+        args = (self.fixture.school_id, self.fixture.household_id, self.fixture.academic_year_id)
+        review_url = reverse("jireh_workspace_review", args=args)
+        self.assertEqual(family.get(review_url, secure=True).status_code, 200)
+        token = family.cookies["csrftoken"].value
+        receipt_url = reverse("jireh_workspace_rehearsal_receipt", args=args)
+        self.assertEqual(family.post(
+            receipt_url, urlencode({"state_digest": state["digest"], "attested": "yes"}),
+            content_type="application/x-www-form-urlencoded", secure=True,
+            HTTP_ORIGIN="https://testserver", HTTP_X_CSRFTOKEN=token,
+        ).status_code, 302)
+        return review_scope, SyntheticAidSubmission.objects.get(application=self.draft)
+
+    def _need_decision_scope(self):
+        return dict(user=self.demo["director_a"], school_id=self.fixture.school_id,
+                    year_id=self.fixture.academic_year_id, application_id=self.draft.pk,
+                    expected_revision=0, questionnaire_revision=1, plan_revision=1,
+                    amount_cents=250_000)
+
+    def test_current_review_required_after_saved_financial_correction(self):
+        from django.core.exceptions import ValidationError
+        from jireh.financial_aid.models import FictionalNeedDecision
+        from jireh.financial_aid.synthetic_application_review import (
+            confirm_fictional_application_review, read_fictional_application_review,
+        )
+        from .fictional_need_decisions import record_fictional_need_decision
+
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture,
+                           JIREH_SYNTHETIC_APPLICATION_REVIEW=True,
+                           JIREH_SYNTHETIC_DOCUMENTS_ONLY=True):
+            review_scope, receipt = self._prepare_current_review_and_receipt()
+            scope = self._need_decision_scope()
+            first = record_fictional_need_decision(**scope)
+            self.assertEqual(first.receipt_id, receipt.pk)
+            self.assertEqual(first.need_cents, 1_395_900)
+            corrected = copy.deepcopy(self.answers)
+            corrected["income"][0]["amount"] = 5_000_000
+            self.save(1, corrected)
+            current = read_fictional_application_review(**review_scope)
+            self.assertEqual(current["revision"], 2)
+            self.assertIsNone(current["confirmation"])
+            self.assertEqual(SyntheticAidSubmission.objects.get(application=self.draft).pk, receipt.pk)
+            adjustment = dict(scope, expected_revision=1, questionnaire_revision=2, amount_cents=200_000)
+            director = Client(enforce_csrf_checks=True)
+            director.force_login(self.demo["director_a"])
+            self.assertEqual(director.get(self.url, secure=True).status_code, 200)
+            url = reverse("jireh_workspace_need_decision", args=(
+                self.fixture.school_id, self.fixture.academic_year_id, self.draft.pk,
+            ))
+            body = urlencode(dict(decision_revision="1", questionnaire_revision="2",
+                                  plan_revision="1", amount="2000.00", confirmed="yes"))
+            headers = {"HTTP_ORIGIN": "https://testserver",
+                       "HTTP_X_CSRFTOKEN": director.cookies["csrftoken"].value}
+
+            def post():
+                return director.post(url, body, secure=True, **headers,
+                                     content_type="application/x-www-form-urlencoded")
+
+            self.assertEqual(post().status_code, 409)
+            with self.assertRaises(ValidationError):
+                record_fictional_need_decision(**adjustment)
+            self.assertEqual(FictionalNeedDecision.objects.filter(application=self.draft).count(), 1)
+            # Candidate acceptance semantics: historical receipt stays immutable;
+            # a current family confirmation is separately required.
+            confirm_fictional_application_review(
+                **review_scope, expected_digest=current["digest"], reviewed=True,
+            )
+            self.assertEqual(post().status_code, 302)
+            second = record_fictional_need_decision(**adjustment)
+            self.assertEqual(FictionalNeedDecision.objects.filter(application=self.draft).count(), 2)
+            self.assertEqual(second.receipt_id, receipt.pk)
+            self.assertEqual(second.questionnaire_revision, 2)
+            self.assertEqual(second.need_cents, 895_900)
+            self.assertEqual(second.amount_cents, 200_000)
+            self.assertEqual(SyntheticAidSubmission.objects.filter(application=self.draft).count(), 1)
+            self.assertFalse(SyntheticAidOffer.objects.exists())
+            self.draft.refresh_from_db()
+            self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)

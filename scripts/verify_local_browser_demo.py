@@ -50,6 +50,29 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             context = browser.new_context(viewport={"width": 1280, "height": 900})
             page = context.new_page()
 
+            def assert_metric_layout(label):
+                original = page.viewport_size
+                for width in (320, 390, 768, 1280):
+                    page.set_viewport_size({"width": width, "height": 900})
+                    assert page.locator(".metric strong").count() > 0
+                    assert page.locator(".metric strong").evaluate_all("""elements => elements.every(el => {
+                        const card = el.closest('.metric');
+                        const box = card.getBoundingClientRect();
+                        const style = getComputedStyle(card);
+                        const range = document.createRange();
+                        range.selectNodeContents(el);
+                        return [...range.getClientRects()].every(r =>
+                            r.left >= box.left + parseFloat(style.paddingLeft) - 1 &&
+                            r.right <= box.right - parseFloat(style.paddingRight) + 1);
+                    })"""), f"{label}: metric overflow at {width}px"
+                    assert page.evaluate("document.documentElement.scrollWidth <= window.innerWidth"), (
+                        f"{label}: document overflow at {width}px"
+                    )
+                    if width in (320, 1280):
+                        page.screenshot(path=str(output / f"{label}-{width}.png"), full_page=True)
+                page.set_viewport_size(original)
+                print(f"RESPONSIVE {label}: 4 viewport checks PASS", flush=True)
+
             def sign_in(username):
                 page.goto(BASE + "/workspace/")
                 expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
@@ -323,6 +346,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(page.locator("#projection-remaining-budget")).to_have_text("$237,500.00")
             expect(page.get_by_text("No funds have been allocated.", exact=False)).to_be_visible()
             page.screenshot(path=str(output / "director-saved-need-projection.png"), full_page=True)
+            assert_metric_layout("need-projection")
             page.get_by_role("link", name="Return to application review").click()
             expect(page.locator("#director-receipt-status")).to_have_text("No fictional receipt recorded")
             sign_out()
@@ -350,6 +374,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.goto(director_a_url)
             expect(page.locator("#decision-budget-allocated")).to_have_text("$2,000.00")
             expect(page.locator("#decision-budget-remaining")).to_have_text("$248,000.00")
+            assert_metric_layout("decision-budget")
             expect(page.locator("#fictional-offer-total")).to_have_text("0")
             sign_out()
             sign_in("local-demo-family")

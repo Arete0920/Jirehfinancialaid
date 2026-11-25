@@ -93,6 +93,29 @@ def record_fictional_need_decision(
         household_id=draft.household_id, user_id=receipt.actor_user_id, user__is_active=True, is_active=True,
     ).exists():
         raise ValidationError("Fictional decision unavailable.")
+    # A fictional receipt is historical. Require the receipt actor's current
+    # revision-bound review before recording or replaying a need decision.
+    try:
+        from jireh.financial_aid.document_lifecycle import DocumentLifecycleError
+        from jireh.financial_aid.questionnaire_validation import QuestionnaireValidationError
+        from jireh.financial_aid.synthetic_application_review import (
+            FictionalReviewError, read_fictional_application_review,
+        )
+        from jireh.financial_aid.synthetic_document_views import PrivateDocumentStorageError
+    except ImportError as exc:
+        raise ValidationError("Fictional decision unavailable.") from exc
+    try:
+        review = read_fictional_application_review(
+            user=receipt.actor_user, school_id=school.pk, household_id=draft.household_id,
+            academic_year_id=year.pk, key=getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_KEY", None),
+        )
+    except (FictionalReviewError, DocumentLifecycleError, QuestionnaireValidationError,
+            PrivateDocumentStorageError, PermissionDenied, Http404, OSError) as exc:
+        raise ValidationError("Fictional decision unavailable.") from exc
+    if (review["draft"].pk != draft.pk or review["revision"] != questionnaire_revision
+            or review["reasons"] or review["confirmation"] is None
+            or review["confirmation"].questionnaire_revision != questionnaire_revision):
+        raise ValidationError("Fictional decision unavailable.")
     latest = _journal(draft).first()
     actual_revision = latest.revision if latest else 0
     replay = actual_revision == expected_revision + 1 and latest is not None and (
