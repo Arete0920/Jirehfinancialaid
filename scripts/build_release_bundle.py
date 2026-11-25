@@ -13,6 +13,7 @@ PATHS = (
     "README.md", "manage.py", "requirements.txt", "requirements-webauthn-ci.txt",
     "src/jireh", "docs/questionnaire_v1_field_catalog.json",
     "scripts/run_local_browser_demo.py", "scripts/verify_local_browser_demo.py",
+    "scripts/verify_authenticated_customer_portal.py",
     "scripts/rehearse_synthetic_demo.py",
     "docs/LOCAL_BROWSER_DEMO.md", "docs/LOCAL_ENCRYPTED_DOCUMENT_BACKEND.md",
     "docs/SYNTHETIC_DEMO_REHEARSAL.md", "docs/RELEASE_PACKAGING.md",
