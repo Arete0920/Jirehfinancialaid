@@ -14,6 +14,7 @@ from jireh.schools.services import link_student_to_household
 
 @override_settings(
     ROOT_URLCONF="jireh.runtime.customer_urls", JIREH_CUSTOMER_CORE_ACCEPTANCE=True,
+    JIREH_CUSTOMER_EXTERNAL_IDENTITY_ACCEPTANCE=True,
     DEBUG=False, SESSION_COOKIE_SECURE=True, SESSION_COOKIE_HTTPONLY=True,
     CSRF_COOKIE_SECURE=True, CSRF_COOKIE_HTTPONLY=True, SECURE_SSL_REDIRECT=True,
     SESSION_ENGINE="django.contrib.sessions.backends.db",
