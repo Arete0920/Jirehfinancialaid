@@ -72,3 +72,10 @@ def charge_login_attempt(*, username):
 def charge_bootstrap_operator_attempt(*, operator_id):
     """Charge a distinct operator-scoped bootstrap attempt, never a username."""
     return _charge_digest(_bootstrap_operator_digest(operator_id))
+
+
+def charge_director_assertion_attempt(*, user_id):
+    """Bound both valid and invalid MFA requests across pending sessions."""
+    message = ("jireh-director-assertion-attempt-v1:" + str(user_id)).encode("utf-8")
+    digest = hmac.new(settings.SECRET_KEY.encode("utf-8"), message, hashlib.sha256).hexdigest()
+    return _charge_digest(digest)
