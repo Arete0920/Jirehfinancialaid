@@ -3,6 +3,8 @@
 from dataclasses import dataclass
 from uuid import UUID
 
+from jireh.schools.workspace_contributor_exception import contributor_review_status
+
 from .fees import quote_application_submission_fee
 from .submission_contract import ApplicationState
 from .synthetic_application_review import read_fictional_application_review
@@ -15,6 +17,7 @@ class FictionalSubmissionPreflight:
     questionnaire_revision: int
     fee_amount_cents: int
     fee_currency: str
+    contributor_review_status: str | None
     blocking_codes: tuple[str, ...]
 
 
@@ -49,6 +52,9 @@ def _submission_preflight_from_review(review) -> FictionalSubmissionPreflight:
         blockers.append("submission_review_incomplete")
     elif review["confirmation"] is None:
         blockers.append("submission_review_confirmation_required")
+    review_status = contributor_review_status(draft.pk)
+    if review_status == "pending":
+        blockers.append("submission_additional_review_pending")
     blockers.extend(("submission_disclosure_not_approved", "submission_payment_unreconciled"))
 
     return FictionalSubmissionPreflight(
@@ -57,5 +63,6 @@ def _submission_preflight_from_review(review) -> FictionalSubmissionPreflight:
         questionnaire_revision=review["revision"],
         fee_amount_cents=fee.amount_cents,
         fee_currency=fee.currency,
+        contributor_review_status=review_status,
         blocking_codes=tuple(blockers),
     )

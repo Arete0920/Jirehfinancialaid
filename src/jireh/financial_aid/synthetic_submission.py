@@ -11,6 +11,7 @@ from django.http import Http404
 
 from jireh.schools.access import require_household_access
 from jireh.schools.models import AcademicYear
+from jireh.schools.workspace_contributor_exception import contributor_review_pending
 from .models import (
     AidApplication,
     AidApplicationStudent,
@@ -50,6 +51,8 @@ def record_synthetic_demo_submission(
     ).first()
     if draft is None:
         raise Http404("Draft not found.")
+    if contributor_review_pending(draft.pk):
+        raise ValidationError("synthetic_additional_review_pending")
     if not AidApplicationStudent.objects.for_school(household.school_id).filter(
         application_id=draft.pk,
         household_student__household_id=household.pk,

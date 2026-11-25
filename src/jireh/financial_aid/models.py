@@ -585,3 +585,47 @@ class SyntheticApplicationReview(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Fictional review evidence is immutable.")
+
+
+class FictionalSchoolPlanRevision(UUIDStampedModel):
+    """A saved tuition, capacity and budget revision for a disposable school year."""
+
+    school = models.ForeignKey(School, on_delete=models.PROTECT)
+    academic_year = models.ForeignKey(AcademicYear, on_delete=models.PROTECT)
+    created_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    revision = models.PositiveIntegerField()
+    plan_payload = models.JSONField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["academic_year", "revision"], name="jireh_school_plan_year_revision"),
+            models.CheckConstraint(condition=Q(revision__gt=0), name="jireh_school_plan_positive_revision"),
+        ]
+
+    def as_plan(self):
+        from .annual_school_plan import AnnualSchoolPlanError, FictionalAnnualSchoolPlan, FictionalGradeBand
+
+        try:
+            payload = dict(self.plan_payload)
+            grade_bands = payload.pop("grade_bands")
+            if type(self.plan_payload) is not dict or type(grade_bands) is not list:
+                raise TypeError
+            return FictionalAnnualSchoolPlan(
+                grade_bands=tuple(FictionalGradeBand(**band) for band in grade_bands), **payload,
+            )
+        except (AnnualSchoolPlanError, KeyError, TypeError, ValueError):
+            raise ValidationError({"plan_payload": "Invalid fictional school plan."}) from None
+
+    def clean(self):
+        super().clean()
+        self.as_plan()
+        if self.school_id and self.academic_year_id and self.academic_year.school_id != self.school_id:
+            raise ValidationError({"academic_year": "Academic year belongs to another school."})
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Fictional school plan revisions are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Fictional school plan revisions are immutable.")
