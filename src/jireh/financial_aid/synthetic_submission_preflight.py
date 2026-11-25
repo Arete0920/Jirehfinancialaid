@@ -30,6 +30,15 @@ def read_fictional_submission_preflight(
         user=user, school_id=school_id, household_id=household_id,
         academic_year_id=academic_year_id, key=key,
     )
+    return _submission_preflight_from_review(review)
+
+
+def _submission_preflight_from_review(review) -> FictionalSubmissionPreflight:
+    """Derive readiness from one authorized server-side review snapshot.
+
+    The review page reuses this snapshot instead of reading encrypted
+    documents and questionnaire state a second time.
+    """
     draft = review["draft"]
     fee = quote_application_submission_fee(
         application_id=draft.pk, school_id=draft.school_id,
