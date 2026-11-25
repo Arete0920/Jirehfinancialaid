@@ -7,7 +7,9 @@ from unittest.mock import patch
 from urllib.parse import urlencode
 from uuid import uuid4
 
+from django.core.exceptions import PermissionDenied
 from django.db import IntegrityError, connection, transaction
+from django.http import Http404
 from django.test import Client, TestCase, override_settings
 from django.test.client import MULTIPART_CONTENT
 from django.urls import reverse
@@ -24,9 +26,10 @@ from jireh.financial_aid.synthetic_document_views import _ALLOWED_FIXTURES, _POL
 from jireh.financial_aid.synthetic_questionnaire_storage import (
     FictionalQuestionnairePolicy, save_fictional_questionnaire,
 )
+from jireh.financial_aid.synthetic_submission_preflight import read_fictional_submission_preflight
 from .demo_seed import seed_synthetic_browser_demo
 from .grant_admin import revoke_household_access
-from .models import Student
+from .models import HouseholdAccess, Student
 
 
 @override_settings(
@@ -220,3 +223,64 @@ class WorkspaceReviewTests(TestCase):
         with self.assertRaises(IntegrityError), transaction.atomic():
             SyntheticApplicationReview.objects.filter(pk=row.pk).delete()
         self.assertEqual(SyntheticApplicationReview.objects.count(), 1)
+
+    def submission_preflight(self, **overrides):
+        scope = {**self.scope, "key": self.key, **overrides}
+        return read_fictional_submission_preflight(**scope)
+
+    def test_submission_preflight_tracks_current_review_without_submitting(self):
+        blocked = ("submission_disclosure_not_approved", "submission_payment_unreconciled")
+        initial = self.submission_preflight()
+        self.assertEqual(initial.application_id, self.draft.pk)
+        self.assertEqual(initial.questionnaire_revision, 0)
+        self.assertEqual(initial.blocking_codes, ("submission_review_incomplete", *blocked))
+
+        self.prepare()
+        self.assertEqual(
+            self.submission_preflight().blocking_codes,
+            ("submission_review_confirmation_required", *blocked),
+        )
+        self.assertEqual(self.confirm(self.state()["digest"]).status_code, 302)
+        confirmed = self.submission_preflight()
+        self.assertEqual(confirmed.questionnaire_revision, 1)
+        self.assertEqual(confirmed.blocking_codes, blocked)
+        self.assertEqual((confirmed.fee_amount_cents, confirmed.fee_currency), (5500, "USD"))
+
+        self.answers["income"][0]["amount"] += 1
+        self.save(1)
+        corrected = self.submission_preflight()
+        self.assertEqual(corrected.questionnaire_revision, 2)
+        self.assertEqual(corrected.blocking_codes, ("submission_review_confirmation_required", *blocked))
+        self.assertEqual(corrected.application_state, "DRAFT")
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, "DRAFT")
+        self.assertEqual(SyntheticApplicationReview.objects.count(), 1)
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
+
+    def test_submission_preflight_requires_current_actor_grant(self):
+        self.prepare()
+        self.assertEqual(self.confirm(self.state()["digest"]).status_code, 302)
+        other_actor = type(self.scope["user"]).objects.create_user(username="fictional-second-reviewer")
+        with self.assertRaises(Http404):
+            self.submission_preflight(user=other_actor)
+        HouseholdAccess.objects.create(household_id=self.ids["household_id"], user=other_actor)
+        self.assertIn(
+            "submission_review_confirmation_required",
+            self.submission_preflight(user=other_actor).blocking_codes,
+        )
+        for scope in (
+            {"school_id": self.fixture["school_b"].pk},
+            {"academic_year_id": uuid4()},
+            {"household_id": uuid4()},
+        ):
+            with self.subTest(scope=scope), self.assertRaises(Http404):
+                self.submission_preflight(**scope)
+        with override_settings(JIREH_SYNTHETIC_APPLICATION_REVIEW=False):
+            with self.assertRaises(PermissionDenied):
+                self.submission_preflight()
+        revoke_household_access(
+            actor=self.fixture["director_a"], school_id=self.ids["school_id"],
+            household_id=self.ids["household_id"], subject_user_id=self.fixture["parent"].pk,
+        )
+        with self.assertRaises(Http404):
+            self.submission_preflight()
