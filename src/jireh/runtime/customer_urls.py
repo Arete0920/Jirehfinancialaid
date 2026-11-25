@@ -19,6 +19,9 @@ from django.views.decorators.http import require_GET
 from .customer_family_sessions import (
     FAMILY_SESSION_KEY, family_session_eligible, family_login, family_logout,
 )
+from .customer_onboarding import (
+    ONBOARDING_SESSION_KEY, onboarding_login, onboarding_logout, onboarding_redeem,
+)
 
 from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import selected_students, select_student
@@ -39,7 +42,8 @@ _FORBIDDEN = (
 )
 
 
-def customer_core_only(view, *, allow_family_session=True, session_endpoint=False):
+def customer_core_only(view, *, allow_family_session=True, session_endpoint=False,
+                       onboarding_endpoint=False):
     """Protect the explicit allowlist even if accidentally included elsewhere."""
     @never_cache
     @wraps(view)
@@ -50,14 +54,22 @@ def customer_core_only(view, *, allow_family_session=True, session_endpoint=Fals
                 or any(getattr(settings, name, False) is not False for name in _FORBIDDEN)
                 or settings.SESSION_ENGINE != "django.contrib.sessions.backends.db"):
             response = JsonResponse({"detail": "Not found."}, status=404)
-        elif session_endpoint and getattr(settings, "JIREH_CUSTOMER_FAMILY_SESSION_ACCEPTANCE", False) is not True:
+        elif (session_endpoint or onboarding_endpoint) and getattr(
+            settings, "JIREH_CUSTOMER_FAMILY_SESSION_ACCEPTANCE", False
+        ) is not True:
             response = JsonResponse({"detail": "Not found."}, status=404)
-        elif not session_endpoint and (
+        elif onboarding_endpoint and getattr(settings, "JIREH_CUSTOMER_ONBOARDING_ACCEPTANCE", False) is not True:
+            response = JsonResponse({"detail": "Not found."}, status=404)
+        elif not (session_endpoint or onboarding_endpoint) and (
             not getattr(getattr(request, "user", None), "is_authenticated", False) or not request.user.is_active
         ):
             response = JsonResponse({"detail": "Forbidden."}, status=403)
         else:
             try:
+                # Invitation-only password sessions are never customer sessions.
+                # Even a concurrent grant change cannot upgrade that session.
+                if not onboarding_endpoint and ONBOARDING_SESSION_KEY in request.session:
+                    raise PermissionDenied("Invitation-only session.")
                 # A family password session cannot become a director session, even
                 # if grants change after sign-in. Recheck eligibility on each use.
                 if not session_endpoint and FAMILY_SESSION_KEY in request.session and (
@@ -93,6 +105,12 @@ _DRAFT = _HOUSEHOLD + "academic-years/<uuid:academic_year_id>/aid-application/dr
 _DIRECTOR = "api/v1/schools/<uuid:school_id>/academic-years/<uuid:academic_year_id>/aid-applications/"
 
 urlpatterns = [
+    path("api/v1/onboarding/sign-in/", customer_core_only(onboarding_login, onboarding_endpoint=True),
+         name="jireh_customer_onboarding_login"),
+    path("api/v1/onboarding/sign-out/", customer_core_only(onboarding_logout, onboarding_endpoint=True),
+         name="jireh_customer_onboarding_logout"),
+    path(_HOUSEHOLD + "onboarding/redeem/", customer_core_only(onboarding_redeem, onboarding_endpoint=True),
+         name="jireh_customer_onboarding_redeem"),
     path("api/v1/session/sign-in/", customer_core_only(family_login, session_endpoint=True),
          name="jireh_customer_family_login"),
     path("api/v1/session/sign-out/", customer_core_only(family_logout, session_endpoint=True),
