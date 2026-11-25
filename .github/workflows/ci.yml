@@ -428,7 +428,7 @@ jobs:
           print("Questionnaire and fictional review reapply: PASS")
           PY
 
-      - name: Verify fictional decision journal migration rollback and reapply
+      - name: Verify fictional decision and income evidence journal migrations
         run: |
           set -euo pipefail
           python -m django migrate --noinput
@@ -438,11 +438,14 @@ jobs:
           django.setup()
           from django.db import connection
           with connection.cursor() as cursor:
-              cursor.execute("SELECT to_regclass('financial_aid_fictionalneeddecision')")
-              assert cursor.fetchone()[0] is None, "Decision journal table rollback incomplete"
-              cursor.execute("SELECT to_regprocedure('jireh_need_decision_protect()')")
-              assert cursor.fetchone()[0] is None, "Decision journal guard rollback incomplete"
-          print("Fictional decision journal rollback: PASS")
+              cursor.execute(
+                  "SELECT to_regclass('financial_aid_fictionalneeddecision'), "
+                  "to_regclass('financial_aid_fictionalincomeevidencereview'), "
+                  "to_regprocedure('jireh_need_decision_protect()'), "
+                  "to_regprocedure('jireh_income_evidence_review_guard()')"
+              )
+              assert cursor.fetchone() == (None, None, None, None), "Fictional journal rollback incomplete"
+          print("Fictional decision and income evidence journal rollback: PASS")
           PY
           python -m django migrate --noinput
           python - <<'PY'
@@ -450,13 +453,17 @@ jobs:
           django.setup()
           from django.db import connection
           with connection.cursor() as cursor:
-              cursor.execute(
-                  "SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = to_regclass(%s) "
-                  "AND tgname = %s AND NOT tgisinternal AND tgenabled = 'O'",
-                  ['financial_aid_fictionalneeddecision', 'jireh_need_decision_protect'],
-              )
-              assert cursor.fetchone()[0] == 1, "Decision journal guard not restored"
-          print("Fictional decision journal reapply: PASS")
+              for table, guard in (
+                  ('financial_aid_fictionalneeddecision', 'jireh_need_decision_protect'),
+                  ('financial_aid_fictionalincomeevidencereview', 'jireh_income_evidence_review_guard'),
+              ):
+                  cursor.execute(
+                      "SELECT COUNT(*) FROM pg_trigger WHERE tgrelid = to_regclass(%s) "
+                      "AND tgname = %s AND NOT tgisinternal AND tgenabled = 'O'",
+                      [table, guard],
+                  )
+                  assert cursor.fetchone()[0] == 1, f"Journal guard not restored: {guard}"
+          print("Fictional decision and income evidence journal reapply: PASS")
           PY
 
       - name: Check standalone runtime and closed routes (no deployment)

@@ -666,3 +666,35 @@ class FictionalNeedDecision(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Fictional need decisions are immutable.")
+
+
+class FictionalIncomeEvidenceReview(UUIDStampedModel):
+    """Immutable acceptance of a versioned server-supplied fictional evidence reference."""
+
+    questionnaire = models.ForeignKey(SyntheticQuestionnaireDraft, on_delete=models.PROTECT)
+    questionnaire_revision = models.PositiveIntegerField()
+    plan = models.ForeignKey(FictionalSchoolPlanRevision, on_delete=models.PROTECT)
+    actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    evidence_id = models.UUIDField()
+    accepted_on = models.DateField()
+    reassess_on = models.DateField()
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["questionnaire", "questionnaire_revision", "plan", "evidence_id"],
+                name="jireh_fictional_income_review_scope",
+            ),
+            models.CheckConstraint(
+                condition=Q(questionnaire_revision__gt=0, reassess_on__gt=models.F("accepted_on")),
+                name="jireh_fictional_income_review_valid",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Fictional income evidence reviews are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Fictional income evidence reviews are immutable.")

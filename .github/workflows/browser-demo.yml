@@ -3,6 +3,7 @@ name: Jireh synthetic browser acceptance
 on:
   pull_request:
     branches: [main]
+    types: [opened, synchronize, reopened, edited, ready_for_review]
     paths:
       - ".github/workflows/browser-demo.yml"
       - "scripts/run_local_browser_demo.py"

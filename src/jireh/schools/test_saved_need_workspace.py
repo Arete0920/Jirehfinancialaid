@@ -3,6 +3,7 @@ import copy
 import json
 import secrets
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -11,6 +12,7 @@ from jireh.financial_aid.models import AidApplication, SyntheticAidOffer, Synthe
 from jireh.financial_aid.services import get_or_create_annual_draft, select_student_for_draft
 from jireh.financial_aid.synthetic_questionnaire_storage import save_fictional_questionnaire
 from .demo_seed import seed_synthetic_browser_demo
+from .fictional_income_reviews import FICTIONAL_INCOME_EVIDENCE_ID
 from .saved_need_workspace import configure_saved_need_fixture
 from .workspace_questionnaire import fictional_questionnaire_policy
 
@@ -90,6 +92,77 @@ class SavedNeedWorkspaceTests(TestCase):
         self.assertFalse(SyntheticAidSubmission.objects.exists())
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+
+    def test_director_records_seeded_changed_income_review_and_sees_both_estimates(self):
+        from uuid import uuid4
+
+        from django.db import IntegrityError, connection, transaction
+
+        from jireh.financial_aid.models import FictionalIncomeEvidenceReview, FictionalNeedDecision
+        from .models import FictionalContributorException
+
+        self.save(0, self.answers)
+        url = reverse("jireh_workspace_income_evidence", args=(
+            self.fixture.school_id, self.fixture.academic_year_id, self.draft.pk,
+        ))
+        data = {"questionnaire_revision": "1", "plan_revision": "1", "confirmed": "yes",
+                "evidence_id": str(FICTIONAL_INCOME_EVIDENCE_ID)}
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
+            director = Client(enforce_csrf_checks=True)
+            director.force_login(self.demo["director_a"])
+            page = director.get(self.url, secure=True)
+            self.assertContains(page, "Record fictional income evidence")
+            self.assertContains(page, f'name="evidence_id" value="{FICTIONAL_INCOME_EVIDENCE_ID}"')
+            self.assertNotContains(page, 'id="income-evidence-adjusted"')
+            self.assertEqual(director.post(url, urlencode(data),
+                                           content_type="application/x-www-form-urlencoded", secure=True).status_code, 403)
+            data["csrfmiddlewaretoken"] = director.cookies["csrftoken"].value
+            def post(values):
+                return director.post(url, urlencode(values), content_type="application/x-www-form-urlencoded",
+                                     secure=True, HTTP_REFERER="https://testserver" + self.url)
+
+            self.assertEqual(post({**data, "evidence_id": "invalid"}).status_code, 400)
+            self.assertEqual(post({**data, "evidence_id": str(uuid4())}).status_code, 409)
+            self.assertFalse(FictionalIncomeEvidenceReview.objects.exists())
+            self.assertEqual(post({**data, "income": "30000"}).status_code, 400)
+            self.assertEqual(post({**data, "plan_revision": "2"}).status_code, 409)
+            self.assertEqual(post(data).status_code, 302)
+            self.assertEqual(post(data).status_code, 302)
+            row = FictionalIncomeEvidenceReview.objects.get()
+            if connection.vendor == "postgresql":
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    FictionalIncomeEvidenceReview.objects.filter(pk=row.pk).update(accepted_on=row.accepted_on)
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    FictionalIncomeEvidenceReview.objects.filter(pk=row.pk).delete()
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    FictionalIncomeEvidenceReview.objects.create(
+                        questionnaire_id=row.questionnaire_id, questionnaire_revision=row.questionnaire_revision,
+                        plan_id=row.plan_id, actor_user=self.demo["director_b"], evidence_id=uuid4(),
+                        accepted_on=row.accepted_on, reassess_on=row.reassess_on,
+                    )
+            result = self.get_case()
+            self.assertContains(result, 'id="income-evidence-baseline">$13,959.00</strong>')
+            self.assertContains(result, 'id="income-evidence-adjusted">$18,959.00</strong>')
+            self.assertNotContains(result, "3000000")
+            self.assertFalse(FictionalNeedDecision.objects.exists())
+            self.assertFalse(SyntheticAidSubmission.objects.exists())
+            for role in ("parent", "director_b", "operator"):
+                other = Client()
+                other.force_login(self.demo[role])
+                self.assertEqual(other.post(url, urlencode(data),
+                                            content_type="application/x-www-form-urlencoded",
+                                            secure=True).status_code, 404)
+            corrected = copy.deepcopy(self.answers)
+            corrected["income"][0]["amount"] += 100
+            self.save(1, corrected)
+            self.assertEqual(post(data).status_code, 409)
+            self.assertNotContains(self.get_case(), 'id="income-evidence-adjusted"')
+            FictionalContributorException.objects.create(application=self.draft, requested_by=self.demo["parent"])
+            self.assertEqual(post({**data, "questionnaire_revision": "2"}).status_code, 409)
+            self.assertNotContains(self.get_case(), "Record fictional income evidence")
+            self.demo["director_a"].user_permissions.clear()
+            self.assertNotContains(self.get_case(), "Record fictional income evidence")
+            self.assertEqual(post({**data, "questionnaire_revision": "2"}).status_code, 403)
 
     def test_context_is_explicit_and_contributor_hold_prevents_calculation(self):
         from unittest.mock import patch
@@ -184,18 +257,20 @@ class SavedNeedWorkspaceTests(TestCase):
         from django.db import IntegrityError, connection, transaction
         from django.contrib.auth.models import Permission
         from jireh.financial_aid.models import FictionalNeedDecision
-        from jireh.financial_aid.synthetic_submission import record_synthetic_demo_submission
         from .fictional_need_decisions import record_fictional_need_decision, read_decision_budget
+        from .fictional_income_reviews import record_income_evidence
 
         self.save(0, self.answers)
         scope = dict(user=self.demo["director_a"], school_id=self.fixture.school_id,
                      year_id=self.fixture.academic_year_id, application_id=self.draft.pk,
                      expected_revision=0, questionnaire_revision=1, plan_revision=1,
                      amount_cents=250_000)
-        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture,
+                           JIREH_SYNTHETIC_APPLICATION_REVIEW=True,
+                           JIREH_SYNTHETIC_DOCUMENTS_ONLY=True):
             with self.assertRaises(ValidationError):
                 record_fictional_need_decision(**scope)
-            record_synthetic_demo_submission(**self.scope, accuracy_attested=True)
+            self._prepare_current_review_and_receipt(save=False)
             director = self.demo["director_a"]
             permission = Permission.objects.get(
                 content_type__app_label="financial_aid", content_type__model="fictionalneeddecision",
@@ -205,7 +280,15 @@ class SavedNeedWorkspaceTests(TestCase):
             with self.assertRaises(PermissionDenied):
                 record_fictional_need_decision(**scope)
             director.user_permissions.add(permission)
+            record_income_evidence(
+                user=director, school_id=self.fixture.school_id, year_id=self.fixture.academic_year_id,
+                application_id=self.draft.pk, questionnaire_revision=1, plan_revision=1,
+                evidence_id=FICTIONAL_INCOME_EVIDENCE_ID,
+            )
+            self.assertContains(self.get_case(), 'id="income-evidence-adjusted">$18,959.00</strong>')
             self.assertContains(self.get_case(), "Record fictional need decision")
+            with self.assertRaises(ValidationError):
+                record_fictional_need_decision(**{**scope, "amount_cents": 1_500_000})
             first = record_fictional_need_decision(**scope)
             self.assertEqual(first.amount_cents, 250_000)
             self.assertEqual(first.need_cents, 1_395_900)
@@ -261,3 +344,102 @@ class SavedNeedWorkspaceTests(TestCase):
         self.assertFalse(SyntheticAidOffer.objects.exists())
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+
+    def _prepare_current_review_and_receipt(self, *, save=True):
+        from uuid import uuid4
+        from django.conf import settings
+        from jireh.financial_aid.document_lifecycle import create_synthetic_document
+        from jireh.financial_aid.synthetic_application_review import (
+            confirm_fictional_application_review, read_fictional_application_review,
+        )
+        from jireh.financial_aid.synthetic_document_views import _ALLOWED_FIXTURES, _POLICY, _backend
+
+        if save:
+            self.save(0, self.answers)
+        create_synthetic_document(
+            **self.scope, request_key=str(uuid4()), category="FICTIONAL_TAX",
+            data=_ALLOWED_FIXTURES[0], policy=_POLICY, backend=_backend(),
+        )
+        review_scope = dict(**self.scope, key=settings.JIREH_SYNTHETIC_QUESTIONNAIRE_KEY)
+        state = read_fictional_application_review(**review_scope)
+        self.assertEqual(state["reasons"], [])
+        confirm_fictional_application_review(**review_scope, expected_digest=state["digest"], reviewed=True)
+        family = Client(enforce_csrf_checks=True)
+        family.force_login(self.demo["parent"])
+        args = (self.fixture.school_id, self.fixture.household_id, self.fixture.academic_year_id)
+        review_url = reverse("jireh_workspace_review", args=args)
+        self.assertEqual(family.get(review_url, secure=True).status_code, 200)
+        token = family.cookies["csrftoken"].value
+        receipt_url = reverse("jireh_workspace_rehearsal_receipt", args=args)
+        self.assertEqual(family.post(
+            receipt_url, urlencode({"state_digest": state["digest"], "attested": "yes"}),
+            content_type="application/x-www-form-urlencoded", secure=True,
+            HTTP_ORIGIN="https://testserver", HTTP_X_CSRFTOKEN=token,
+        ).status_code, 302)
+        return review_scope, SyntheticAidSubmission.objects.get(application=self.draft)
+
+    def _need_decision_scope(self):
+        return dict(user=self.demo["director_a"], school_id=self.fixture.school_id,
+                    year_id=self.fixture.academic_year_id, application_id=self.draft.pk,
+                    expected_revision=0, questionnaire_revision=1, plan_revision=1,
+                    amount_cents=250_000)
+
+    def test_current_review_required_after_saved_financial_correction(self):
+        from django.core.exceptions import ValidationError
+        from jireh.financial_aid.models import FictionalNeedDecision
+        from jireh.financial_aid.synthetic_application_review import (
+            confirm_fictional_application_review, read_fictional_application_review,
+        )
+        from .fictional_need_decisions import record_fictional_need_decision
+
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture,
+                           JIREH_SYNTHETIC_APPLICATION_REVIEW=True,
+                           JIREH_SYNTHETIC_DOCUMENTS_ONLY=True):
+            review_scope, receipt = self._prepare_current_review_and_receipt()
+            scope = self._need_decision_scope()
+            first = record_fictional_need_decision(**scope)
+            self.assertEqual(first.receipt_id, receipt.pk)
+            self.assertEqual(first.need_cents, 1_395_900)
+            corrected = copy.deepcopy(self.answers)
+            corrected["income"][0]["amount"] = 5_000_000
+            self.save(1, corrected)
+            current = read_fictional_application_review(**review_scope)
+            self.assertEqual(current["revision"], 2)
+            self.assertIsNone(current["confirmation"])
+            self.assertEqual(SyntheticAidSubmission.objects.get(application=self.draft).pk, receipt.pk)
+            adjustment = dict(scope, expected_revision=1, questionnaire_revision=2, amount_cents=200_000)
+            director = Client(enforce_csrf_checks=True)
+            director.force_login(self.demo["director_a"])
+            self.assertEqual(director.get(self.url, secure=True).status_code, 200)
+            url = reverse("jireh_workspace_need_decision", args=(
+                self.fixture.school_id, self.fixture.academic_year_id, self.draft.pk,
+            ))
+            body = urlencode(dict(decision_revision="1", questionnaire_revision="2",
+                                  plan_revision="1", amount="2000.00", confirmed="yes"))
+            headers = {"HTTP_ORIGIN": "https://testserver",
+                       "HTTP_X_CSRFTOKEN": director.cookies["csrftoken"].value}
+
+            def post():
+                return director.post(url, body, secure=True, **headers,
+                                     content_type="application/x-www-form-urlencoded")
+
+            self.assertEqual(post().status_code, 409)
+            with self.assertRaises(ValidationError):
+                record_fictional_need_decision(**adjustment)
+            self.assertEqual(FictionalNeedDecision.objects.filter(application=self.draft).count(), 1)
+            # Candidate acceptance semantics: historical receipt stays immutable;
+            # a current family confirmation is separately required.
+            confirm_fictional_application_review(
+                **review_scope, expected_digest=current["digest"], reviewed=True,
+            )
+            self.assertEqual(post().status_code, 302)
+            second = record_fictional_need_decision(**adjustment)
+            self.assertEqual(FictionalNeedDecision.objects.filter(application=self.draft).count(), 2)
+            self.assertEqual(second.receipt_id, receipt.pk)
+            self.assertEqual(second.questionnaire_revision, 2)
+            self.assertEqual(second.need_cents, 895_900)
+            self.assertEqual(second.amount_cents, 200_000)
+            self.assertEqual(SyntheticAidSubmission.objects.filter(application=self.draft).count(), 1)
+            self.assertFalse(SyntheticAidOffer.objects.exists())
+            self.draft.refresh_from_db()
+            self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
