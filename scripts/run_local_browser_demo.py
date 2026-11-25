@@ -42,7 +42,10 @@ def main():
         call_command("migrate", interactive=False, verbosity=0)
         from jireh.schools.demo_seed import seed_synthetic_browser_demo
 
-        seed_synthetic_browser_demo()
+        from jireh.schools.saved_need_workspace import configure_saved_need_fixture
+
+        fixture = seed_synthetic_browser_demo()
+        settings.JIREH_SAVED_NEED_FIXTURE = configure_saved_need_fixture(fixture)
         print("\nJIREH — LOCAL SYNTHETIC BROWSER DEMONSTRATION", flush=True)
         print("Open http://127.0.0.1:8765/local-demo/", flush=True)
         print("Loopback-only. Fictional schools and users. Database removed on exit.", flush=True)

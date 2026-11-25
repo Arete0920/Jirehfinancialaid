@@ -31,16 +31,12 @@ PITTSBURGH_MONTHLY_HOUSING_CENTS = 138_900
 _HOUSEHOLD = FictionalHouseholdAllowanceRule(adults=2, children=2, bedrooms=2, annual_nonhousing_cents=360_000)
 
 
-def calculate_fictional_planning_need(net_tuition_cents: int) -> FictionalRegionalNeedCalculation:
-    """Assess tuition after sibling discounts using the pinned fictional residence."""
-    region = resolve_fictional_hud_area(
-        geography=FictionalHudAddressGeography("42003", True, _HUD_GEOGRAPHY_CODE),
-        crosswalk=FictionalHudAreaCrosswalk(_HUD_FISCAL_YEAR, (
-            FictionalHudAreaRow(_HUD_GEOGRAPHY_CODE, _PITTSBURGH_AREA),
-        )),
-        expected_hud_fiscal_year=_HUD_FISCAL_YEAR,
-        expected_crosswalk_sha256=_CROSSWALK_SHA256,
-    )
+def fictional_planning_context():
+    """One pinned scenario for the planning example and saved-evidence rehearsal."""
+    geography = FictionalHudAddressGeography("42003", True, _HUD_GEOGRAPHY_CODE)
+    crosswalk = FictionalHudAreaCrosswalk(_HUD_FISCAL_YEAR, (
+        FictionalHudAreaRow(_HUD_GEOGRAPHY_CODE, _PITTSBURGH_AREA),
+    ))
     table = build_fictional_hud_living_allowance_table(
         dataset_version=_DATASET_VERSION,
         hud_fiscal_year=_HUD_FISCAL_YEAR,
@@ -51,9 +47,26 @@ def calculate_fictional_planning_need(net_tuition_cents: int) -> FictionalRegion
     policy = FictionalRegionalNeedPolicy(_DATASET_VERSION, _HUD_FISCAL_YEAR, _ALLOWANCE_SHA256,
                                          income_contribution_bps=5_000, asset_contribution_bps=0,
                                          rounding="HALF_UP")
+    return dict(
+        geography=geography, crosswalk=crosswalk, crosswalk_sha256=_CROSSWALK_SHA256,
+        allowance_table=table, regional_policy=policy,
+        adults=_HOUSEHOLD.adults, children=_HOUSEHOLD.children,
+    )
+
+
+def calculate_fictional_planning_need(net_tuition_cents: int) -> FictionalRegionalNeedCalculation:
+    """Assess tuition after sibling discounts using the pinned fictional residence."""
+    scenario = fictional_planning_context()
+    region = resolve_fictional_hud_area(
+        geography=scenario["geography"], crosswalk=scenario["crosswalk"],
+        expected_hud_fiscal_year=scenario["regional_policy"].dataset_year,
+        expected_crosswalk_sha256=scenario["crosswalk_sha256"],
+    )
     inputs = FictionalRegionalNeedInput(
-        region_code=region, adults=_HOUSEHOLD.adults, children=_HOUSEHOLD.children,
+        region_code=region, adults=scenario["adults"], children=scenario["children"],
         address_verified=True, eligible_income_cents=4_000_000, assets_cents=0,
         deductible_liabilities_cents=0, tuition_cents=net_tuition_cents,
     )
-    return calculate_fictional_regional_need(inputs=inputs, table=table, policy=policy)
+    return calculate_fictional_regional_need(
+        inputs=inputs, table=scenario["allowance_table"], policy=scenario["regional_policy"],
+    )

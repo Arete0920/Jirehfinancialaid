@@ -59,6 +59,20 @@ def _categories(section):
                  if value != "OTHER_APPROVED")
 
 
+def fictional_questionnaire_policy(draft):
+    """Share the exact server-derived fixture contributor and category policy."""
+    from jireh.financial_aid.synthetic_questionnaire_storage import FictionalQuestionnairePolicy
+
+    contributors = tuple((str(uuid5(draft.pk, fixture_id)), label)
+                         for fixture_id, label in _FICTIONAL_CONTRIBUTORS)
+    policy = FictionalQuestionnairePolicy(
+        reporting_year=_REPORTING_YEAR, min_cents=0, max_cents=_MAX_CENTS,
+        categories=tuple(_categories(section) for section, _ in _SECTIONS),
+        member_ids=tuple(member_id for member_id, _ in contributors),
+    )
+    return policy, contributors
+
+
 def _date_field(label):
     return forms.DateField(
         label=label, input_formats=["%Y-%m-%d"],
@@ -250,19 +264,13 @@ def workspace_questionnaire(request, school_id, household_id, academic_year_id):
     # This optional dependency must not break the existing basic local demo.
     try:
         from jireh.financial_aid.synthetic_questionnaire_storage import (
-            FictionalQuestionnairePolicy, read_fictional_questionnaire,
+            read_fictional_questionnaire,
             save_fictional_questionnaire,
         )
     except ImportError:
         return _unavailable()
     key = getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_KEY", None)
-    contributors = tuple((str(uuid5(draft.pk, fixture_id)), label)
-                         for fixture_id, label in _FICTIONAL_CONTRIBUTORS)
-    policy = FictionalQuestionnairePolicy(
-        reporting_year=_REPORTING_YEAR, min_cents=0, max_cents=_MAX_CENTS,
-        categories=tuple(_categories(section) for section, _ in _SECTIONS),
-        member_ids=tuple(member_id for member_id, _ in contributors),
-    )
+    policy, contributors = fictional_questionnaire_policy(draft)
     try:
         revision, saved = read_fictional_questionnaire(**scope, key=key)
         questions = school_questions_for_draft(draft, saved.get("school_questions", []))

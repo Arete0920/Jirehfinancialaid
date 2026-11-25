@@ -40,6 +40,7 @@ from .demo_seed import DEMO_SCHOOL_A_CODE, DEMO_SCHOOL_B_CODE
 from .models import AcademicYear, FictionalContributorDecision, HouseholdAccess, SchoolStaffAccess
 from .views import household_students
 from .workspace_contributor_exception import can_read_contributor_review, contributor_review_pending
+from .saved_need_workspace import read_saved_need_preview
 
 
 _TEST_MODULES = frozenset({
@@ -284,9 +285,17 @@ def _director_rehearsal(user, school, year, application_id, case):
             offers.append({"student_id": student_id, "dollars": None})
     # Recheck current school authorization after readback. No encrypted
     # questionnaire or document contents are returned to the director.
+    saved_need = read_saved_need_preview(
+        user=user, school=school, year=year, application_id=application_id,
+        questionnaire_revision=metadata.questionnaire_revision,
+    )
+    if saved_need is not None and saved_need["status"] == "available":
+        for name in ("net_tuition", "allowance", "contribution", "unmet_tuition"):
+            saved_need[name] = _dollars(saved_need.pop(name + "_cents"))
     require_aid_director_access(user, school_id=school.pk)
     return {
         "metadata": metadata,
+        "saved_need": saved_need,
         "recommendations": [
             {"bucket": line.bucket.value.title(), "dollars": _dollars(line.recommendation_cents),
              "capped": line.cap_applied}
