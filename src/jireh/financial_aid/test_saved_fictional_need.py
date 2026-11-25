@@ -12,7 +12,7 @@ from django.http import Http404
 from django.test import TestCase, override_settings
 
 from jireh.schools.demo_seed import seed_synthetic_browser_demo
-from jireh.schools.models import HouseholdAccess, SchoolStaffAccess, Student
+from jireh.schools.models import FictionalContributorException, HouseholdAccess, SchoolStaffAccess, Student
 
 from .annual_school_plan import FICTIONAL_15145_PLAN, AnnualSchoolPlanError
 from .assessment_contract import CandidateAssessmentError
@@ -23,7 +23,9 @@ from .hud_living_allowance import (
 from .models import AidApplication, SyntheticAidOffer, SyntheticAidSubmission, SyntheticQuestionnaireDraft
 from .questionnaire_validation import QuestionnaireValidationError
 from .regional_need import FictionalRegionalNeedPolicy
-from .saved_fictional_need import SavedFictionalNeedContext, SavedFictionalNeedError, calculate_saved_fictional_need
+from .saved_fictional_need import (
+    FictionalChangedIncomeReview, SavedFictionalNeedContext, SavedFictionalNeedError, calculate_saved_fictional_need,
+)
 from .school_plan_revisions import record_fictional_school_plan
 from .services import get_or_create_annual_draft, select_student_for_draft
 from .synthetic_questionnaire_storage import FictionalQuestionnairePolicy, save_fictional_questionnaire
@@ -153,6 +155,66 @@ class SavedFictionalNeedTests(TestCase):
                 self.save(expected_revision=revision - 1, answers=modified)
                 with self.assertRaisesRegex(SavedFictionalNeedError, error):
                     self.calculate(context=replace(self.context, questionnaire_revision=revision))
+
+    def changed_income_context(self):
+        baseline = self.calculate()
+        review = FictionalChangedIncomeReview(
+            evidence_id=uuid4(), reviewed_by_id=self.fixture["director_a"].pk,
+            questionnaire_id=baseline.questionnaire_id, questionnaire_revision=baseline.questionnaire_revision,
+            plan_id=baseline.plan_id, plan_revision=baseline.plan_revision,
+            observed_from=date(2026, 9, 30), observed_through=date(2026, 10, 15),
+            accepted_on=date(2026, 10, 20), reassess_on=date(2026, 12, 1),
+            annual_income_cents=3_000_000, policy_version="fictional-job-loss-v1",
+        )
+        return replace(self.context, changed_income_review=review, assessment_date=date(2026, 11, 25))
+
+    def test_reviewed_changed_income_recalculates_need_without_overwriting_baseline(self):
+        self.save()
+        saved = SyntheticQuestionnaireDraft.objects.get(application=self.draft)
+        context = self.changed_income_context()
+        result = self.calculate(context=context)
+        self.assertEqual(result.regional_need.unmet_tuition_cents, 1_895_900)
+        self.assertEqual(result.baseline_regional_need, self.calculate().regional_need)
+        self.assertEqual(result.baseline_regional_need.unmet_tuition_cents, 1_395_900)
+        self.assertEqual(result.changed_income_review, context.changed_income_review)
+        self.assertEqual(result.projection, self.calculate().projection)
+        self.assertFalse(result.financial_verification_established)
+        self.assertFalse(SyntheticAidOffer.objects.exists())
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
+        saved.refresh_from_db()
+        self.assertEqual(saved.revision, 1)
+        self.assertEqual(saved.events.count(), 1)
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+
+    def test_changed_income_rejects_stale_foreign_or_invalid_evidence(self):
+        self.save()
+        context = self.changed_income_context()
+        review = context.changed_income_review
+        for override, expected in (
+            ({"questionnaire_id": uuid4()}, "saved_need_income_review_scope_mismatch"),
+            ({"plan_revision": 2}, "saved_need_income_review_scope_mismatch"),
+            ({"reviewed_by_id": self.fixture["director_b"].pk}, "saved_need_income_review_scope_mismatch"),
+            ({"annual_income_cents": True}, "saved_need_income_review_invalid"),
+            ({"policy_version": ""}, "saved_need_income_review_invalid"),
+            ({"observed_through": date(2026, 10, 21)}, "saved_need_income_review_dates_invalid"),
+        ):
+            with self.subTest(override=override), self.assertRaisesRegex(SavedFictionalNeedError, expected):
+                self.calculate(context=replace(context, changed_income_review=replace(review, **override)))
+        with self.assertRaisesRegex(SavedFictionalNeedError, "saved_need_income_review_dates_invalid"):
+            self.calculate(context=replace(context, assessment_date=review.reassess_on))
+        corrected = copy.deepcopy(self.answers)
+        corrected["income"][0]["amount"] += 100
+        self.save(expected_revision=1, answers=corrected)
+        with self.assertRaisesRegex(SavedFictionalNeedError, "saved_need_income_review_scope_mismatch"):
+            self.calculate(context=replace(context, questionnaire_revision=2))
+
+    def test_pending_contributor_review_blocks_changed_income_estimate(self):
+        self.save()
+        context = self.changed_income_context()
+        FictionalContributorException.objects.create(application=self.draft, requested_by=self.fixture["parent"])
+        with self.assertRaisesRegex(SavedFictionalNeedError, "saved_need_income_review_pending_contributor"):
+            self.calculate(context=context)
 
     def test_scope_geography_policy_and_budget_fail_closed(self):
         self.save()
