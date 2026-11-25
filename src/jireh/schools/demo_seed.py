@@ -109,6 +109,8 @@ def seed_synthetic_browser_demo(*, grant_family_access=True, grant_first_directo
         "school_b": school_b,
         "household_a": household_a,
         "household_b": household_b,
+        "student_a1": student_a1,
+        "student_a2": student_a2,
         "year_a": year_a,
         "year_b": year_b,
         "parent": parent,

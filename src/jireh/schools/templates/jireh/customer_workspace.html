@@ -251,6 +251,19 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <p id="director-review-history">{% if rehearsal.metadata.has_confirmation_at_saved_revision %}Historical confirmation at saved revision{% elif rehearsal.metadata.has_historical_confirmation %}Historical confirmation at an earlier revision{% else %}No saved confirmation{% endif %}</p>
 <p class="muted">Metadata only. A historical confirmation is not current review verification, legal consent or payment.</p>
 </section>
+{% if rehearsal.saved_need %}
+<section class="panel" aria-labelledby="saved-need-heading"><h2 id="saved-need-heading">Saved-evidence fictional tuition need</h2>
+<p>Uses the saved fictional household amounts and current school plan, with the seeded Pittsburgh residence, two adults, two children, elementary and middle grade bands, and pinned HUD FY 2027 example rules. Not verified residence, approved financial policy, legal consent or an award.</p>
+{% if rehearsal.saved_need.status == "available" %}
+<p id="saved-need-revisions">Questionnaire revision {{ rehearsal.saved_need.questionnaire_revision }} · School plan revision {{ rehearsal.saved_need.plan_revision }}</p>
+<div class="grid">
+<div class="metric"><strong id="saved-need-tuition">${{ rehearsal.saved_need.net_tuition }}</strong>Net tuition after sibling discount</div>
+<div class="metric"><strong id="saved-need-allowance">${{ rehearsal.saved_need.allowance }}</strong>Fictional regional living allowance</div>
+<div class="metric"><strong id="saved-need-contribution">${{ rehearsal.saved_need.contribution }}</strong>Calculated household contribution</div>
+<div class="metric"><strong id="saved-need-unmet">${{ rehearsal.saved_need.unmet_tuition }}</strong>Calculated unmet tuition</div>
+</div><p class="muted">Required fees and separate proposed awards are not included in unmet tuition. Itemized living costs are not deducted again. This calculation does not create an offer or consume the school budget.</p>
+{% else %}<p id="saved-need-status">Saved-evidence calculation unavailable. Complete the required fictional records and review before continuing.</p>{% endif %}
+</section>{% endif %}
 <section class="panel" aria-labelledby="assessment-example-heading"><h2 id="assessment-example-heading">Fixed fictional assessment example</h2>
 <p>Uses the existing fictional test policy and modest scenario, not this household's saved financial answers. School authorization remains required.</p>
 <div class="table-wrap"><table aria-label="Fictional recommendation example"><thead><tr><th>Bucket</th><th>Example recommendation</th><th>Cap applied</th></tr></thead><tbody>

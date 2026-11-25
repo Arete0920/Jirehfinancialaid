@@ -277,3 +277,18 @@ revision and document/selection history. Changing any of those facts requires
 another confirmation. The $55 annual household submission fee is a disclosure
 only. The application remains DRAFT; this is not legal consent, a paid receipt,
 a verified financial assessment or permission to collect real records.
+
+### Saved-evidence fictional need in the customer workspace
+
+The disposable launcher initializes one fictional school-year plan and binds an
+explicit seeded household and its two grade assignments to the local process.
+This permits an authorized director to see aggregate tuition need calculated
+from the family's current encrypted questionnaire, using the same pinned HUD
+example as regional planning. Use full-year 2026 income, June 30 asset and
+liability balances, and a saved expenses row. The example uses two adults and
+two children in the seeded Pittsburgh area, not verified actual residence or
+household composition. Missing or ambiguous evidence or a pending contributor
+review suppresses the calculated result. The older fixed five-bucket example
+and $250 fictional offer remain separate; the calculated need is not a binding
+recommendation or an allocation of school funds. No customer or live route is
+added. The browser verifier exercises saved income correction and readback.
