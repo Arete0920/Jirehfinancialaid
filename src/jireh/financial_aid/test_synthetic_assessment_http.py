@@ -4,6 +4,7 @@ from unittest.mock import patch
 from uuid import uuid4
 
 from django.db import connection
+from django.http import Http404
 from django.test import TestCase, override_settings
 from django.test.utils import CaptureQueriesContext
 
@@ -11,7 +12,9 @@ from jireh.schools.demo_seed import seed_synthetic_browser_demo
 from jireh.schools.models import SchoolStaffAccess
 
 from .models import AidApplication
+from .assessment_evidence import EvidenceState
 from .services import get_or_create_annual_draft
+from .synthetic_assessment import preview_fictional_assessment_evidence
 
 
 class FictionalAssessmentHTTPTests(TestCase):
@@ -64,6 +67,21 @@ class FictionalAssessmentHTTPTests(TestCase):
                 self.assertNotIn("basis_cents", response.content.decode())
         self.application.refresh_from_db()
         self.assertEqual(self.application.status, AidApplication.STATUS_DRAFT)
+
+    def test_internal_evidence_report_is_deterministic_and_school_scoped(self):
+        scope = dict(school_id=self.demo["school_a"].pk, academic_year_id=self.demo["year_a"].pk,
+                     application_id=self.application.pk, scenario_id="fictional_modest")
+        director = self.demo["director_a"]
+        report = preview_fictional_assessment_evidence(user=director, **scope)
+        self.assertEqual(report, preview_fictional_assessment_evidence(user=director, **scope))
+        self.assertEqual(report.application_id, self.application.pk)
+        self.assertEqual((report.evidence_version, report.evidence_revision),
+                         ("fictional-fixture-evidence-v1", 1))
+        self.assertEqual({row.state for row in report.signals}, {EvidenceState.READY})
+        self.assertEqual(len({row.source_id for row in report.signals}), 5)
+        self.assertEqual(report.assessment.total_recommendation_cents, 9200)
+        with self.assertRaises(Http404):
+            preview_fictional_assessment_evidence(user=self.demo["director_b"], **scope)
 
     def test_only_current_same_school_director_can_read(self):
         self.assertEqual(self.client.get(self.url()).status_code, 403)
