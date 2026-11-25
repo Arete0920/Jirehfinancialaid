@@ -21,6 +21,9 @@ def workspace_review(request, school_id, household_id, academic_year_id):
             FictionalReviewError, confirm_fictional_application_review,
             read_fictional_application_review,
         )
+        from jireh.financial_aid.synthetic_submission_preflight import (
+            _submission_preflight_from_review,
+        )
     except ImportError:
         return HttpResponse("Fictional review unavailable.", status=503)
     scope = dict(user=request.user, school_id=school_id, household_id=household_id,
@@ -40,6 +43,7 @@ def workspace_review(request, school_id, household_id, academic_year_id):
             )
             return redirect("jireh_workspace_review", school_id, household_id, academic_year_id)
         state = read_fictional_application_review(**scope)
+        preflight = _submission_preflight_from_review(state)
     except FictionalReviewError as exc:
         if str(exc) == "review_state_changed":
             return HttpResponse("Saved draft changed. Reload and review again.", status=409)
@@ -50,6 +54,7 @@ def workspace_review(request, school_id, household_id, academic_year_id):
         return HttpResponse("Fictional review unavailable.", status=503)
     draft = state["draft"]
     response = _page(request, "review", household=draft.household,
-                     year=draft.academic_year, review=state)
+                     year=draft.academic_year, review=state,
+                     submission_preflight=preflight)
     response["Referrer-Policy"] = "same-origin"
     return response
