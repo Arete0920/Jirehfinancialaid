@@ -304,3 +304,19 @@ retry cannot duplicate funds. The director workload sums the latest decision per
 household, not its complete history; a zero adjustment withdraws a prior amount.
 The family sees only its latest recorded fictional amount. These records are
 separate from the fixed $250 example offers and all real award or tuition ledgers.
+
+### Fictional changed-income evidence
+
+Before recording a need decision, the seeded School A director can record
+acceptance of the fixed fictional job-loss evidence from the case page. The
+director sees the observed period and supplied replacement annual income before
+confirming. In the browser example the original unmet tuition is $13,959 and
+the adjusted estimate is $18,959. The review records a reference, director,
+questionnaire and school plan revisions, and scenario dates. The replacement
+amount is supplied by the fictional fixture. A changed questionnaire or plan
+requires a fresh review, and a pending contributor review hides the comparison.
+
+The scenario uses a fixed calendar for reproducible offline review. The
+comparison leaves the original projection, recorded decision and simulated
+budget on their existing calculation. No evidence uploads, live financial
+intake or school policy changes are part of this rehearsal.

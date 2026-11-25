@@ -43,6 +43,7 @@ from .models import AcademicYear, FictionalContributorDecision, HouseholdAccess,
 from .views import household_students
 from .workspace_contributor_exception import can_read_contributor_review, contributor_review_pending
 from .saved_need_workspace import read_saved_need_preview
+from .fictional_income_reviews import read_income_evidence, record_income_evidence
 from .fictional_need_decisions import (
     read_decision_budget, read_director_decisions, read_family_decision, record_fictional_need_decision,
 )
@@ -308,6 +309,13 @@ def _director_rehearsal(user, school, year, application_id, case):
         user=user, school=school, year=year, application_id=application_id,
         questionnaire_revision=metadata.questionnaire_revision,
     )
+    income_evidence = read_income_evidence(
+        user=user, school=school, year=year, application_id=application_id, baseline=saved_need,
+    )
+    if income_evidence:
+        amounts = ("annual_income",) if income_evidence.get("can_record") else ("baseline", "adjusted")
+        for name in amounts:
+            income_evidence[name] = _dollars(income_evidence.pop(name + "_cents"))
     if saved_need is not None and saved_need["status"] == "available":
         for name in ("net_tuition", "allowance", "contribution", "unmet_tuition"):
             saved_need[name] = _dollars(saved_need.pop(name + "_cents"))
@@ -324,6 +332,7 @@ def _director_rehearsal(user, school, year, application_id, case):
     return {
         "metadata": metadata,
         "saved_need": saved_need,
+        "income_evidence": income_evidence,
         "decision_journal": journal,
         "recommendations": [
             {"bucket": line.bucket.value.title(), "dollars": _dollars(line.recommendation_cents),
@@ -394,6 +403,29 @@ def workspace_case_projection(request, school_id, academic_year_id, application_
         plan_revision=projection["plan_revision"],
         unmet_tuition=_dollars(projection["unmet_tuition_cents"]),
     )
+
+
+@require_POST
+@csrf_protect
+def workspace_income_evidence(request, school_id, academic_year_id, application_id):
+    revisions = {"questionnaire_revision", "plan_revision"}
+    fields = revisions | {"confirmed"}
+    if (request.GET or request.content_type != "application/x-www-form-urlencoded"
+            or set(request.POST) - fields - {"csrfmiddlewaretoken"}
+            or not fields <= set(request.POST)
+            or any(len(request.POST.getlist(name)) != 1 for name in request.POST)
+            or request.POST["confirmed"] != "yes"
+            or any(_PROJECTION_REVISION.fullmatch(request.POST[name]) is None for name in revisions)):
+        return HttpResponse("Invalid fictional income evidence review.", status=400)
+    try:
+        record_income_evidence(
+            user=request.user, school_id=school_id, year_id=academic_year_id, application_id=application_id,
+            questionnaire_revision=int(request.POST["questionnaire_revision"]),
+            plan_revision=int(request.POST["plan_revision"]),
+        )
+    except ValidationError:
+        return HttpResponse("Fictional income evidence unavailable. Reload the case.", status=409)
+    return redirect("jireh_workspace_case", school_id, academic_year_id, application_id)
 
 
 @require_POST

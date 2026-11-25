@@ -57,7 +57,7 @@ def configure_saved_need_fixture(demo):
 def read_saved_need_preview(
     *, user, school, year, application_id, questionnaire_revision,
     expected_plan_revision=None, scenario_committed_aid_cents=0,
-    scenario_proposed_aid_cents=0,
+    scenario_proposed_aid_cents=0, changed_income_review=None, assessment_date=None,
 ):
     """No client-supplied geography, grades, rule parameters or raw financial rows.
 
@@ -107,6 +107,7 @@ def read_saved_need_preview(
                 balance_date=date(2026, 6, 30),
                 scenario_committed_aid_cents=scenario_committed_aid_cents,
                 scenario_proposed_aid_cents=scenario_proposed_aid_cents,
+                changed_income_review=changed_income_review, assessment_date=assessment_date,
                 **fictional_planning_context(),
             ),
         )

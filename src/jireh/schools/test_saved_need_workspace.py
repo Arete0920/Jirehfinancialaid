@@ -3,6 +3,7 @@ import copy
 import json
 import secrets
 from pathlib import Path
+from urllib.parse import urlencode
 
 from django.test import Client, TestCase, override_settings
 from django.urls import reverse
@@ -90,6 +91,72 @@ class SavedNeedWorkspaceTests(TestCase):
         self.assertFalse(SyntheticAidSubmission.objects.exists())
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+
+    def test_director_records_seeded_changed_income_review_and_sees_both_estimates(self):
+        from uuid import uuid4
+
+        from django.db import IntegrityError, connection, transaction
+
+        from jireh.financial_aid.models import FictionalIncomeEvidenceReview, FictionalNeedDecision
+        from .models import FictionalContributorException
+
+        self.save(0, self.answers)
+        url = reverse("jireh_workspace_income_evidence", args=(
+            self.fixture.school_id, self.fixture.academic_year_id, self.draft.pk,
+        ))
+        data = {"questionnaire_revision": "1", "plan_revision": "1", "confirmed": "yes"}
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
+            director = Client(enforce_csrf_checks=True)
+            director.force_login(self.demo["director_a"])
+            page = director.get(self.url, secure=True)
+            self.assertContains(page, "Record fictional income evidence")
+            self.assertNotContains(page, 'id="income-evidence-adjusted"')
+            self.assertEqual(director.post(url, urlencode(data),
+                                           content_type="application/x-www-form-urlencoded", secure=True).status_code, 403)
+            data["csrfmiddlewaretoken"] = director.cookies["csrftoken"].value
+            def post(values):
+                return director.post(url, urlencode(values), content_type="application/x-www-form-urlencoded",
+                                     secure=True, HTTP_REFERER="https://testserver" + self.url)
+
+            self.assertEqual(post({**data, "income": "30000"}).status_code, 400)
+            self.assertEqual(post({**data, "plan_revision": "2"}).status_code, 409)
+            self.assertEqual(post(data).status_code, 302)
+            self.assertEqual(post(data).status_code, 302)
+            row = FictionalIncomeEvidenceReview.objects.get()
+            if connection.vendor == "postgresql":
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    FictionalIncomeEvidenceReview.objects.filter(pk=row.pk).update(accepted_on=row.accepted_on)
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    FictionalIncomeEvidenceReview.objects.filter(pk=row.pk).delete()
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    FictionalIncomeEvidenceReview.objects.create(
+                        questionnaire_id=row.questionnaire_id, questionnaire_revision=row.questionnaire_revision,
+                        plan_id=row.plan_id, actor_user=self.demo["director_b"], evidence_id=uuid4(),
+                        accepted_on=row.accepted_on, reassess_on=row.reassess_on,
+                    )
+            result = self.get_case()
+            self.assertContains(result, 'id="income-evidence-baseline">$13,959.00</strong>')
+            self.assertContains(result, 'id="income-evidence-adjusted">$18,959.00</strong>')
+            self.assertNotContains(result, "3000000")
+            self.assertFalse(FictionalNeedDecision.objects.exists())
+            self.assertFalse(SyntheticAidSubmission.objects.exists())
+            for role in ("parent", "director_b", "operator"):
+                other = Client()
+                other.force_login(self.demo[role])
+                self.assertEqual(other.post(url, urlencode(data),
+                                            content_type="application/x-www-form-urlencoded",
+                                            secure=True).status_code, 404)
+            corrected = copy.deepcopy(self.answers)
+            corrected["income"][0]["amount"] += 100
+            self.save(1, corrected)
+            self.assertEqual(post(data).status_code, 409)
+            self.assertNotContains(self.get_case(), 'id="income-evidence-adjusted"')
+            FictionalContributorException.objects.create(application=self.draft, requested_by=self.demo["parent"])
+            self.assertEqual(post({**data, "questionnaire_revision": "2"}).status_code, 409)
+            self.assertNotContains(self.get_case(), "Record fictional income evidence")
+            self.demo["director_a"].user_permissions.clear()
+            self.assertNotContains(self.get_case(), "Record fictional income evidence")
+            self.assertEqual(post({**data, "questionnaire_revision": "2"}).status_code, 403)
 
     def test_context_is_explicit_and_contributor_hold_prevents_calculation(self):
         from unittest.mock import patch
@@ -186,6 +253,7 @@ class SavedNeedWorkspaceTests(TestCase):
         from jireh.financial_aid.models import FictionalNeedDecision
         from jireh.financial_aid.synthetic_submission import record_synthetic_demo_submission
         from .fictional_need_decisions import record_fictional_need_decision, read_decision_budget
+        from .fictional_income_reviews import record_income_evidence
 
         self.save(0, self.answers)
         scope = dict(user=self.demo["director_a"], school_id=self.fixture.school_id,
@@ -205,7 +273,13 @@ class SavedNeedWorkspaceTests(TestCase):
             with self.assertRaises(PermissionDenied):
                 record_fictional_need_decision(**scope)
             director.user_permissions.add(permission)
+            record_income_evidence(**{name: scope[name] for name in (
+                "user", "school_id", "year_id", "application_id", "questionnaire_revision", "plan_revision",
+            )})
+            self.assertContains(self.get_case(), 'id="income-evidence-adjusted">$18,959.00</strong>')
             self.assertContains(self.get_case(), "Record fictional need decision")
+            with self.assertRaises(ValidationError):
+                record_fictional_need_decision(**{**scope, "amount_cents": 1_500_000})
             first = record_fictional_need_decision(**scope)
             self.assertEqual(first.amount_cents, 250_000)
             self.assertEqual(first.need_cents, 1_395_900)

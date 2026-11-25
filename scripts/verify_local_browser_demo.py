@@ -305,6 +305,15 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(page.locator("#saved-need-unmet")).to_have_text("$13,959.00")
             expect(page.locator("#saved-need-revisions")).to_contain_text("Questionnaire revision 4")
             page.screenshot(path=str(output / "director-saved-need.png"), full_page=True)
+            page.get_by_role("checkbox", name="I reviewed the seeded fictional evidence.").check()
+            with page.expect_response(lambda res: res.url.endswith("/income-evidence/") and res.request.method == "POST") as review:
+                page.get_by_role("button", name="Record fictional income evidence").click()
+            assert review.value.status == 302
+            expect(page.locator("#income-evidence-baseline")).to_have_text("$13,959.00")
+            expect(page.locator("#income-evidence-adjusted")).to_have_text("$18,959.00")
+            expect(page.locator("#saved-need-unmet")).to_have_text("$13,959.00")
+            page.screenshot(path=str(output / "director-income-evidence.png"), full_page=True)
+            print("CHANGED INCOME: recorded seeded evidence and compared both estimates: PASS", flush=True)
             page.get_by_label("Scenario committed aid in dollars").fill("10000")
             page.get_by_label("Proposed need aid in dollars").fill("2500")
             with page.expect_response(lambda res: res.url.endswith("/need-projection/") and res.request.method == "POST") as projected:
