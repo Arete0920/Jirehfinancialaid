@@ -15,12 +15,18 @@ from jireh.schools.session_views import authenticate_session, end_session
 FAMILY_SESSION_KEY = "jireh_customer_family_session"
 
 
-def family_session_eligible(user):
+def nonprivileged_family_account(user):
     """Conservative candidate policy; no privilege inferred from identity."""
     return (
         user.is_active and not user.is_staff and not user.is_superuser
         and not user.user_permissions.exists() and not user.groups.exists()
         and not SchoolStaffAccess.objects.filter(user_id=user.pk, is_active=True).exists()
+    )
+
+
+def family_session_eligible(user):
+    return (
+        nonprivileged_family_account(user)
         and HouseholdAccess.objects.filter(
             user_id=user.pk, is_active=True, household__is_active=True,
             household__school__is_active=True,

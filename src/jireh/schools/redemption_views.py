@@ -75,6 +75,15 @@ def test_household_redemption(request, school_id, household_id):
     if request.method == "GET":
         return JsonResponse({"ready": True})
 
+    return redeem_authenticated_invitation(request, school_id, household_id)
+
+
+def redeem_authenticated_invitation(request, school_id, household_id, *, redeem=None):
+    """Shared redemption POST; caller must enforce CSRF, method and session policy."""
+    user = request.user
+    if not getattr(user, "is_authenticated", False) or not getattr(user, "is_active", False):
+        return JsonResponse({"detail": "Forbidden."}, status=403)
+
     # Debit every authenticated POST, including malformed or invalid codes.
     # Use a database-persisted, account-wide counter before credential lookup.
     allowed, retry_after = charge_redemption_attempt(user=user)
@@ -93,7 +102,7 @@ def test_household_redemption(request, school_id, household_id):
         return JsonResponse({"detail": "Invalid request."}, status=400)
 
     try:
-        grant = redeem_household_invitation(
+        grant = (redeem or redeem_household_invitation)(
             user=user,
             school_id=school_id,
             household_id=household_id,
