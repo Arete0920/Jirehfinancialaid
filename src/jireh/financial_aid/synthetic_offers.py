@@ -13,6 +13,7 @@ from django.http import Http404
 
 from jireh.schools.access import require_aid_director_access, require_household_access
 from jireh.schools.models import AcademicYear
+from jireh.schools.workspace_contributor_exception import contributor_review_pending
 from .models import (
     AidApplication, AidApplicationStudent,
     SyntheticAidOffer, SyntheticAidSubmission,
@@ -50,6 +51,8 @@ def record_synthetic_officer_offer(
     )
     if application is None:
         raise Http404("Synthetic application not found.")
+    if contributor_review_pending(application.pk):
+        raise ValidationError("synthetic_action_unavailable")
     if not SyntheticAidSubmission.objects.filter(application_id=application.pk).exists():
         raise ValidationError("synthetic_receipt_required")
     selection = (

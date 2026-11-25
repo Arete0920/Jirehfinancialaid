@@ -4,6 +4,7 @@ import secrets
 from datetime import date
 
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.db import transaction
 
 from jireh.schools.models import (
@@ -94,6 +95,10 @@ def seed_synthetic_browser_demo(*, grant_family_access=True, grant_first_directo
             user=director_a,
             role=SchoolStaffAccess.ROLE_AID_DIRECTOR,
         )
+        director_a.user_permissions.add(Permission.objects.get(
+            content_type__app_label="schools", content_type__model="fictionalcontributorexception",
+            codename="view_fictionalcontributorexception",
+        ))
     SchoolStaffAccess.objects.create(
         school=school_b,
         user=director_b,

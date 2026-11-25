@@ -7,7 +7,9 @@ from unittest.mock import patch
 from urllib.parse import urlencode
 from uuid import uuid4
 
-from django.core.exceptions import PermissionDenied
+from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import IntegrityError, connection, transaction
 from django.http import Http404
 from django.test import Client, TestCase, override_settings
@@ -27,9 +29,11 @@ from jireh.financial_aid.synthetic_questionnaire_storage import (
     FictionalQuestionnairePolicy, save_fictional_questionnaire,
 )
 from jireh.financial_aid.synthetic_submission_preflight import read_fictional_submission_preflight
+from jireh.financial_aid.synthetic_submission import record_synthetic_demo_submission
+from jireh.financial_aid.synthetic_offers import record_synthetic_officer_offer
 from .demo_seed import seed_synthetic_browser_demo
 from .grant_admin import revoke_household_access
-from .models import HouseholdAccess, Student
+from .models import HouseholdAccess, SchoolStaffAccess, Student
 
 
 @override_settings(
@@ -115,6 +119,71 @@ class WorkspaceReviewTests(TestCase):
             content_type="application/x-www-form-urlencoded",
             secure=True, **headers,
         )
+
+    def test_confidential_contributor_request_is_idempotent_and_restricted(self):
+        from .models import FictionalContributorException
+
+        url = reverse("jireh_workspace_contributor_exception", kwargs=self.ids)
+        token = self.client.cookies["csrftoken"].value
+
+        def request(content=None, *, csrf=True):
+            headers = {"HTTP_ORIGIN": "https://testserver"}
+            if csrf:
+                headers["HTTP_X_CSRFTOKEN"] = token
+            body = urlencode({"csrfmiddlewaretoken": token}) if content is None and csrf else (content or "")
+            return self.client.post(url, body, content_type="application/x-www-form-urlencoded",
+                                    secure=True, **headers)
+
+        self.assertEqual(request(csrf=False).status_code, 403)
+        self.assertEqual(request("reason=private").status_code, 400)
+        with override_settings(JIREH_SYNTHETIC_APPLICATION_REVIEW=False):
+            self.assertEqual(request().status_code, 404)
+        self.assertEqual(FictionalContributorException.objects.count(), 0)
+        for _ in range(2):
+            self.assertRedirects(request(), self.url, fetch_redirect_response=False)
+        marker = FictionalContributorException.objects.get(application=self.draft)
+        self.assertEqual(marker.requested_by_id, self.scope["user"].pk)
+        self.assertContains(self.client.get(self.url, secure=True), "Additional review is pending.")
+        self.assertIn("submission_additional_review_pending",
+                      read_fictional_submission_preflight(**self.scope, key=self.key).blocking_codes)
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+
+        select_student_for_draft(**self.scope, student_id=self.children[0].pk)
+        with self.assertRaisesMessage(ValidationError, "synthetic_additional_review_pending"):
+            record_synthetic_demo_submission(**self.scope, accuracy_attested=True)
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
+        with self.assertRaisesMessage(ValidationError, "synthetic_action_unavailable"):
+            record_synthetic_officer_offer(user=self.fixture["director_a"], school_id=self.draft.school_id,
+                academic_year_id=self.draft.academic_year_id, application_id=self.draft.pk,
+                student_id=self.children[0].pk)
+
+        case_url = reverse("jireh_workspace_case", kwargs={"school_id": self.draft.school_id,
+            "academic_year_id": self.draft.academic_year_id, "application_id": self.draft.pk})
+        ordinary = get_user_model().objects.create_user(username="fictional-ordinary-director")
+        SchoolStaffAccess.objects.create(user=ordinary, school=self.draft.school,
+                                         role=SchoolStaffAccess.ROLE_AID_DIRECTOR)
+        self.client.force_login(ordinary)
+        self.assertNotContains(self.client.get(case_url, secure=True), "Additional review is pending.")
+        reviewer = self.fixture["director_a"]
+        reviewer.user_permissions.add(Permission.objects.get(content_type__app_label="schools",
+            codename="view_fictionalcontributorexception"))
+        self.client.force_login(reviewer)
+        self.assertContains(self.client.get(case_url, secure=True), "Additional review is pending.")
+        self.client.force_login(self.fixture["director_b"])
+        self.assertEqual(self.client.get(case_url, secure=True).status_code, 404)
+
+    @skipUnless(connection.vendor == "postgresql", "PostgreSQL trigger evidence")
+    def test_postgresql_contributor_review_marker_rejects_wrong_actor_and_rewrites(self):
+        from .models import FictionalContributorException
+
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            FictionalContributorException.objects.create(application=self.draft, requested_by=self.fixture["director_b"])
+        marker = FictionalContributorException.objects.create(application=self.draft, requested_by=self.scope["user"])
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            FictionalContributorException.objects.filter(pk=marker.pk).update(requested_by=self.fixture["director_b"])
+        with self.assertRaises(IntegrityError), transaction.atomic():
+            FictionalContributorException.objects.filter(pk=marker.pk).delete()
 
     def test_confirmation_rejects_multipart(self):
         self.prepare()

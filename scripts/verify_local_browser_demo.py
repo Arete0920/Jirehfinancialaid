@@ -249,7 +249,19 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.goto(documents_url)
             expect(page.locator("#document-count")).to_have_text("1 listed")
             assert page.request.get(corrected_read_url).body() == corrected
+            page.goto(review_url)
+            for _ in range(2):
+                page.get_by_role("button", name="Request private contributor review").click()
+                expect(page.locator('[data-submission-blocker="submission_additional_review_pending"]')).to_have_text(
+                    "Additional review is pending.",
+                )
             sign_out()
+            sign_in("local-demo-director-a")
+            page.goto(case_url)
+            expect(page.get_by_role("heading", name="Private contributor review")).to_be_visible()
+            expect(page.get_by_text("Additional review is pending.", exact=True)).to_be_visible()
+            sign_out()
+            print("CONTRIBUTOR REVIEW: private request, repeat, family readiness hold and restricted readback: PASS", flush=True)
             context.close()
             browser.close()
         print("CUSTOMER WORKSPACE: sign-in, saved draft, financial correction, selected PDF upload, versioned readback/removal, director readback, cross-school denial and logout: PASS", flush=True)
