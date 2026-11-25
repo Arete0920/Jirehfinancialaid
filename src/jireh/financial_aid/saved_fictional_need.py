@@ -5,17 +5,17 @@ No HTTP input, residence verification service, live methodology, grant creation,
 submission, award or payment is introduced. Never infer household composition,
 grade bands, financial eligibility or dates from incomplete records.
 """
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from datetime import date
 from uuid import UUID
 
-from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.http import Http404
 
 from jireh.schools.demo_seed import DEMO_SCHOOL_A_CODE
 from jireh.schools.grant_admin import _lock_authorized_school
 from jireh.schools.models import AcademicYear, HouseholdAccess
+from jireh.schools.workspace_contributor_exception import contributor_review_pending
 
 from .annual_school_plan import (
     FictionalAwardProjection, FictionalFamilyEducationCost,
@@ -28,7 +28,7 @@ from .models import AidApplication, AidApplicationStudent, SyntheticQuestionnair
 from .questionnaire_candidate import validate_v1_financial_candidate
 from .regional_need import (
     FictionalLivingAllowanceTable, FictionalRegionalNeedCalculation,
-    FictionalRegionalNeedInput, FictionalRegionalNeedPolicy, calculate_fictional_regional_need,
+    FictionalRegionalNeedInput, FictionalRegionalNeedPolicy, _valid_identifier, calculate_fictional_regional_need,
 )
 from .school_plan_revisions import read_fictional_school_plan
 from .synthetic_questionnaire_preview import require_synthetic_questionnaire_preview
@@ -37,6 +37,24 @@ from .synthetic_questionnaire_storage import FictionalQuestionnairePolicy, _decr
 
 class SavedFictionalNeedError(ValueError):
     """Stable, nonsensitive integration failure."""
+
+
+@dataclass(frozen=True, slots=True, repr=False)
+class FictionalChangedIncomeReview:
+    """Trusted rehearsal input for a reviewed replacement household income."""
+
+    evidence_id: UUID
+    reviewed_by_id: int
+    questionnaire_id: UUID
+    questionnaire_revision: int
+    plan_id: UUID
+    plan_revision: int
+    observed_from: date
+    observed_through: date
+    accepted_on: date
+    reassess_on: date
+    annual_income_cents: int
+    policy_version: str
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -59,6 +77,8 @@ class SavedFictionalNeedContext:
     # These are scenario inputs, not reported committed school funds.
     scenario_committed_aid_cents: int
     scenario_proposed_aid_cents: int
+    changed_income_review: FictionalChangedIncomeReview | None = None
+    assessment_date: date | None = None
 
 
 @dataclass(frozen=True, slots=True, repr=False)
@@ -75,6 +95,8 @@ class SavedFictionalNeedResult:
     projection: FictionalAwardProjection
     requires_school_authorization: bool = True
     financial_verification_established: bool = False
+    baseline_regional_need: FictionalRegionalNeedCalculation | None = None
+    changed_income_review: FictionalChangedIncomeReview | None = None
 
 
 _SECTIONS = ("income", "assets", "liabilities", "expenses")
@@ -155,6 +177,37 @@ def _financial_totals(answers, *, catalog, context):
     return totals
 
 
+def _require_changed_income_review(review, *, assessment_date, user, draft, snapshot, plan_row):
+    if (
+        type(review) is not FictionalChangedIncomeReview
+        or any(type(value) is not UUID or value.int == 0 for value in (
+            review.evidence_id, review.questionnaire_id, review.plan_id,
+        ))
+        or any(type(value) is not int or value < 1 for value in (
+            review.reviewed_by_id, review.questionnaire_revision, review.plan_revision,
+        ))
+        or type(review.annual_income_cents) is not int or review.annual_income_cents < 0
+        or not _valid_identifier(review.policy_version)
+    ):
+        raise SavedFictionalNeedError("saved_need_income_review_invalid")
+    if (
+        any(type(value) is not date for value in (
+            review.observed_from, review.observed_through, review.accepted_on, assessment_date, review.reassess_on,
+        ))
+        or not review.observed_from <= review.observed_through <= review.accepted_on < review.reassess_on
+        or not review.accepted_on <= assessment_date < review.reassess_on
+    ):
+        raise SavedFictionalNeedError("saved_need_income_review_dates_invalid")
+    if (
+        (review.questionnaire_id, review.questionnaire_revision) != (snapshot.pk, snapshot.revision)
+        or (review.plan_id, review.plan_revision) != (plan_row.pk, plan_row.revision)
+        or review.reviewed_by_id != user.pk
+    ):
+        raise SavedFictionalNeedError("saved_need_income_review_scope_mismatch")
+    if contributor_review_pending(draft.pk):
+        raise SavedFictionalNeedError("saved_need_income_review_pending_contributor")
+
+
 @transaction.atomic
 def calculate_saved_fictional_need(*, user, context, catalog, key):
     """Read actual revision-bound fictional evidence, never raw answers to caller.
@@ -212,15 +265,24 @@ def calculate_saved_fictional_need(*, user, context, catalog, key):
         expected_hud_fiscal_year=context.regional_policy.dataset_year,
         expected_crosswalk_sha256=context.crosswalk_sha256,
     )
-    need = calculate_fictional_regional_need(
-        inputs=FictionalRegionalNeedInput(
-            region_code=region, adults=context.adults, children=context.children,
-            address_verified=True, eligible_income_cents=totals["income"],
-            assets_cents=totals["assets"], deductible_liabilities_cents=totals["liabilities"],
-            tuition_cents=cost.net_tuition_cents,
-        ),
-        table=context.allowance_table, policy=context.regional_policy,
+    inputs = FictionalRegionalNeedInput(
+        region_code=region, adults=context.adults, children=context.children,
+        address_verified=True, eligible_income_cents=totals["income"],
+        assets_cents=totals["assets"], deductible_liabilities_cents=totals["liabilities"],
+        tuition_cents=cost.net_tuition_cents,
     )
+    need = calculate_fictional_regional_need(inputs=inputs, table=context.allowance_table, policy=context.regional_policy)
+    review = context.changed_income_review
+    baseline = None
+    if review is not None:
+        _require_changed_income_review(
+            review, assessment_date=context.assessment_date, user=user, draft=draft, snapshot=snapshot, plan_row=plan_row,
+        )
+        baseline = need
+        need = calculate_fictional_regional_need(
+            inputs=replace(inputs, eligible_income_cents=review.annual_income_cents),
+            table=context.allowance_table, policy=context.regional_policy,
+        )
     # Scenario proposals are separate from calculated need. Do not create
     # recommendations for unresolved non-need buckets or a binding award.
     projection = project_fictional_award(
@@ -230,4 +292,5 @@ def calculate_saved_fictional_need(*, user, context, catalog, key):
     return SavedFictionalNeedResult(
         school.pk, year.pk, draft.pk, snapshot.pk, snapshot.revision,
         plan_row.pk, plan_row.revision, cost, need, projection,
+        baseline_regional_need=baseline, changed_income_review=review,
     )
