@@ -2,7 +2,7 @@
 
 from django.urls import path
 from .demo_views import demo_page, demo_config
-from .demo_director_summary import director_database_truth_demo
+from .demo_director_summary import director_annual_planning_demo, director_database_truth_demo
 from .demo_platform_operations import local_operations_preview
 from .urls import urlpatterns as test_only_urls
 from .customer_workspace_urls import urlpatterns as workspace_urls
@@ -10,6 +10,7 @@ from .customer_workspace_urls import urlpatterns as workspace_urls
 urlpatterns = [
     path("local-demo/", demo_page, name="jireh_local_demo"),
     path("local-demo/director-summary/", director_database_truth_demo, name="jireh_demo_director_summary"),
+    path("local-demo/director-planning/", director_annual_planning_demo, name="jireh_demo_director_planning"),
     path("local-demo/config/", demo_config, name="jireh_local_demo_config"),
     path("local-demo/platform-operations/", local_operations_preview, name="jireh_demo_platform_operations"),
     *workspace_urls,

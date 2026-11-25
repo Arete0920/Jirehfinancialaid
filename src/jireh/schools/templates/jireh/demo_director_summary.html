@@ -50,6 +50,9 @@ a{color:#17634f}
 <strong>Not a live financial-aid report.</strong>
 <p>The school/year and data source are verified from active director grants and saved fictional records. Missing or inconsistent data fails closed. Real application submissions, actual financial awards, family income and documents, payment success, and cash movement are not reported here.</p>
 </section>
+{% if has_planning_scenario %}
+<section><a href="{% url 'jireh_demo_director_planning' %}">Open fictional tuition and aid planning</a></section>
+{% endif %}
 <section><a href="/local-demo/">Return to the fictional family walkthrough</a></section>
 </main>
 </body></html>

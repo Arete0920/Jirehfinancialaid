@@ -1,0 +1,72 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="robots" content="noindex,nofollow">
+<title>Jireh | Fictional annual planning</title>
+<style nonce="{{ csp_nonce }}">
+:root{font-family:system-ui,sans-serif;background:#f5f7f6;color:#1b3430}
+body{margin:0}
+main{max-width:960px;margin:auto;padding:28px 20px 64px}
+a{color:#17634f}
+section{background:#fff;border:1px solid #d8e4df;border-radius:10px;margin:22px 0;padding:20px}
+.table-scroll{overflow-x:auto}
+table{border-collapse:collapse;width:100%;text-align:right;font-variant-numeric:tabular-nums}
+th,td{padding:8px 10px;border-bottom:1px solid #d8e4df}
+th:first-child{text-align:left}
+label{display:block;font-weight:600}
+input,select,button{font:inherit;margin:4px 0 14px;padding:7px 10px}
+button{cursor:pointer;color:#fff;background:#17634f;border:1px solid #17634f;border-radius:5px}
+dl{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:8px 24px}
+dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
+</style>
+</head>
+<body>
+<main>
+<nav><a href="{% url 'jireh_demo_director_summary' %}">Back to director workload</a></nav>
+<h1>Fictional planning scenario</h1>
+<p>{{ school_name }} · {{ year_name }} · ZIP {{ plan.postal_code }}</p>
+<p>Test a proposed award using sample school settings and a fictional family. The projection is read-only.</p>
+<section aria-labelledby="seats">
+<h2 id="seats">Tuition and seats</h2>
+<p>{{ plan.enrolled }} enrolled of {{ plan.capacity }} seats, with {{ plan.open_seats }} open seats.</p>
+<div class="table-scroll">
+<table>
+<thead><tr><th scope="col">Grade band</th><th scope="col">Annual tuition</th><th scope="col">Capacity</th><th scope="col">Enrolled</th><th scope="col">Open seats</th></tr></thead>
+<tbody>{% for band, tuition in grade_bands %}<tr><th scope="row">{{ band.label }}</th><td>{{ tuition }}</td><td>{{ band.capacity }}</td><td>{{ band.enrolled }}</td><td>{{ band.open_seats }}</td></tr>{% endfor %}</tbody>
+</table>
+</div>
+<p>Capacity-weighted average tuition: {{ average_tuition }}. Applicant demand is unavailable in this scenario.</p>
+</section>
+<section aria-labelledby="family">
+<h2 id="family">Sample family bill</h2>
+<p>One student in K–5 and one in grades 6–8.</p>
+<dl>
+<dt>Tuition before discounts</dt><dd>{{ sticker_tuition }}</dd>
+<dt>Sibling discount</dt><dd>−{{ discount }}</dd>
+<dt>Required fees</dt><dd>{{ fees }}</dd>
+<dt>Eligible cost before aid</dt><dd>{{ eligible_cost }}</dd>
+</dl>
+</section>
+<section aria-labelledby="proposal">
+<h2 id="proposal">Model a proposed award</h2>
+<p>Annual aid budget: {{ budget }}. This scenario starts with zero committed aid.</p>
+<form method="get" action="{% url 'jireh_demo_director_planning' %}">
+<label for="award">Proposed award in dollars</label>
+<input id="award" type="number" name="award" min="0" step="0.01" value="{{ award }}" required>
+<label for="category">Aid category</label>
+<select id="category" name="category">{% for code, label in categories %}<option value="{{ code }}"{% if code == selected_category %} selected{% endif %}>{{ label }}</option>{% endfor %}</select>
+<div><button type="submit">Project award</button></div>
+</form>
+<h3>{{ category_label }} projection</h3>
+<dl>
+<dt>Net tuition after proposed aid</dt><dd>{{ net_tuition }}</dd>
+<dt>Household balance including required fees</dt><dd>{{ household_balance }}</dd>
+<dt>Remaining annual aid budget</dt><dd>{{ remaining_budget }}</dd>
+</dl>
+<p>Review mission fit and enrollment goals separately from household financial need.</p>
+</section>
+</main>
+</body>
+</html>
