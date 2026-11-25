@@ -19,7 +19,8 @@ from django.urls import reverse
 from jireh.financial_aid import fictional_school_questions, synthetic_application_review
 from jireh.financial_aid.document_lifecycle import create_synthetic_document, delete_synthetic_document
 from jireh.financial_aid.models import (
-    AidApplication, SyntheticAidSubmission, SyntheticApplicationReview,
+    AidApplication, AidApplicationStudent, SyntheticAidOffer, SyntheticAidSubmission, SyntheticApplicationReview,
+    SYNTHETIC_DISCLOSURE_VERSION,
 )
 from jireh.financial_aid.questionnaire_validation import QuestionnaireValidationError
 from jireh.financial_aid.services import get_or_create_annual_draft, select_student_for_draft
@@ -177,6 +178,7 @@ class WorkspaceReviewTests(TestCase):
     def test_postgresql_contributor_review_marker_rejects_wrong_actor_and_rewrites(self):
         from .models import FictionalContributorException
 
+        select_student_for_draft(**self.scope, student_id=self.children[0].pk)
         with self.assertRaises(IntegrityError), transaction.atomic():
             FictionalContributorException.objects.create(application=self.draft, requested_by=self.fixture["director_b"])
         marker = FictionalContributorException.objects.create(application=self.draft, requested_by=self.scope["user"])
@@ -184,6 +186,30 @@ class WorkspaceReviewTests(TestCase):
             FictionalContributorException.objects.filter(pk=marker.pk).update(requested_by=self.fixture["director_b"])
         with self.assertRaises(IntegrityError), transaction.atomic():
             FictionalContributorException.objects.filter(pk=marker.pk).delete()
+        with self.assertRaisesMessage(IntegrityError, "Additional fictional review is pending"), transaction.atomic():
+            SyntheticAidSubmission.objects.bulk_create([SyntheticAidSubmission(application=self.draft,
+                actor_user=self.scope["user"], consent_version=SYNTHETIC_DISCLOSURE_VERSION, accuracy_attested=True)])
+
+    @skipUnless(connection.vendor == "postgresql", "PostgreSQL trigger evidence")
+    def test_postgresql_contributor_hold_rejects_raw_offer_after_historical_receipt(self):
+        from .models import FictionalContributorException
+
+        select_student_for_draft(**self.scope, student_id=self.children[0].pk)
+        record_synthetic_demo_submission(**self.scope, accuracy_attested=True)
+        FictionalContributorException.objects.create(application=self.draft, requested_by=self.scope["user"])
+        selection = AidApplicationStudent.objects.get(application=self.draft)
+        with self.assertRaisesMessage(IntegrityError, "Additional fictional review is pending"), transaction.atomic():
+            SyntheticAidOffer.objects.bulk_create([SyntheticAidOffer(application=self.draft,
+                student_selection=selection, actor_user=self.fixture["director_a"], bucket="need", amount_cents=25000)])
+        self.assertTrue(SyntheticAidSubmission.objects.filter(application=self.draft).exists())
+        director = self.fixture["director_a"]
+        director.user_permissions.clear()
+        self.client.force_login(director)
+        page = self.client.get(reverse("jireh_workspace_case", kwargs={"school_id": self.draft.school_id,
+            "academic_year_id": self.draft.academic_year_id, "application_id": self.draft.pk}), secure=True)
+        self.assertContains(page, "A fictional offer is currently unavailable.")
+        self.assertNotContains(page, "Private contributor review")
+        self.assertNotContains(page, "Record fictional $250 need offer")
 
     def test_confirmation_rejects_multipart(self):
         self.prepare()

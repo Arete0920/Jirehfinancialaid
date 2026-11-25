@@ -12,6 +12,7 @@ BEGIN
     IF TG_OP <> 'INSERT' THEN
         RAISE EXCEPTION USING ERRCODE='23514', MESSAGE='Contributor review marker is immutable';
     END IF;
+    PERFORM 1 FROM financial_aid_aidapplication WHERE id=NEW.application_id FOR UPDATE;
     IF NOT EXISTS (
         SELECT 1 FROM financial_aid_aidapplication a
         JOIN schools_academicyear y ON y.id=a.academic_year_id
@@ -31,8 +32,27 @@ $body$ LANGUAGE plpgsql;
 CREATE TRIGGER jireh_contributor_exception_guard
 BEFORE INSERT OR UPDATE OR DELETE ON schools_fictionalcontributorexception
 FOR EACH ROW EXECUTE FUNCTION jireh_contributor_exception_guard();
+
+CREATE FUNCTION jireh_contributor_review_hold() RETURNS trigger AS $body$
+BEGIN
+    PERFORM 1 FROM financial_aid_aidapplication WHERE id=NEW.application_id FOR UPDATE;
+    IF EXISTS (
+        SELECT 1 FROM schools_fictionalcontributorexception WHERE application_id=NEW.application_id
+    ) THEN
+        RAISE EXCEPTION USING ERRCODE='23514', MESSAGE='Additional fictional review is pending';
+    END IF;
+    RETURN NEW;
+END;
+$body$ LANGUAGE plpgsql;
+CREATE TRIGGER jireh_contributor_hold_receipt BEFORE INSERT ON financial_aid_syntheticaidsubmission
+FOR EACH ROW EXECUTE FUNCTION jireh_contributor_review_hold();
+CREATE TRIGGER jireh_contributor_hold_offer BEFORE INSERT ON financial_aid_syntheticaidoffer
+FOR EACH ROW EXECUTE FUNCTION jireh_contributor_review_hold();
 """
 DROP = """
+DROP TRIGGER IF EXISTS jireh_contributor_hold_receipt ON financial_aid_syntheticaidsubmission;
+DROP TRIGGER IF EXISTS jireh_contributor_hold_offer ON financial_aid_syntheticaidoffer;
+DROP FUNCTION IF EXISTS jireh_contributor_review_hold();
 DROP TRIGGER IF EXISTS jireh_contributor_exception_guard ON schools_fictionalcontributorexception;
 DROP FUNCTION IF EXISTS jireh_contributor_exception_guard();
 """

@@ -251,6 +251,7 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <div class="metric" data-student-id="{{ offer.student_id }}">
 <p>Selected child {{ forloop.counter }}</p>
 {% if offer.dollars %}<p data-saved-offer>Saved fictional need offer: ${{ offer.dollars }}</p>
+{% elif fictional_offer_held %}<p>A fictional offer is currently unavailable.</p>
 {% else %}<form data-command="fictional-offer" action="{% url 'jireh_workspace_case_offer' school.pk year.pk case.application_id offer.student_id %}" method="post">
 {% csrf_token %}<button type="submit">Record fictional $250 need offer</button></form>{% endif %}
 </div>
