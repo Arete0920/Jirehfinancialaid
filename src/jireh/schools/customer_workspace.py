@@ -16,9 +16,9 @@ from decimal import Decimal
 from functools import wraps
 
 from django.conf import settings
-from django.core.exceptions import PermissionDenied
+from django.core.exceptions import PermissionDenied, ValidationError
 from django.http import Http404, HttpResponseForbidden, HttpResponseNotFound, HttpResponse
-from django.shortcuts import get_object_or_404, render
+from django.shortcuts import get_object_or_404, redirect, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.csrf import ensure_csrf_cookie
@@ -43,6 +43,9 @@ from .models import AcademicYear, FictionalContributorDecision, HouseholdAccess,
 from .views import household_students
 from .workspace_contributor_exception import can_read_contributor_review, contributor_review_pending
 from .saved_need_workspace import read_saved_need_preview
+from .fictional_need_decisions import (
+    read_decision_budget, read_director_decisions, read_family_decision, record_fictional_need_decision,
+)
 
 
 _TEST_MODULES = frozenset({
@@ -175,9 +178,14 @@ def workspace_family(request, school_id, household_id, academic_year_id):
         {**student, "selected": student["id"] in ids}
         for student in students["students"]
     ]
+    family_decision = read_family_decision(
+        user=request.user, school_id=school_id, household_id=household_id, year_id=academic_year_id,
+    ) if draft else None
+    if family_decision:
+        family_decision["dollars"] = _dollars(family_decision.pop("amount_cents"))
     return _page(
         request, "family", household=household, year=year,
-        draft=draft, children=children, selected_count=len(ids),
+        draft=draft, children=children, selected_count=len(ids), family_decision=family_decision,
         questionnaire_enabled=getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_STORAGE", False) is True,
         documents_enabled=getattr(settings, "JIREH_SYNTHETIC_DOCUMENTS_ONLY", False) is True,
         review_enabled=getattr(settings, "JIREH_SYNTHETIC_APPLICATION_REVIEW", False) is True,
@@ -214,9 +222,14 @@ def workspace_director(request, school_id, academic_year_id):
         workload = _read_json(workload_response)
         if workload is None:
             return workload_response
+    decision_budget = read_decision_budget(user=request.user, school_id=school.pk, year_id=year.pk)
+    if decision_budget:
+        for name in ("allocated", "remaining"):
+            decision_budget[name] = _dollars(decision_budget.pop(name + "_cents"))
     return _page(
         request, "director", school=school, year=year,
         inventory=inventory, workload=workload, fictional_summary=fictional_summary,
+        decision_budget=decision_budget,
     )
 
 
@@ -298,10 +311,20 @@ def _director_rehearsal(user, school, year, application_id, case):
     if saved_need is not None and saved_need["status"] == "available":
         for name in ("net_tuition", "allowance", "contribution", "unmet_tuition"):
             saved_need[name] = _dollars(saved_need.pop(name + "_cents"))
+    journal = read_director_decisions(user=user, school_id=school.pk, year_id=year.pk,
+                                      application_id=application_id)
+    if journal is not None:
+        journal["history"] = [
+            {"revision": row.revision, "dollars": _dollars(row.amount_cents),
+             "questionnaire_revision": row.questionnaire_revision, "plan_revision": row.plan.revision,
+             "actor": row.actor_user_id, "created_at": row.created_at}
+            for row in journal["history"]
+        ]
     require_aid_director_access(user, school_id=school.pk)
     return {
         "metadata": metadata,
         "saved_need": saved_need,
+        "decision_journal": journal,
         "recommendations": [
             {"bucket": line.bucket.value.title(), "dollars": _dollars(line.recommendation_cents),
              "capped": line.cap_applied}
@@ -371,3 +394,30 @@ def workspace_case_projection(request, school_id, academic_year_id, application_
         plan_revision=projection["plan_revision"],
         unmet_tuition=_dollars(projection["unmet_tuition_cents"]),
     )
+
+
+@require_POST
+@csrf_protect
+def workspace_need_decision(request, school_id, academic_year_id, application_id):
+    fields = {"decision_revision", "questionnaire_revision", "plan_revision", "amount", "confirmed"}
+    if (request.GET or request.content_type != "application/x-www-form-urlencoded"
+            or set(request.POST) - fields - {"csrfmiddlewaretoken"}
+            or not fields <= set(request.POST)
+            or any(len(request.POST.getlist(name)) != 1 for name in request.POST)
+            or request.POST["confirmed"] != "yes"
+            or re.fullmatch(r"0|[1-9][0-9]{0,8}", request.POST["decision_revision"]) is None
+            or any(_PROJECTION_REVISION.fullmatch(request.POST[name]) is None
+                   for name in ("questionnaire_revision", "plan_revision"))
+            or _PROJECTION_MONEY.fullmatch(request.POST["amount"]) is None):
+        return HttpResponse("Invalid fictional decision.", status=400)
+    try:
+        record_fictional_need_decision(
+            user=request.user, school_id=school_id, year_id=academic_year_id,
+            application_id=application_id, expected_revision=int(request.POST["decision_revision"]),
+            questionnaire_revision=int(request.POST["questionnaire_revision"]),
+            plan_revision=int(request.POST["plan_revision"]),
+            amount_cents=int(Decimal(request.POST["amount"])*100),
+        )
+    except ValidationError:
+        return HttpResponse("Fictional decision unavailable. Reload the case.", status=409)
+    return redirect("jireh_workspace_case", school_id, academic_year_id, application_id)

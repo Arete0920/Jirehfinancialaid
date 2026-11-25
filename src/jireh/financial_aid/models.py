@@ -629,3 +629,40 @@ class FictionalSchoolPlanRevision(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Fictional school plan revisions are immutable.")
+
+
+class FictionalNeedDecision(UUIDStampedModel):
+    """Append-only, nonbinding household need decision in the disposable rehearsal."""
+
+    application = models.ForeignKey(AidApplication, on_delete=models.PROTECT)
+    questionnaire = models.ForeignKey(SyntheticQuestionnaireDraft, on_delete=models.PROTECT)
+    questionnaire_revision = models.PositiveIntegerField()
+    plan = models.ForeignKey(FictionalSchoolPlanRevision, on_delete=models.PROTECT)
+    receipt = models.ForeignKey(SyntheticAidSubmission, on_delete=models.PROTECT)
+    actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    revision = models.PositiveIntegerField()
+    amount_cents = models.PositiveBigIntegerField()
+    need_cents = models.PositiveBigIntegerField()
+    remaining_budget_cents = models.PositiveBigIntegerField()
+    calculation_version = models.CharField(max_length=64)
+    dataset_sha256 = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["application", "revision"], name="jireh_need_decision_revision"),
+            models.CheckConstraint(
+                condition=Q(revision__gt=0, questionnaire_revision__gt=0)
+                & (Q(revision__gt=1) | Q(amount_cents__gt=0))
+                & Q(amount_cents__lte=models.F("need_cents"))
+                & Q(calculation_version="fictional-regional-need-v1"),
+                name="jireh_need_decision_valid",
+            ),
+        ]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Fictional need decisions are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Fictional need decisions are immutable.")
