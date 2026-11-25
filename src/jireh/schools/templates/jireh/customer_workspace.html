@@ -116,6 +116,26 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% elif review.confirmation %}<p id="review-status">Current fictional review confirmed</p>
 {% else %}<p id="review-status">Review required</p><form method="post">{% csrf_token %}<input type="hidden" name="state_digest" value="{{ review.digest }}"><label><input type="checkbox" name="reviewed" value="yes" required> I reviewed this saved fictional application.</label><button type="submit">Confirm fictional review</button></form>{% endif %}
 <p>Corrections require fresh confirmation. The application remains DRAFT.</p></section>
+<section class="panel" aria-labelledby="submission-readiness-heading">
+<h2 id="submission-readiness-heading">Submission readiness</h2>
+<p id="submission-state">Application state: {{ submission_preflight.application_state }}</p>
+<p id="submission-revision">Reviewed financial revision: {{ submission_preflight.questionnaire_revision }}</p>
+<p id="submission-fee">Annual household fee at submission: ${{ review.fee }} {{ submission_preflight.fee_currency }}</p>
+<p id="submission-readiness-status" class="tag">Final submission unavailable</p>
+<ul id="submission-blockers">
+{% for code in submission_preflight.blocking_codes %}
+<li data-submission-blocker="{{ code }}">
+{% if code == "submission_review_incomplete" %}Complete the fictional application review.
+{% elif code == "submission_review_confirmation_required" %}Confirm the current saved review.
+{% elif code == "submission_disclosure_not_approved" %}Legal disclosure approval is outstanding.
+{% elif code == "submission_payment_unreconciled" %}Payment has not been reconciled.
+{% else %}An additional submission requirement is unresolved.
+{% endif %}
+</li>
+{% endfor %}
+</ul>
+<p>No payment is collected or simulated here. Final paid submission is disabled; confirmation is not consent or a completed application.</p>
+</section>
 {% elif mode == "documents" %}
 <p><a href="{% url 'jireh_workspace_family' household.school_id household.pk year.pk %}">Return to annual application</a></p>
 <h1>Supporting documents</h1><p>{{ household.school.name }} · {{ household.name }} · {{ year.name }}</p>

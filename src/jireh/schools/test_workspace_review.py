@@ -14,7 +14,7 @@ from django.test import Client, TestCase, override_settings
 from django.test.client import MULTIPART_CONTENT
 from django.urls import reverse
 
-from jireh.financial_aid import fictional_school_questions
+from jireh.financial_aid import fictional_school_questions, synthetic_application_review
 from jireh.financial_aid.document_lifecycle import create_synthetic_document, delete_synthetic_document
 from jireh.financial_aid.models import (
     AidApplication, SyntheticAidSubmission, SyntheticApplicationReview,
@@ -284,3 +284,39 @@ class WorkspaceReviewTests(TestCase):
         )
         with self.assertRaises(Http404):
             self.submission_preflight()
+
+
+    def test_submission_readiness_ui_uses_one_authorized_snapshot(self):
+        initial = self.client.get(self.url, secure=True)
+        self.assertContains(initial, 'data-submission-blocker="submission_review_incomplete"')
+        self.assertContains(initial, "Application state: DRAFT")
+        self.assertContains(initial, "Final submission unavailable")
+        self.assertContains(initial, "$55.00 USD")
+        self.prepare()
+        with patch(
+            "jireh.financial_aid.synthetic_application_review._review_state",
+            wraps=synthetic_application_review._review_state,
+        ) as read_state:
+            pending = self.client.get(self.url, secure=True)
+            self.assertEqual(read_state.call_count, 1)
+        self.assertContains(pending, 'data-submission-blocker="submission_review_confirmation_required"')
+        self.assertNotContains(pending, 'data-submission-blocker="submission_review_incomplete"')
+        self.assertEqual(self.confirm(self.state()["digest"]).status_code, 302)
+        current = self.client.get(self.url, secure=True)
+        self.assertContains(current, "Reviewed financial revision: 1")
+        self.assertContains(current, 'data-submission-blocker="submission_disclosure_not_approved"')
+        self.assertContains(current, 'data-submission-blocker="submission_payment_unreconciled"')
+        self.assertNotContains(current, 'data-submission-blocker="submission_review_confirmation_required"')
+        self.assertNotContains(current, 'data-submission-blocker="submission_review_incomplete"')
+        self.assertContains(current, "Final submission unavailable")
+        self.answers["income"][0]["amount"] += 1
+        self.save(1)
+        changed = self.client.get(self.url, secure=True)
+        self.assertContains(changed, "Reviewed financial revision: 2")
+        self.assertContains(changed, 'data-submission-blocker="submission_review_confirmation_required"')
+        self.assertContains(changed, 'data-submission-blocker="submission_payment_unreconciled"')
+        self.assertContains(changed, "Final submission unavailable")
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+        self.assertEqual(SyntheticApplicationReview.objects.count(), 1)
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
