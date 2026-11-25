@@ -2,7 +2,8 @@
 
 Reuse school-scoped domain handlers without importing test/demo routing or
 fictional financial collection. Authentication must already be established by
-an independently accepted identity provider. No login or activation here.
+an independently accepted identity provider or the separately gated family
+password-session candidate. No activation here.
 """
 from functools import wraps
 
@@ -14,6 +15,10 @@ from django.middleware.csrf import get_token
 from django.urls import path
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
+
+from .customer_family_sessions import (
+    FAMILY_SESSION_KEY, family_session_eligible, family_login, family_logout,
+)
 
 from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import selected_students, select_student
@@ -34,7 +39,7 @@ _FORBIDDEN = (
 )
 
 
-def customer_core_only(view):
+def customer_core_only(view, *, allow_family_session=True, session_endpoint=False):
     """Protect the explicit allowlist even if accidentally included elsewhere."""
     @never_cache
     @wraps(view)
@@ -45,10 +50,23 @@ def customer_core_only(view):
                 or any(getattr(settings, name, False) is not False for name in _FORBIDDEN)
                 or settings.SESSION_ENGINE != "django.contrib.sessions.backends.db"):
             response = JsonResponse({"detail": "Not found."}, status=404)
-        elif not getattr(getattr(request, "user", None), "is_authenticated", False) or not request.user.is_active:
+        elif session_endpoint and getattr(settings, "JIREH_CUSTOMER_FAMILY_SESSION_ACCEPTANCE", False) is not True:
+            response = JsonResponse({"detail": "Not found."}, status=404)
+        elif not session_endpoint and (
+            not getattr(getattr(request, "user", None), "is_authenticated", False) or not request.user.is_active
+        ):
             response = JsonResponse({"detail": "Forbidden."}, status=403)
         else:
             try:
+                # A family password session cannot become a director session, even
+                # if grants change after sign-in. Recheck eligibility on each use.
+                if not session_endpoint and FAMILY_SESSION_KEY in request.session and (
+                    not allow_family_session
+                    or getattr(settings, "JIREH_CUSTOMER_FAMILY_SESSION_ACCEPTANCE", False) is not True
+                    or request.session[FAMILY_SESSION_KEY] is not True
+                    or not family_session_eligible(request.user)
+                ):
+                    raise PermissionDenied("Family session unavailable.")
                 response = view(request, *args, **kwargs)
             except PermissionDenied:
                 response = JsonResponse({"detail": "Forbidden."}, status=403)
@@ -75,12 +93,16 @@ _DRAFT = _HOUSEHOLD + "academic-years/<uuid:academic_year_id>/aid-application/dr
 _DIRECTOR = "api/v1/schools/<uuid:school_id>/academic-years/<uuid:academic_year_id>/aid-applications/"
 
 urlpatterns = [
+    path("api/v1/session/sign-in/", customer_core_only(family_login, session_endpoint=True),
+         name="jireh_customer_family_login"),
+    path("api/v1/session/sign-out/", customer_core_only(family_logout, session_endpoint=True),
+         name="jireh_customer_family_logout"),
     path("api/v1/session/csrf/", customer_core_only(customer_csrf), name="jireh_customer_csrf"),
     path(_HOUSEHOLD, customer_core_only(household_detail), name="jireh_customer_household"),
     path(_HOUSEHOLD + "students/", customer_core_only(household_students), name="jireh_customer_students"),
     path(_DRAFT, customer_core_only(family_annual_draft), name="jireh_customer_draft"),
     path(_DRAFT + "students/", customer_core_only(selected_students), name="jireh_customer_selected"),
     path(_DRAFT + "students/<uuid:student_id>/", customer_core_only(select_student), name="jireh_customer_select"),
-    path(_DIRECTOR, customer_core_only(staff_application_index), name="jireh_customer_cases"),
-    path(_DIRECTOR + "<uuid:application_id>/", customer_core_only(staff_application_detail), name="jireh_customer_case"),
+    path(_DIRECTOR, customer_core_only(staff_application_index, allow_family_session=False), name="jireh_customer_cases"),
+    path(_DIRECTOR + "<uuid:application_id>/", customer_core_only(staff_application_detail, allow_family_session=False), name="jireh_customer_case"),
 ]
