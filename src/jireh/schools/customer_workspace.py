@@ -245,7 +245,11 @@ def workspace_case(request, school_id, academic_year_id, application_id):
     response = _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal,
                      contributor_review_pending=held and can_review, fictional_offer_held=held,
                      contributor_decision=contributor_decision)
-    if held and can_review:
+    # Native same-origin POST forms need an origin/referrer for Django CSRF.
+    # Retain no-referrer for pages without these forms and suppress cross-origin
+    # referrers even when a projection or contributor decision is available.
+    saved_need = rehearsal.get("saved_need") if rehearsal else None
+    if (held and can_review) or (saved_need and saved_need["status"] == "available"):
         response["Referrer-Policy"] = "same-origin"
     return response
 

@@ -307,7 +307,9 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.screenshot(path=str(output / "director-saved-need.png"), full_page=True)
             page.get_by_label("Scenario committed aid in dollars").fill("10000")
             page.get_by_label("Proposed need aid in dollars").fill("2500")
-            page.get_by_role("button", name="Project fictional need aid").click()
+            with page.expect_response(lambda res: res.url.endswith("/need-projection/") and res.request.method == "POST") as projected:
+                page.get_by_role("button", name="Project fictional need aid").click()
+            assert projected.value.status == 200, f"Need projection HTTP {projected.value.status}"
             expect(page.locator("#projection-household-balance")).to_have_text("$22,325.00")
             expect(page.locator("#projection-remaining-budget")).to_have_text("$237,500.00")
             expect(page.get_by_text("No funds have been allocated.", exact=False)).to_be_visible()

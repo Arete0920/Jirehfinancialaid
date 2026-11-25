@@ -122,10 +122,19 @@ class SavedNeedWorkspaceTests(TestCase):
             director.force_login(self.demo["director_a"])
             page = director.get(self.url, secure=True)
             self.assertContains(page, "Project fictional need aid")
+            self.assertEqual(page["Referrer-Policy"], "same-origin")
             headers = {"HTTP_X_CSRFTOKEN": director.cookies["csrftoken"].value,
                        "HTTP_REFERER": "https://testserver" + self.url}
             self.assertEqual(director.get(url, secure=True).status_code, 405)
             self.assertEqual(director.post(url, data, secure=True).status_code, 403)
+            for origin in ("null", "https://untrusted.example"):
+                denied = director.post(url, data, secure=True, HTTP_ORIGIN=origin, **headers)
+                self.assertEqual(denied.status_code, 403)
+            native_post = director.post(
+                url, {**data, "csrfmiddlewaretoken": director.cookies["csrftoken"].value},
+                secure=True, HTTP_ORIGIN="https://testserver",
+            )
+            self.assertContains(native_post, 'id="projection-household-balance">$22,325.00</strong>')
             def post(values):
                 return director.post(url, values, secure=True, **headers)
             response = post(data)
