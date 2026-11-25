@@ -7,11 +7,25 @@ import ssl
 import subprocess
 import tempfile
 import threading
+from concurrent.futures import ThreadPoolExecutor
 from socketserver import ThreadingMixIn
 from datetime import date
 from pathlib import Path
 from types import SimpleNamespace
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
+
+def _database_readback(action):
+    """Keep synchronous Django ORM calls outside Playwright's running event loop."""
+    def run():
+        from django.db import connections
+        try:
+            return action()
+        finally:
+            connections.close_all()
+
+    with ThreadPoolExecutor(max_workers=1) as executor:
+        return executor.submit(run).result(timeout=30)
+
 
 def main():
     if os.environ.get('DJANGO_SETTINGS_MODULE') not in (None, 'jireh.schools.test_settings'):
@@ -37,7 +51,7 @@ def main():
         django.setup()
         from django.core.wsgi import get_wsgi_application
         from django.contrib.auth import get_user_model
-        from jireh.schools.models import AcademicYear, Student, HouseholdAccess
+        from jireh.schools.models import AcademicYear, Student, HouseholdAccess, DirectorWebAuthnCredential, SchoolStaffAccess
         from jireh.schools.services import link_student_to_household
         from jireh.schools.invitations import issue_household_invitation
         from jireh.schools.redemption import issue_mailbox_challenge
@@ -101,7 +115,9 @@ def main():
                 page.goto(origin + '/customer/')
                 page.get_by_label('School reference').fill(str(f.school.pk));page.get_by_label('Household reference').fill(str(f.household.pk));page.get_by_label('Invitation proof').fill(invite);page.get_by_label('Mailbox proof').fill(mailbox);page.get_by_role('button',name='Redeem invitation').click()
                 expect(page.get_by_role('heading',name='Family sign-in')).to_be_visible(timeout=15000)
-                assert HouseholdAccess.objects.filter(user=new,household=f.household,is_active=True).exists()
+                assert _database_readback(lambda: HouseholdAccess.objects.filter(
+                    user_id=new.pk, household_id=f.household.pk, is_active=True,
+                ).exists())
                 print('PASS: browser restricted invitation and dual-proof redemption',flush=True)
                 form=page.locator('section').filter(has=page.get_by_role('heading',name='Family sign-in'))
                 form.get_by_label('Username').fill(new.username);form.get_by_label('Password').fill(PASSWORD);form.get_by_role('button',name='Sign in',exact=True).click()
@@ -110,7 +126,9 @@ def main():
                 expect(page.get_by_text('No draft exists for this year.')).to_be_visible();page.get_by_role('button',name='Create annual draft').click()
                 expect(page.get_by_text('DRAFT — saved')).to_be_visible(timeout=15000)
                 page.get_by_role('button',name='Include Fictional').click();expect(page.get_by_text('1 selected')).to_be_visible(timeout=15000)
-                assert AidApplicationStudent.objects.filter(application__academic_year=year).count()==1
+                assert _database_readback(lambda: AidApplicationStudent.objects.filter(
+                    application__academic_year_id=year.pk,
+                ).count()) == 1
                 expect(page.get_by_text('Open financial questionnaire')).to_have_count(0)
                 assert page.goto(director_url).status == 403
                 page.goto(origin + '/customer/')
@@ -132,12 +150,18 @@ def main():
                 page.get_by_role('link',name='Open case').click();expect(page.locator('#case-child-count')).to_have_text('1')
                 expect(page.get_by_text('Record fictional',exact=False)).to_have_count(0)
                 assert not errors,errors
-                f.credential.refresh_from_db();assert f.credential.sign_count>0
+                assert _database_readback(lambda: DirectorWebAuthnCredential.objects.values_list(
+                    "sign_count", flat=True,
+                ).get(pk=f.credential.pk)) > 0
                 other = origin + reverse('jireh_workspace_director', args=(f.other_school.pk, f.other_year.pk))
                 assert page.goto(other).status == 403
                 assert page.goto(family_url).status == 403
-                f.grant.is_active = False
-                f.grant.save(update_fields=['is_active', 'updated_at'])
+                def revoke_grant():
+                    grant = SchoolStaffAccess.objects.get(pk=f.grant.pk)
+                    grant.is_active = False
+                    grant.save(update_fields=["is_active", "updated_at"])
+
+                _database_readback(revoke_grant)
                 assert page.goto(director_url).status == 403
                 page.goto(origin + '/customer/')
                 print('PASS: browser director password, actual virtual WebAuthn signed assertion, session, workload and same draft case',flush=True)
