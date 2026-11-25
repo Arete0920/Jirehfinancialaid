@@ -1,6 +1,7 @@
 """End-to-end fictional setup rehearsal using the existing two-key fixture."""
 
 from concurrent.futures import ThreadPoolExecutor
+from datetime import date
 from threading import Barrier
 from unittest.mock import patch
 from uuid import uuid4
@@ -8,20 +9,29 @@ from uuid import uuid4
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import DatabaseError, IntegrityError, connections, transaction
-from django.test import TransactionTestCase, override_settings, skipUnlessDBFeature
+from django.http import Http404
+from django.test import Client, TransactionTestCase, override_settings, skipUnlessDBFeature
+from django.urls import reverse
 
 from .demo_preparation_jobs import advance_synthetic_preparation
 from .demo_setup_intents import record_synthetic_setup_intent
+from .demo_seed import DEMO_PASSWORD
 from .models import (
-    AcademicYear, OperatorWebAuthnActionIntent, School, SchoolStaffAccess,
+    AcademicYear, FirstDirectorBootstrapRequest, Household,
+    OperatorWebAuthnActionIntent, School, SchoolStaffAccess,
     SyntheticSchoolProvisioningReceipt,
 )
 from .operator_webauthn_actions import (
+    begin_director_action_proof, complete_director_action_proof,
     begin_setup_action_proof, complete_setup_action_proof,
 )
 from .operator_webauthn_registry import revoke_registered_operator_credential
 from .synthetic_provisioning import provision_synthetic_inactive_school
-from .test_first_director_mfa import FirstDirectorProofFixture
+from .synthetic_school_registry import (
+    RegistryIntegrityError, read_synthetic_school_registry,
+)
+from .test_first_director_mfa import FirstDirectorProofFixture, REFERENCE as DIRECTOR_REFERENCE
+from .test_onboarding_rehearsal import FictionalOnboardingRehearsal
 from .test_operator_webauthn_registry import CREDENTIAL_ID
 
 
@@ -35,7 +45,9 @@ REFERENCE = "SYNTHETIC-SCHOOL-SETUP-2026"
     JIREH_SYNTHETIC_PROVISIONING_ONLY=True,
     JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED=True,
 )
-class SyntheticProvisioningTests(FirstDirectorProofFixture, TransactionTestCase):
+class SyntheticProvisioningTests(
+    FirstDirectorProofFixture, FictionalOnboardingRehearsal, TransactionTestCase,
+):
     def setUp(self):
         super().setUp()
         guard = self.settings(JIREH_FIRST_DIRECTOR_BOOTSTRAP_ENABLED=False)
@@ -240,3 +252,171 @@ class SyntheticProvisioningTests(FirstDirectorProofFixture, TransactionTestCase)
         with self.assertRaises(IntegrityError), transaction.atomic():
             query.delete()
         self.assertEqual(query.get().school_id, result.school_id)
+
+
+    def test_registry_reads_only_operator_linked_receipts_and_no_private_fields(self):
+        self.assertEqual(read_synthetic_school_registry(operator=self.operator), ())
+        self.prepare()
+        receipt = self.execute(self.proofs())
+        first = read_synthetic_school_registry(operator=self.operator)
+        self.assertEqual(first, read_synthetic_school_registry(operator=self.second))
+        self.assertEqual(len(first), 1)
+        row = first[0]
+        self.assertEqual(row.school_id, receipt.school_id)
+        self.assertEqual(row.director_status, "SCHOOL_INACTIVE")
+        self.assertFalse(row.is_active)
+        self.assertEqual(row.active_director_count, 0)
+        self.assertEqual(row.academic_year_count, 0)
+        other = get_user_model().objects.create_superuser(
+            username="synthetic-unrelated-registry-operator",
+            email="unrelated@example.invalid", password=DEMO_PASSWORD,
+        )
+        with self.assertRaises(PermissionDenied):
+            read_synthetic_school_registry(operator=other)
+        with self.settings(JIREH_BOOTSTRAP_OPERATOR_IDS=(
+            self.operator.pk, self.second.pk, other.pk,
+        )):
+            self.assertEqual(read_synthetic_school_registry(operator=other), ())
+        client = Client()
+        url = reverse("jireh_test_school_registry")
+        self.assertEqual(client.get(url).status_code, 403)
+        client.force_login(self.operator)
+        response = client.get(url)
+        self.assertEqual(response.status_code, 200)
+        self.assertIn("no-store", response["Cache-Control"])
+        result = response.json()["schools"]
+        self.assertEqual(result, [{
+            "school_id": str(receipt.school_id), "code": self.payload["code"],
+            "name": self.payload["name"], "timezone": self.payload["timezone"],
+            "is_active": False, "academic_year_count": 0,
+            "director_status": "SCHOOL_INACTIVE", "active_director_count": 0,
+        }])
+        self.assertEqual(client.get(url, {"school_id": str(receipt.school_id)}).status_code, 400)
+        self.assertEqual(client.post(url).status_code, 405)
+        with self.settings(JIREH_SYNTHETIC_PROVISIONING_ONLY=False):
+            self.assertEqual(client.get(url).status_code, 403)
+        with self.settings(ROOT_URLCONF="jireh.runtime.urls"):
+            self.assertEqual(client.get(url).status_code, 404)
+
+    def test_registry_fails_closed_on_inconsistent_school_or_history(self):
+        self.prepare()
+        receipt = self.execute(self.proofs())
+        with patch(
+            "jireh.schools.synthetic_school_registry._verified_history", return_value=[],
+        ):
+            with self.assertRaises(RegistryIntegrityError):
+                read_synthetic_school_registry(operator=self.operator)
+        School.objects.filter(pk=receipt.school_id).update(name="Synthetic Changed Name")
+        with self.assertRaises(RegistryIntegrityError):
+            read_synthetic_school_registry(operator=self.operator)
+        client = Client()
+        client.force_login(self.operator)
+        response = client.get(reverse("jireh_test_school_registry"))
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"detail": "School registry unavailable."})
+
+    def _fresh_director_proof(self, *, actor, action, **scope):
+        # Setup already spent the first authenticator counter. A director
+        # action needs an independent assertion and a strictly higher count.
+        first = actor.pk == self.operator.pk
+        options, proof = begin_director_action_proof(
+            operator=actor,
+            credential_id_digest=self.digest if first else self.second_digest,
+            action=action, authorization_reference=DIRECTOR_REFERENCE, **scope,
+        )
+        self.assertEqual(complete_director_action_proof(
+            operator=actor, intent_id=proof,
+            response=self.signed(
+                options, key=self.key if first else self.second_key,
+                credential_id=CREDENTIAL_ID if first else self.second_key_id,
+                count=2,
+            ),
+        ), 2)
+        return proof
+
+    def test_provisioned_school_through_independent_director_and_family_onboarding(self):
+        self.prepare()
+        setup_proofs = self.proofs()
+        receipt = self.execute(setup_proofs)
+        self.school = receipt.school
+        users = get_user_model()
+        self.subject = users.objects.create_user(
+            username="synthetic-new-school-director", password=DEMO_PASSWORD,
+        )
+        self.verify_director_mailbox()
+        with self.settings(JIREH_FIRST_DIRECTOR_BOOTSTRAP_ENABLED=True):
+            with self.assertRaises(Http404):
+                self.propose(mfa_intent_id=setup_proofs[0])
+            self.assertFalse(FirstDirectorBootstrapRequest.objects.exists())
+            self.assertFalse(SchoolStaffAccess.objects.exists())
+            self.assertEqual(
+                read_synthetic_school_registry(operator=self.operator)[0].director_status,
+                "SCHOOL_INACTIVE",
+            )
+
+            # Deliberate fixture transition, NOT a callable activation service.
+            # Live activation requires separate authorization and is out of scope.
+            self.school.is_active = True
+            self.school.save(update_fields=["is_active", "updated_at"])
+            AcademicYear.objects.create(
+                school=self.school, name="2026-27",
+                start_date=date(2026, 8, 1), end_date=date(2027, 6, 30),
+            )
+            row = read_synthetic_school_registry(operator=self.operator)[0]
+            self.assertEqual((row.academic_year_count, row.director_status),
+                             (1, "DIRECTOR_NOT_ASSIGNED"))
+            with self.assertRaises(PermissionDenied):
+                self.propose(mfa_intent_id=setup_proofs[0])
+
+            proposal_proof = self._fresh_director_proof(
+                actor=self.operator,
+                action=OperatorWebAuthnActionIntent.ACTION_DIRECTOR_PROPOSE,
+                school_id=self.school.pk, subject_user_id=self.subject.pk,
+            )
+            request = self.propose(mfa_intent_id=proposal_proof)
+            self.assertEqual(
+                read_synthetic_school_registry(operator=self.second)[0].director_status,
+                "DIRECTOR_APPROVAL_PENDING",
+            )
+            self.assertFalse(SchoolStaffAccess.objects.exists())
+            approval_proof = self._fresh_director_proof(
+                actor=self.second,
+                action=OperatorWebAuthnActionIntent.ACTION_DIRECTOR_APPROVE,
+                request_id=request.pk,
+            )
+            grant = self.approve(request, mfa_intent_id=approval_proof)
+            self.assertEqual(grant.school_id, self.school.pk)
+            row = read_synthetic_school_registry(operator=self.operator)[0]
+            self.assertEqual((row.director_status, row.active_director_count),
+                             ("DIRECTOR_ACCESS_AVAILABLE", 1))
+            self.assertEqual(OperatorWebAuthnActionIntent.objects.filter(
+                consumed_at__isnull=False,
+            ).count(), 4)
+
+        # Reuse the existing full local-mail invitation, CSRF, cross-school
+        # denial, redemption and revocation rehearsal on the provisioned school.
+        other = School.objects.create(
+            code="synthetic-onboarding-control", name="Synthetic Control School",
+        )
+        other_director = users.objects.create_user(
+            username="synthetic-onboarding-control-director", password=DEMO_PASSWORD,
+        )
+        SchoolStaffAccess.objects.create(
+            school=other, user=other_director, role=SchoolStaffAccess.ROLE_AID_DIRECTOR,
+        )
+        family = users.objects.create_user(
+            username="synthetic-new-school-family", password=DEMO_PASSWORD,
+        )
+        household = Household.objects.create(school=self.school, name="Fictional Family")
+        other_household = Household.objects.create(school=other, name="Fictional Control Family")
+        demo = {
+            "school_a": self.school, "school_b": other,
+            "household_a": household, "household_b": other_household,
+            "director_a": self.subject, "director_b": other_director, "parent": family,
+        }
+        self.rehearse_household_onboarding(demo)
+        self.assertEqual(len(read_synthetic_school_registry(operator=self.operator)), 1)
+        users.objects.filter(pk=self.subject.pk).update(is_active=False)
+        row = read_synthetic_school_registry(operator=self.operator)[0]
+        self.assertEqual((row.director_status, row.active_director_count),
+                         ("DIRECTOR_ACCESS_UNAVAILABLE", 0))
