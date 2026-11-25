@@ -1,9 +1,9 @@
 """Disposable-test rehearsal of immutable setup intent persistence.
 
 There is no runtime caller, URL, school creation, activation, job runner,
-payment, or SIS integration. This rehearsal binds the standalone proposal
-validator to a server-generated, versioned fingerprint. Provisioning-specific
-MFA, canonical timezone policy and live authorization remain separate.
+payment, or SIS integration in this receipt service. A separate disposable
+provisioning rehearsal can opt into the same validator and receipt with an
+allowlisted operator; production authorization remains separate.
 """
 
 import hashlib
@@ -19,6 +19,7 @@ from django.db import DatabaseError, transaction
 
 from .demo_platform_operations import _authorized_operator
 from .models import SchoolSetupIntent
+from .operator_webauthn_challenges import _operator_locked
 from .school_setup_preflight import (
     SchoolSetupPreflightError,
     validate_school_setup_candidate,
@@ -31,12 +32,15 @@ _TEST_SETTINGS = frozenset((
 ))
 
 
-def _candidate_evidence(payload):
+def _candidate_evidence(payload, *, privileged=False):
     """Validate the proposal and derive its immutable V1 request identity."""
     try:
         candidate = validate_school_setup_candidate(payload)
     except SchoolSetupPreflightError:
         raise ValidationError("Invalid school setup proposal.") from None
+
+    if privileged and not candidate.code.startswith("synthetic-"):
+        raise ValidationError("Synthetic setup requires a fictional school code.")
 
     # Verify the exact zone key is available and loadable on this test host.
     # This is deliberately not a decision to normalize aliases or a canonical
@@ -59,35 +63,51 @@ def _candidate_evidence(payload):
     return UUID(candidate.idempotency_key), hashlib.sha256(canonical).hexdigest()
 
 
-def record_synthetic_setup_intent(*, operator, payload):
-    """Persist one validated fictional receipt; allow only exact owned replay.
-
-    This service is disabled even in the ordinary localhost demo. The test
-    suite must explicitly opt in using its disposable settings. No caller
-    fingerprint or prevalidated object is accepted as provisioning authority.
-    """
-    # Django's override_settings wraps Settings in UserSettingsHolder,
-    # where SETTINGS_MODULE is None. Require the actual startup module
-    # and reject any conflicting explicit settings-module override.
-    startup_module = os.environ.get("DJANGO_SETTINGS_MODULE")
-    configured_module = settings.SETTINGS_MODULE
-    if (startup_module not in _TEST_SETTINGS
-            or configured_module not in (None, startup_module)
+def _require_setup_context(operator, *, privileged=False):
+    """Keep the non-superuser demo and privileged test paths distinct."""
+    startup = os.environ.get("DJANGO_SETTINGS_MODULE")
+    if (startup not in _TEST_SETTINGS
+            or settings.SETTINGS_MODULE not in (None, startup)
             or getattr(settings, "JIREH_SYNTHETIC_SETUP_INTENT_ONLY", False) is not True
             or not isinstance(operator, get_user_model())
-            or not _authorized_operator(operator)):
+            or type(privileged) is not bool):
         raise PermissionDenied("Synthetic setup preparation disabled or denied.")
-    idempotency_key, candidate_digest = _candidate_evidence(payload)
+    if privileged:
+        if (settings.ROOT_URLCONF != "jireh.schools.urls"
+                or getattr(settings, "JIREH_SYNTHETIC_PROVISIONING_ONLY", False) is not True
+                or getattr(settings, "JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED", False) is not True
+                or getattr(settings, "JIREH_OPERATOR_ACTION_MFA_ENABLED", False) is not True):
+            raise PermissionDenied("Privileged setup rehearsal disabled.")
+    elif not _authorized_operator(operator):
+        raise PermissionDenied("Synthetic setup preparation disabled or denied.")
 
+
+def _locked_setup_operator(operator, *, privileged=False):
+    if privileged:
+        # The registry guard requires an explicit two-operator allowlist and
+        # rechecks active persisted operator authority under the row lock.
+        return _operator_locked(operator)
+    account = get_user_model()._default_manager.select_for_update().filter(
+        pk=operator.pk,
+    ).first()
+    if account is None or not _authorized_operator(account):
+        raise PermissionDenied("Synthetic setup preparation denied.")
+    return account
+
+
+def record_synthetic_setup_intent(*, operator, payload, privileged=False):
+    """Persist one fictional receipt; only exact owned replay is accepted.
+
+    The optional privileged path is internal to disposable provisioning tests.
+    It never changes the authorization requirements of the demo dashboard.
+    """
+    _require_setup_context(operator, privileged=privileged)
+    idempotency_key, candidate_digest = _candidate_evidence(
+        payload, privileged=privileged,
+    )
     try:
         with transaction.atomic(durable=True):
-            # Serialize the fixture operator's claims and recheck persisted
-            # authority, not only a potentially stale request.user instance.
-            account = get_user_model()._default_manager.select_for_update().filter(
-                pk=operator.pk,
-            ).first()
-            if account is None or not _authorized_operator(account):
-                raise PermissionDenied("Synthetic setup preparation denied.")
+            account = _locked_setup_operator(operator, privileged=privileged)
             receipt, _ = SchoolSetupIntent.objects.get_or_create(
                 idempotency_key=idempotency_key,
                 defaults={
