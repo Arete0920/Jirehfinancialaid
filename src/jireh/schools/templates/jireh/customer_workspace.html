@@ -225,6 +225,21 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% if inventory.has_more %}<p class="muted">First 100 records shown. Full pagination is not yet available.</p>{% endif %}
 {% else %}<p>No application records.</p>{% endif %}
 </section>
+{% elif mode == "need_projection" %}
+<p><a href="{% url 'jireh_workspace_case' school.pk year.pk application_id %}">Return to application review</a></p>
+<h1>Fictional need aid projection</h1><p>{{ school.name }} · {{ year.name }}</p>
+<section class="panel"><h2>Hypothetical proposal</h2>
+{% if projection %}
+<p id="projection-revisions">Questionnaire revision {{ questionnaire_revision }} · School plan revision {{ plan_revision }}</p>
+<div class="grid">
+<div class="metric"><strong id="projection-need">${{ unmet_tuition }}</strong>Calculated unmet tuition</div>
+<div class="metric"><strong id="projection-committed-result">${{ projection.committed }}</strong>Entered scenario committed aid</div>
+<div class="metric"><strong id="projection-proposed-result">${{ projection.proposed }}</strong>Proposed need aid</div>
+<div class="metric"><strong id="projection-household-balance">${{ projection.household_balance }}</strong>Projected household balance including fees</div>
+<div class="metric"><strong id="projection-remaining-budget">${{ projection.remaining_budget }}</strong>Projected scenario budget remaining</div>
+</div>
+{% else %}<p id="projection-unavailable">Projection unavailable. Evidence may have changed, review may be pending, or the proposal may exceed calculated need or the scenario budget. Return to the current case before trying again.</p>{% endif %}
+<p class="muted">This is an unrecorded fictional planning scenario, not a recommendation, award, actual commitment or payment. No funds have been allocated.</p></section>
 {% elif mode == "case" %}
 <p><a href="{% url 'jireh_workspace_director' school.pk year.pk %}">Back to director workload</a></p>
 <h1>Application review</h1><p>{{ school.name }} · {{ year.name }}</p>
@@ -262,6 +277,16 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <div class="metric"><strong id="saved-need-contribution">${{ rehearsal.saved_need.contribution }}</strong>Calculated household contribution</div>
 <div class="metric"><strong id="saved-need-unmet">${{ rehearsal.saved_need.unmet_tuition }}</strong>Calculated unmet tuition</div>
 </div><p class="muted">Required fees and separate proposed awards are not included in unmet tuition. Itemized living costs are not deducted again. This calculation does not create an offer or consume the school budget.</p>
+<form action="{% url 'jireh_workspace_case_projection' school.pk year.pk case.application_id %}" method="post">
+{% csrf_token %}
+<input type="hidden" name="questionnaire_revision" value="{{ rehearsal.saved_need.questionnaire_revision }}">
+<input type="hidden" name="plan_revision" value="{{ rehearsal.saved_need.plan_revision }}">
+<p>Explore a hypothetical need-only aid proposal. Enter a separate scenario amount for aid already committed; no actual school ledger is available.</p>
+<label for="projection-committed">Scenario committed aid in dollars</label>
+<input type="text" id="projection-committed" name="committed" inputmode="decimal" maxlength="11" value="0.00" required>
+<label for="projection-proposed">Proposed need aid in dollars</label>
+<input type="text" id="projection-proposed" name="proposed" inputmode="decimal" maxlength="11" required>
+<button type="submit">Project fictional need aid</button></form>
 {% else %}<p id="saved-need-status">Saved-evidence calculation unavailable. Complete the required fictional records and review before continuing.</p>{% endif %}
 </section>{% endif %}
 <section class="panel" aria-labelledby="assessment-example-heading"><h2 id="assessment-example-heading">Fixed fictional assessment example</h2>

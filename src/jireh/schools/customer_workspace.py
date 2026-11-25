@@ -10,6 +10,7 @@ candidate. The closed standalone runtime never imports it.
 
 import json
 import os
+import re
 import secrets
 from decimal import Decimal
 from functools import wraps
@@ -19,6 +20,7 @@ from django.core.exceptions import PermissionDenied
 from django.http import Http404, HttpResponseForbidden, HttpResponseNotFound, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.cache import never_cache
+from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.csrf import ensure_csrf_cookie
 from django.views.decorators.http import require_POST, require_safe
 
@@ -243,7 +245,11 @@ def workspace_case(request, school_id, academic_year_id, application_id):
     response = _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal,
                      contributor_review_pending=held and can_review, fictional_offer_held=held,
                      contributor_decision=contributor_decision)
-    if held and can_review:
+    # Native same-origin POST forms need an origin/referrer for Django CSRF.
+    # Retain no-referrer for pages without these forms and suppress cross-origin
+    # referrers even when a projection or contributor decision is available.
+    saved_need = rehearsal.get("saved_need") if rehearsal else None
+    if (held and can_review) or (saved_need and saved_need["status"] == "available"):
         response["Referrer-Policy"] = "same-origin"
     return response
 
@@ -314,4 +320,54 @@ def workspace_case_offer(request, school_id, academic_year_id, application_id, s
         return HttpResponseNotFound()
     return record_synthetic_staff_offer(
         request, school_id, academic_year_id, application_id, student_id,
+    )
+
+
+_PROJECTION_MONEY = re.compile(r"[0-9]{1,8}(?:\.[0-9]{1,2})?")
+_PROJECTION_REVISION = re.compile(r"[1-9][0-9]{0,8}")
+
+
+@require_POST
+@csrf_protect
+def workspace_case_projection(request, school_id, academic_year_id, application_id):
+    """Recalculate a need-only fictional proposal on the exact current evidence.
+
+    Never persist a proposal, reserve school funds, create a receipt or award,
+    or treat the entered committed amount as an actual ledger balance.
+    """
+    school = require_aid_director_access(request.user, school_id=school_id)
+    year = get_object_or_404(AcademicYear.objects.for_school(school_id), pk=academic_year_id)
+    if not _fictional_director_mode(school):
+        raise Http404("Fictional projection unavailable.")
+    fields = {"questionnaire_revision", "plan_revision", "committed", "proposed"}
+    allowed = fields | {"csrfmiddlewaretoken"}
+    if (request.GET or set(request.POST) - allowed or not fields <= set(request.POST)
+            or any(len(request.POST.getlist(name)) != 1 for name in request.POST)
+            or request.FILES
+            or any(_PROJECTION_REVISION.fullmatch(request.POST[name]) is None
+                   for name in ("questionnaire_revision", "plan_revision"))
+            or any(_PROJECTION_MONEY.fullmatch(request.POST[name]) is None
+                   for name in ("committed", "proposed"))):
+        return HttpResponse("Invalid fictional projection.", status=400)
+    projection = read_saved_need_preview(
+        user=request.user, school=school, year=year, application_id=application_id,
+        questionnaire_revision=int(request.POST["questionnaire_revision"]),
+        expected_plan_revision=int(request.POST["plan_revision"]),
+        scenario_committed_aid_cents=int(Decimal(request.POST["committed"]) * 100),
+        scenario_proposed_aid_cents=int(Decimal(request.POST["proposed"]) * 100),
+    )
+    if projection is None:
+        raise Http404("Fictional projection unavailable.")
+    if projection["status"] != "available":
+        response = _page(request, "need_projection", school=school, year=year,
+                         application_id=application_id, projection=None)
+        response.status_code = 409
+        return response
+    facts = projection["projection"]
+    amounts = {name.removesuffix("_cents"): _dollars(cents) for name, cents in facts.items()}
+    return _page(
+        request, "need_projection", school=school, year=year, application_id=application_id,
+        projection=amounts, questionnaire_revision=projection["questionnaire_revision"],
+        plan_revision=projection["plan_revision"],
+        unmet_tuition=_dollars(projection["unmet_tuition_cents"]),
     )

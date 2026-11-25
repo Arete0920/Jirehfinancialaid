@@ -48,7 +48,11 @@ def configure_saved_need_fixture(demo):
 
 
 @transaction.atomic
-def read_saved_need_preview(*, user, school, year, application_id, questionnaire_revision):
+def read_saved_need_preview(
+    *, user, school, year, application_id, questionnaire_revision,
+    expected_plan_revision=None, scenario_committed_aid_cents=0,
+    scenario_proposed_aid_cents=0,
+):
     """No client-supplied geography, grades, rule parameters or raw financial rows.
 
     The only enabled context is the exact seeded fictional family. The school
@@ -82,7 +86,8 @@ def read_saved_need_preview(*, user, school, year, application_id, questionnaire
         return {"status": "unavailable"}
     try:
         plan = read_fictional_school_plan(user=user, school_id=school.pk, academic_year_id=year.pk)
-        if plan is None:
+        if plan is None or (expected_plan_revision is not None
+                            and plan.revision != expected_plan_revision):
             return {"status": "unavailable"}
         policy, _ = fictional_questionnaire_policy(draft)
         catalog = json.loads((Path(__file__).resolve().parents[3] / "docs" /
@@ -93,12 +98,18 @@ def read_saved_need_preview(*, user, school, year, application_id, questionnaire
                 school_id=school.pk, academic_year_id=year.pk, application_id=draft.pk,
                 questionnaire_revision=questionnaire_revision, plan_revision=plan.revision,
                 grade_assignments=fixture.grades, questionnaire_policy=policy,
-                balance_date=date(2026, 6, 30), scenario_committed_aid_cents=0,
-                scenario_proposed_aid_cents=0, **fictional_planning_context(),
+                balance_date=date(2026, 6, 30),
+                scenario_committed_aid_cents=scenario_committed_aid_cents,
+                scenario_proposed_aid_cents=scenario_proposed_aid_cents,
+                **fictional_planning_context(),
             ),
         )
     except (SavedFictionalNeedError, QuestionnaireValidationError, CandidateAssessmentError,
             AnnualSchoolPlanError, ValidationError, OSError, UnicodeError, json.JSONDecodeError):
+        return {"status": "unavailable"}
+    # This is a need-only hypothetical projection, not an adopted award rule.
+    # Other award buckets and exceptions require separately established evidence.
+    if scenario_proposed_aid_cents > result.regional_need.unmet_tuition_cents:
         return {"status": "unavailable"}
     # Display only aggregates. No household source rows, contributor IDs,
     # decrypted documents, credentials or school-authorized decisions.
@@ -110,4 +121,10 @@ def read_saved_need_preview(*, user, school, year, application_id, questionnaire
         "allowance_cents": result.regional_need.allowance_cents,
         "contribution_cents": result.regional_need.expected_contribution_cents,
         "unmet_tuition_cents": result.regional_need.unmet_tuition_cents,
+        "projection": {
+            "committed_cents": scenario_committed_aid_cents,
+            "proposed_cents": scenario_proposed_aid_cents,
+            "household_balance_cents": result.projection.household_balance_cents,
+            "remaining_budget_cents": result.projection.remaining_aid_budget_cents,
+        },
     }
