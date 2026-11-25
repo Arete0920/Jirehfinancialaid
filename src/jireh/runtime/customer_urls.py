@@ -19,6 +19,13 @@ from django.views.decorators.http import require_GET
 from .customer_family_sessions import (
     FAMILY_SESSION_KEY, family_session_eligible, family_login, family_logout,
 )
+from .customer_director_sessions import (
+    DIRECTOR_SESSION_KEY, director_session_available, director_session_authorized,
+    director_login, director_begin, director_complete, director_logout, disposable_identity_context,
+)
+from .customer_onboarding import (
+    ONBOARDING_SESSION_KEY, onboarding_login, onboarding_logout, onboarding_redeem,
+)
 
 from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import selected_students, select_student
@@ -39,7 +46,8 @@ _FORBIDDEN = (
 )
 
 
-def customer_core_only(view, *, allow_family_session=True, session_endpoint=False):
+def customer_core_only(view, *, allow_family_session=True, session_endpoint=False,
+                       onboarding_endpoint=False, director_endpoint=False, director_access=False):
     """Protect the explicit allowlist even if accidentally included elsewhere."""
     @never_cache
     @wraps(view)
@@ -50,14 +58,37 @@ def customer_core_only(view, *, allow_family_session=True, session_endpoint=Fals
                 or any(getattr(settings, name, False) is not False for name in _FORBIDDEN)
                 or settings.SESSION_ENGINE != "django.contrib.sessions.backends.db"):
             response = JsonResponse({"detail": "Not found."}, status=404)
-        elif session_endpoint and getattr(settings, "JIREH_CUSTOMER_FAMILY_SESSION_ACCEPTANCE", False) is not True:
+        elif (session_endpoint or onboarding_endpoint) and getattr(
+            settings, "JIREH_CUSTOMER_FAMILY_SESSION_ACCEPTANCE", False
+        ) is not True:
             response = JsonResponse({"detail": "Not found."}, status=404)
-        elif not session_endpoint and (
+        elif onboarding_endpoint and getattr(settings, "JIREH_CUSTOMER_ONBOARDING_ACCEPTANCE", False) is not True:
+            response = JsonResponse({"detail": "Not found."}, status=404)
+        elif director_endpoint and not director_session_available(request):
+            response = JsonResponse({"detail": "Not found."}, status=404)
+        elif not (session_endpoint or onboarding_endpoint or director_endpoint) and (
             not getattr(getattr(request, "user", None), "is_authenticated", False) or not request.user.is_active
         ):
             response = JsonResponse({"detail": "Forbidden."}, status=403)
         else:
             try:
+                if DIRECTOR_SESSION_KEY in request.session and not (director_endpoint or director_access):
+                    raise PermissionDenied("Director session is school restricted.")
+                if director_endpoint and (FAMILY_SESSION_KEY in request.session or ONBOARDING_SESSION_KEY in request.session):
+                    raise PermissionDenied("Separate director authentication required.")
+                if director_access:
+                    fixture_only = (
+                        getattr(settings, "JIREH_CUSTOMER_EXTERNAL_IDENTITY_ACCEPTANCE", False) is True
+                        and getattr(settings, "JIREH_CUSTOMER_DIRECTOR_SESSION_ACCEPTANCE", False) is False
+                        and disposable_identity_context()
+                        and DIRECTOR_SESSION_KEY not in request.session
+                    )
+                    if not fixture_only and not director_session_authorized(request, kwargs["school_id"]):
+                        raise PermissionDenied("Director authentication required.")
+                # Invitation-only password sessions are never customer sessions.
+                # Even a concurrent grant change cannot upgrade that session.
+                if not onboarding_endpoint and ONBOARDING_SESSION_KEY in request.session:
+                    raise PermissionDenied("Invitation-only session.")
                 # A family password session cannot become a director session, even
                 # if grants change after sign-in. Recheck eligibility on each use.
                 if not session_endpoint and FAMILY_SESSION_KEY in request.session and (
@@ -92,7 +123,23 @@ _HOUSEHOLD = "api/v1/schools/<uuid:school_id>/households/<uuid:household_id>/"
 _DRAFT = _HOUSEHOLD + "academic-years/<uuid:academic_year_id>/aid-application/draft/"
 _DIRECTOR = "api/v1/schools/<uuid:school_id>/academic-years/<uuid:academic_year_id>/aid-applications/"
 
+_DIRECTOR_AUTH = "api/v1/schools/<uuid:school_id>/director-session/"
+
 urlpatterns = [
+    path(_DIRECTOR_AUTH + "sign-in/", customer_core_only(director_login, director_endpoint=True),
+         name="jireh_customer_director_login"),
+    path(_DIRECTOR_AUTH + "begin/", customer_core_only(director_begin, director_endpoint=True),
+         name="jireh_customer_director_begin"),
+    path(_DIRECTOR_AUTH + "complete/", customer_core_only(director_complete, director_endpoint=True),
+         name="jireh_customer_director_complete"),
+    path(_DIRECTOR_AUTH + "sign-out/", customer_core_only(director_logout, director_endpoint=True),
+         name="jireh_customer_director_logout"),
+    path("api/v1/onboarding/sign-in/", customer_core_only(onboarding_login, onboarding_endpoint=True),
+         name="jireh_customer_onboarding_login"),
+    path("api/v1/onboarding/sign-out/", customer_core_only(onboarding_logout, onboarding_endpoint=True),
+         name="jireh_customer_onboarding_logout"),
+    path(_HOUSEHOLD + "onboarding/redeem/", customer_core_only(onboarding_redeem, onboarding_endpoint=True),
+         name="jireh_customer_onboarding_redeem"),
     path("api/v1/session/sign-in/", customer_core_only(family_login, session_endpoint=True),
          name="jireh_customer_family_login"),
     path("api/v1/session/sign-out/", customer_core_only(family_logout, session_endpoint=True),
@@ -103,6 +150,6 @@ urlpatterns = [
     path(_DRAFT, customer_core_only(family_annual_draft), name="jireh_customer_draft"),
     path(_DRAFT + "students/", customer_core_only(selected_students), name="jireh_customer_selected"),
     path(_DRAFT + "students/<uuid:student_id>/", customer_core_only(select_student), name="jireh_customer_select"),
-    path(_DIRECTOR, customer_core_only(staff_application_index, allow_family_session=False), name="jireh_customer_cases"),
-    path(_DIRECTOR + "<uuid:application_id>/", customer_core_only(staff_application_detail, allow_family_session=False), name="jireh_customer_case"),
+    path(_DIRECTOR, customer_core_only(staff_application_index, allow_family_session=False, director_access=True), name="jireh_customer_cases"),
+    path(_DIRECTOR + "<uuid:application_id>/", customer_core_only(staff_application_detail, allow_family_session=False, director_access=True), name="jireh_customer_case"),
 ]
