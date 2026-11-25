@@ -57,6 +57,28 @@ class ReleaseBundleTests(unittest.TestCase):
             self.assertNotIn("jireh/.env", tar.getnames())
             self.assertNotIn("jireh/excluded.txt", tar.getnames())
 
+    def test_demo_launchers_and_guides_are_included_in_verified_archive(self):
+        output = self.root / "demo-bundle"
+        evidence = _MODULE.build_bundle(self.repo, self.sha, output)
+        required = {
+            "scripts/run_local_browser_demo.py",
+            "scripts/verify_local_browser_demo.py",
+            "scripts/rehearse_synthetic_demo.py",
+            "docs/LOCAL_BROWSER_DEMO.md",
+            "docs/LOCAL_ENCRYPTED_DOCUMENT_BACKEND.md",
+            "docs/SYNTHETIC_DEMO_REHEARSAL.md",
+            "docs/RELEASE_PACKAGING.md",
+            "docs/PRODUCTION_READINESS.md",
+            "docs/REPOSITORY_PRESENTATION_AND_ATTRIBUTION_POLICY.md",
+            "docs/questionnaire_v1_field_catalog.json",
+        }
+        with tarfile.open(output / "jireh-source.tar") as archive:
+            for path in required:
+                with self.subTest(path=path), archive.extractfile("jireh/" + path) as stream:
+                    self.assertEqual(hashlib.file_digest(stream, "sha256").hexdigest(),
+                                     evidence["files"][path])
+            self.assertNotIn("jireh/excluded.txt", archive.getnames())
+
     def test_reject_symbolic_revision_missing_path_and_overwrite(self):
         with self.assertRaises(ValueError):
             _MODULE.build_bundle(self.repo, "HEAD", self.root / "one")
