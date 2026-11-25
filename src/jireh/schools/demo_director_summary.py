@@ -19,7 +19,11 @@ from django.views.decorators.http import require_GET
 from jireh.financial_aid.annual_school_plan import (
     AnnualSchoolPlanError, FICTIONAL_15145_PLAN, family_education_cost, project_fictional_award,
 )
+from jireh.financial_aid.assessment_contract import CandidateAssessmentError
 from jireh.financial_aid.buckets import AidBucket
+from jireh.financial_aid.fictional_planning_need import (
+    HUD_FMR_SOURCE, PITTSBURGH_MONTHLY_HOUSING_CENTS, calculate_fictional_planning_need,
+)
 from jireh.financial_aid.models import (
     AidApplication,
     AidApplicationStudent,
@@ -239,6 +243,10 @@ def director_annual_planning_demo(request):
         projection = project_fictional_award(plan, cost, committed_aid_cents=0, proposed_aid_cents=proposal)
     except AnnualSchoolPlanError:
         return JsonResponse({"detail": "Proposed aid exceeds the household cost or available budget."}, status=400)
+    try:
+        need = calculate_fictional_planning_need(cost.net_tuition_cents)
+    except CandidateAssessmentError:
+        return JsonResponse({"detail": "Regional need scenario unavailable."}, status=503)
 
     return _render_director_page(request, "jireh/demo_director_planning.html", {
         "school_name": school.name, "year_name": year.name, "plan": plan,
@@ -249,6 +257,15 @@ def director_annual_planning_demo(request):
         "discount": _money(cost.discount_cents),
         "fees": _money(cost.required_fees_cents),
         "eligible_cost": _money(cost.eligible_cost_cents),
+        "hud_year": need.dataset_year,
+        "hud_source": HUD_FMR_SOURCE,
+        "monthly_housing": _money(PITTSBURGH_MONTHLY_HOUSING_CENTS),
+        "living_allowance": _money(need.allowance_cents),
+        "available_income": _money(need.available_income_cents),
+        "contribution_rate": f"{Decimal(need.income_contribution_bps) / 100:g}%",
+        "net_tuition_before_aid": _money(cost.net_tuition_cents),
+        "expected_contribution": _money(need.expected_contribution_cents),
+        "unmet_tuition": _money(need.unmet_tuition_cents),
         "categories": _CATEGORY_LABELS.items(),
         "selected_category": category,
         "category_label": _CATEGORY_LABELS[category],
