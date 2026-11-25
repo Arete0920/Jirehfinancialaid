@@ -1490,3 +1490,69 @@ class SchoolPreparationEvent(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("School preparation evidence cannot be deleted.")
+
+
+class SyntheticSchoolProvisioningReceipt(UUIDStampedModel):
+    """Immutable disposable rehearsal evidence; not live activation authority."""
+
+    setup = models.OneToOneField(
+        SchoolSetupIntent, on_delete=models.PROTECT,
+        related_name="synthetic_provisioning_receipt",
+    )
+    preparation = models.OneToOneField(
+        SchoolPreparationEvent, on_delete=models.PROTECT,
+        related_name="synthetic_provisioning_receipt",
+    )
+    school = models.OneToOneField(
+        School, on_delete=models.PROTECT,
+        related_name="synthetic_provisioning_receipt",
+    )
+    proposal_proof = models.OneToOneField(
+        OperatorWebAuthnActionIntent, on_delete=models.PROTECT,
+        related_name="synthetic_setup_proposal_receipt",
+    )
+    approval_proof = models.OneToOneField(
+        OperatorWebAuthnActionIntent, on_delete=models.PROTECT,
+        related_name="synthetic_setup_approval_receipt",
+    )
+    reference_digest = models.CharField(max_length=64)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=~Q(proposal_proof=F("approval_proof")),
+                name="jireh_synth_setup_distinct_proofs",
+            ),
+            models.CheckConstraint(
+                condition=Q(reference_digest__regex=r"^[0-9a-f]{64}$"),
+                name="jireh_synth_setup_reference_digest",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if not all((self.setup_id, self.preparation_id, self.school_id,
+                    self.proposal_proof_id, self.approval_proof_id)):
+            return
+        proposal, approval = self.proposal_proof, self.approval_proof
+        if (
+            self.preparation.intent_id != self.setup_id
+            or self.preparation.actor_id != self.setup.proposed_by_id
+            or self.preparation.action != "PREPARED"
+            or self.school.is_active
+            or not self.school.code.startswith("synthetic-")
+            or proposal.operator_id != self.setup.proposed_by_id
+            or approval.operator_id == proposal.operator_id
+            or proposal.action != OperatorWebAuthnActionIntent.ACTION_SETUP_PROPOSE
+            or approval.action != OperatorWebAuthnActionIntent.ACTION_SETUP_APPROVE
+            or proposal.consumed_at is None or approval.consumed_at is None
+        ):
+            raise ValidationError("Invalid synthetic provisioning evidence.")
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Synthetic provisioning evidence is immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Synthetic provisioning evidence cannot be deleted.")
