@@ -38,9 +38,13 @@ class FictionalScenarioNotFound(QuestionnaireValidationError):
 
 
 def require_synthetic_questionnaire_preview():
+    workspace_preview = (
+        settings.ROOT_URLCONF == "jireh.schools.customer_workspace_urls"
+        and getattr(settings, "JIREH_CUSTOMER_WORKSPACE_ACCEPTANCE", False) is True
+    )
     if (
         getattr(settings, "JIREH_SYNTHETIC_SUBMISSION_ONLY", False) is not True
-        or settings.ROOT_URLCONF not in _ALLOWED_TEST_URLCONFS
+        or (settings.ROOT_URLCONF not in _ALLOWED_TEST_URLCONFS and not workspace_preview)
     ):
         raise PermissionDenied("Synthetic preview unavailable.")
 
