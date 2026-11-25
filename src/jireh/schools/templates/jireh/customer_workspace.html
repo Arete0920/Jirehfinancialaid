@@ -308,6 +308,7 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% csrf_token %}
 <input type="hidden" name="questionnaire_revision" value="{{ rehearsal.saved_need.questionnaire_revision }}">
 <input type="hidden" name="plan_revision" value="{{ rehearsal.saved_need.plan_revision }}">
+<input type="hidden" name="evidence_id" value="{{ rehearsal.income_evidence.evidence_id }}">
 <label><input type="checkbox" name="confirmed" value="yes" required> I reviewed the seeded fictional evidence.</label>
 <button type="submit">Record fictional income evidence</button>
 </form>

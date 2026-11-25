@@ -18,7 +18,7 @@ from .saved_need_workspace import read_saved_need_preview
 
 # Version this identity when changing any of the seeded evidence below. The
 # scenario calendar is fixed so an offline rehearsal remains reproducible.
-_EVIDENCE_ID = UUID("6255463a-c364-4c88-a32f-7f4d4eb38fa1")
+FICTIONAL_INCOME_EVIDENCE_ID = UUID("6255463a-c364-4c88-a32f-7f4d4eb38fa1")
 _OBSERVED_FROM = date(2026, 9, 30)
 _OBSERVED_THROUGH = date(2026, 10, 15)
 _ANNUAL_INCOME_CENTS = 3_000_000
@@ -31,7 +31,7 @@ def _scope(baseline):
         "questionnaire_id": baseline["questionnaire_id"],
         "questionnaire_revision": baseline["questionnaire_revision"],
         "plan_id": baseline["plan_id"],
-        "evidence_id": _EVIDENCE_ID,
+        "evidence_id": FICTIONAL_INCOME_EVIDENCE_ID,
     }
 
 
@@ -61,7 +61,8 @@ def read_income_evidence(*, user, school, year, application_id, baseline):
     row = FictionalIncomeEvidenceReview.objects.select_related("plan").filter(**_scope(baseline)).first()
     if row is None:
         return {
-            "can_record": True, "annual_income_cents": _ANNUAL_INCOME_CENTS,
+            "can_record": True, "evidence_id": FICTIONAL_INCOME_EVIDENCE_ID,
+            "annual_income_cents": _ANNUAL_INCOME_CENTS,
             "observed_from": _OBSERVED_FROM, "observed_through": _OBSERVED_THROUGH,
         }
     if row.actor_user_id != user.pk:
@@ -78,7 +79,9 @@ def read_income_evidence(*, user, school, year, application_id, baseline):
 
 
 @transaction.atomic
-def record_income_evidence(*, user, school_id, year_id, application_id, questionnaire_revision, plan_revision):
+def record_income_evidence(
+    *, user, school_id, year_id, application_id, questionnaire_revision, plan_revision, evidence_id,
+):
     school = _lock_authorized_school(actor=user, school_id=school_id)
     if not fixture_matches(school.pk, year_id):
         raise Http404("Fictional income evidence unavailable.")
@@ -88,6 +91,8 @@ def record_income_evidence(*, user, school_id, year_id, application_id, question
         pk=user.pk, is_active=True,
     ).exists() or not decision_authorized(user, lock=True):
         raise PermissionDenied("Fictional income evidence authority required.")
+    if evidence_id != FICTIONAL_INCOME_EVIDENCE_ID:
+        raise ValidationError("Fictional income evidence has changed.")
     year = get_object_or_404(AcademicYear.objects.for_school(school.pk), pk=year_id)
     baseline = read_saved_need_preview(
         user=user, school=school, year=year, application_id=application_id,

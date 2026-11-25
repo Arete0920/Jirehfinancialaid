@@ -14,6 +14,7 @@ import re
 import secrets
 from decimal import Decimal
 from functools import wraps
+from uuid import UUID
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
@@ -409,7 +410,7 @@ def workspace_case_projection(request, school_id, academic_year_id, application_
 @csrf_protect
 def workspace_income_evidence(request, school_id, academic_year_id, application_id):
     revisions = {"questionnaire_revision", "plan_revision"}
-    fields = revisions | {"confirmed"}
+    fields = revisions | {"confirmed", "evidence_id"}
     if (request.GET or request.content_type != "application/x-www-form-urlencoded"
             or set(request.POST) - fields - {"csrfmiddlewaretoken"}
             or not fields <= set(request.POST)
@@ -418,10 +419,16 @@ def workspace_income_evidence(request, school_id, academic_year_id, application_
             or any(_PROJECTION_REVISION.fullmatch(request.POST[name]) is None for name in revisions)):
         return HttpResponse("Invalid fictional income evidence review.", status=400)
     try:
+        evidence_id = UUID(request.POST["evidence_id"])
+    except ValueError:
+        return HttpResponse("Invalid fictional income evidence review.", status=400)
+    if str(evidence_id) != request.POST["evidence_id"]:
+        return HttpResponse("Invalid fictional income evidence review.", status=400)
+    try:
         record_income_evidence(
             user=request.user, school_id=school_id, year_id=academic_year_id, application_id=application_id,
             questionnaire_revision=int(request.POST["questionnaire_revision"]),
-            plan_revision=int(request.POST["plan_revision"]),
+            plan_revision=int(request.POST["plan_revision"]), evidence_id=evidence_id,
         )
     except ValidationError:
         return HttpResponse("Fictional income evidence unavailable. Reload the case.", status=409)

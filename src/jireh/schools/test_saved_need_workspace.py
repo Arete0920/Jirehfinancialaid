@@ -12,6 +12,7 @@ from jireh.financial_aid.models import AidApplication, SyntheticAidOffer, Synthe
 from jireh.financial_aid.services import get_or_create_annual_draft, select_student_for_draft
 from jireh.financial_aid.synthetic_questionnaire_storage import save_fictional_questionnaire
 from .demo_seed import seed_synthetic_browser_demo
+from .fictional_income_reviews import FICTIONAL_INCOME_EVIDENCE_ID
 from .saved_need_workspace import configure_saved_need_fixture
 from .workspace_questionnaire import fictional_questionnaire_policy
 
@@ -104,12 +105,14 @@ class SavedNeedWorkspaceTests(TestCase):
         url = reverse("jireh_workspace_income_evidence", args=(
             self.fixture.school_id, self.fixture.academic_year_id, self.draft.pk,
         ))
-        data = {"questionnaire_revision": "1", "plan_revision": "1", "confirmed": "yes"}
+        data = {"questionnaire_revision": "1", "plan_revision": "1", "confirmed": "yes",
+                "evidence_id": str(FICTIONAL_INCOME_EVIDENCE_ID)}
         with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
             director = Client(enforce_csrf_checks=True)
             director.force_login(self.demo["director_a"])
             page = director.get(self.url, secure=True)
             self.assertContains(page, "Record fictional income evidence")
+            self.assertContains(page, f'name="evidence_id" value="{FICTIONAL_INCOME_EVIDENCE_ID}"')
             self.assertNotContains(page, 'id="income-evidence-adjusted"')
             self.assertEqual(director.post(url, urlencode(data),
                                            content_type="application/x-www-form-urlencoded", secure=True).status_code, 403)
@@ -118,6 +121,9 @@ class SavedNeedWorkspaceTests(TestCase):
                 return director.post(url, urlencode(values), content_type="application/x-www-form-urlencoded",
                                      secure=True, HTTP_REFERER="https://testserver" + self.url)
 
+            self.assertEqual(post({**data, "evidence_id": "invalid"}).status_code, 400)
+            self.assertEqual(post({**data, "evidence_id": str(uuid4())}).status_code, 409)
+            self.assertFalse(FictionalIncomeEvidenceReview.objects.exists())
             self.assertEqual(post({**data, "income": "30000"}).status_code, 400)
             self.assertEqual(post({**data, "plan_revision": "2"}).status_code, 409)
             self.assertEqual(post(data).status_code, 302)
@@ -273,9 +279,11 @@ class SavedNeedWorkspaceTests(TestCase):
             with self.assertRaises(PermissionDenied):
                 record_fictional_need_decision(**scope)
             director.user_permissions.add(permission)
-            record_income_evidence(**{name: scope[name] for name in (
-                "user", "school_id", "year_id", "application_id", "questionnaire_revision", "plan_revision",
-            )})
+            record_income_evidence(
+                user=director, school_id=self.fixture.school_id, year_id=self.fixture.academic_year_id,
+                application_id=self.draft.pk, questionnaire_revision=1, plan_revision=1,
+                evidence_id=FICTIONAL_INCOME_EVIDENCE_ID,
+            )
             self.assertContains(self.get_case(), 'id="income-evidence-adjusted">$18,959.00</strong>')
             self.assertContains(self.get_case(), "Record fictional need decision")
             with self.assertRaises(ValidationError):
