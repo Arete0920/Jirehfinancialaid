@@ -153,8 +153,9 @@ def read_decision_budget(*, user, school_id, year_id):
     if plan is None:
         return None
     allocated = _current(school.pk, year_id).aggregate(total=Sum("amount_cents"))["total"] or 0
-    return {"allocated_cents": allocated, "remaining_cents": plan.as_plan().annual_aid_budget_cents-allocated,
-            "plan_revision": plan.revision}
+    remaining = plan.as_plan().annual_aid_budget_cents - allocated
+    return {"allocated_cents": allocated, "remaining_cents": remaining,
+            "overallocated": remaining < 0, "plan_revision": plan.revision}
 
 
 def read_family_decision(*, user, school_id, household_id, year_id):

@@ -97,7 +97,7 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% endif %}
 {% if family_decision %}
 <section class="panel"><h2>Fictional director decision</h2>
-<p id="family-decision-amount">${{ family_decision.dollars }}</p><p>Decision revision {{ family_decision.revision }}. Rehearsal only, not a binding award, tuition credit, or payment.</p></section>
+<p id="family-decision-amount">${{ family_decision.dollars }}</p><p>Last recorded decision revision {{ family_decision.revision }}. Later changes to household information do not automatically revise this historical decision. Rehearsal only, not a binding award, tuition credit, or payment.</p></section>
 {% endif %}
 {% if draft and review_enabled %}
 <section class="panel"><h2>Application review</h2><a href="{% url 'jireh_workspace_review' household.school_id household.pk year.pk %}">Review fictional application</a></section>
@@ -234,6 +234,7 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <section class="panel"><h2>Recorded fictional need decision budget</h2>
 <div class="grid"><div class="metric"><strong id="decision-budget-allocated">${{ decision_budget.allocated }}</strong>Latest fictional decisions</div>
 <div class="metric"><strong id="decision-budget-remaining">${{ decision_budget.remaining }}</strong>Remaining simulated budget</div></div>
+{% if decision_budget.overallocated %}<p>Recorded fictional decisions exceed the current simulated budget. Review the plan and existing decisions before continuing.</p>{% endif %}
 <p>Plan revision {{ decision_budget.plan_revision }}. Excludes the independent fixed $250 offer rehearsal. Not actual commitments or disbursements.</p></section>
 {% endif %}
 <section class="panel"><h2>Application records</h2>

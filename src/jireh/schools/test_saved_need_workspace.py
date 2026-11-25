@@ -238,6 +238,23 @@ class SavedNeedWorkspaceTests(TestCase):
                     FictionalNeedDecision.objects.filter(pk=first.pk).update(amount_cents=1)
                 with self.assertRaises(IntegrityError), transaction.atomic():
                     FictionalNeedDecision.objects.filter(pk=first.pk).delete()
+                row = dict(
+                    application=second.application, questionnaire=second.questionnaire,
+                    questionnaire_revision=second.questionnaire_revision, plan=second.plan,
+                    receipt=second.receipt, actor_user=director, revision=3,
+                    amount_cents=second.amount_cents, need_cents=second.need_cents,
+                    remaining_budget_cents=second.remaining_budget_cents,
+                    calculation_version=second.calculation_version, dataset_sha256=second.dataset_sha256,
+                )
+                for invalid in (
+                    {"actor_user": self.demo["director_b"]},
+                    {"actor_user": self.demo["parent"]},
+                    {"questionnaire_revision": 2}, {"revision": 4},
+                    {"remaining_budget_cents": 1}, {"dataset_sha256": "0"*64},
+                ):
+                    with self.assertRaises(IntegrityError), transaction.atomic():
+                        FictionalNeedDecision.objects.create(**{**row, **invalid})
+                self.assertEqual(FictionalNeedDecision.objects.count(), 2)
             with self.settings(JIREH_SYNTHETIC_SUBMISSION_ONLY=False):
                 with self.assertRaises(PermissionDenied):
                     record_fictional_need_decision(**changed)
