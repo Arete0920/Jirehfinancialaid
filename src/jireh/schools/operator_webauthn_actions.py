@@ -1,10 +1,9 @@
-"""Internal, disabled WebAuthn proof bound to one specific director action.
+"""Internal, disabled WebAuthn proof bound to one privileged action.
 
-This is a *prerequisite* for enforced MFA, not a public authentication route.
-A verified assertion proves possession of an enrolled operator key but cannot
-authorize a school grant until the future grant transaction calls
-consume_director_action_proof() with the EXACT action parameters. The caller
-must consume inside that same transaction or rollback.
+Verified key possession is not permission to provision a school or grant a
+director role. Consume the action-specific proof only inside the eventual
+authorized business transaction, so a failed operation rolls back consumption.
+School setup and director actions use distinct action and digest domains.
 """
 
 import hashlib
@@ -21,6 +20,7 @@ from .models import (
     OperatorWebAuthnActionIntent,
     OperatorWebAuthnChallenge,
     OperatorWebAuthnCredential,
+    SchoolSetupIntent,
 )
 from .operator_webauthn_challenges import _operator_locked
 from .operator_webauthn_registry import (
@@ -30,6 +30,15 @@ from .operator_webauthn_registry import (
 
 
 _REFERENCE = re.compile(r"\A[A-Z0-9][A-Z0-9-]{7,119}\Z")
+_DIGEST = re.compile(r"\A[0-9a-f]{64}\Z")
+_DIRECTOR_ACTIONS = (
+    OperatorWebAuthnActionIntent.ACTION_DIRECTOR_PROPOSE,
+    OperatorWebAuthnActionIntent.ACTION_DIRECTOR_APPROVE,
+)
+_SETUP_ACTIONS = (
+    OperatorWebAuthnActionIntent.ACTION_SETUP_PROPOSE,
+    OperatorWebAuthnActionIntent.ACTION_SETUP_APPROVE,
+)
 
 
 def _enabled():
@@ -95,6 +104,13 @@ def begin_director_action_proof(
         school_id=school_id, subject_user_id=subject_user_id,
         request_id=request_id,
     )
+    return _begin_action_proof(
+        operator=operator, credential_id_digest=credential_id_digest,
+        action=action, digest=digest,
+    )
+
+
+def _begin_action_proof(*, operator, credential_id_digest, action, digest):
     options, challenge_id = begin_registered_operator_challenge(
         operator=operator, credential_id_digest=credential_id_digest,
     )
@@ -121,13 +137,21 @@ def begin_director_action_proof(
 def complete_director_action_proof(*, operator, intent_id, response):
     """Verify the intended challenge, without authorizing its target action."""
     _enabled()
+    return _complete_action_proof(
+        operator=operator, intent_id=intent_id, response=response,
+        allowed_actions=_DIRECTOR_ACTIONS,
+    )
+
+
+def _complete_action_proof(*, operator, intent_id, response, allowed_actions):
     try:
         with transaction.atomic(durable=True):
             account = _operator_locked(operator)
             intent = (
                 OperatorWebAuthnActionIntent.objects.select_for_update()
                 .select_related("challenge")
-                .filter(pk=intent_id, operator=account, consumed_at__isnull=True)
+                .filter(pk=intent_id, operator=account, consumed_at__isnull=True,
+                        action__in=allowed_actions)
                 .first()
             )
             if (
@@ -162,6 +186,12 @@ def consume_director_action_proof(
         request_id=request_id,
     )
     account = _operator_locked(operator)
+    return _consume_action_proof(
+        account=account, intent_id=intent_id, action=action, digest=digest,
+    )
+
+
+def _consume_action_proof(*, account, intent_id, action, digest):
     intent = (
         OperatorWebAuthnActionIntent.objects.select_for_update()
         .filter(pk=intent_id, operator=account, action=action,
@@ -195,3 +225,107 @@ def consume_director_action_proof(
     intent.consumed_at = now
     intent.save(update_fields=["consumed_at", "updated_at"])
     return intent.pk
+
+
+def _setup_enabled():
+    _enabled()
+    if getattr(settings, "JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED", False) is not True:
+        raise PermissionDenied("School setup WebAuthn evidence disabled.")
+
+
+def _setup_uuid(value):
+    try:
+        if not isinstance(value, (str, UUID)):
+            raise ValueError
+        identifier = UUID(str(value))
+        if not identifier.int or str(identifier) != str(value):
+            raise ValueError
+        return identifier
+    except (ValueError, TypeError, AttributeError):
+        raise PermissionDenied("School setup identifier invalid.") from None
+
+
+def _setup_action_digest(*, operator_id, action, setup_intent_id,
+                         authorization_reference, lock=False):
+    if (type(action) is not str or action not in _SETUP_ACTIONS
+            or not isinstance(authorization_reference, str)
+            or not _REFERENCE.fullmatch(authorization_reference)
+            or operator_id is None):
+        raise PermissionDenied("School setup action context invalid.")
+    identifier = _setup_uuid(setup_intent_id)
+    try:
+        receipts = SchoolSetupIntent.objects.all()
+        if lock:
+            receipts = receipts.select_for_update()
+        receipt = receipts.filter(pk=identifier).first()
+    except DatabaseError:
+        raise PermissionDenied("School setup receipt unavailable.") from None
+    if (receipt is None or not _DIGEST.fullmatch(receipt.candidate_digest)
+            or not receipt.idempotency_key.int):
+        raise PermissionDenied("School setup receipt unavailable.")
+    is_owner = receipt.proposed_by_id == operator_id
+    if is_owner != (action == OperatorWebAuthnActionIntent.ACTION_SETUP_PROPOSE):
+        raise PermissionDenied("School setup action operator denied.")
+    context = [
+        action, str(receipt.pk), str(receipt.idempotency_key),
+        _subject_identifier(receipt.proposed_by_id), receipt.candidate_digest,
+        authorization_reference,
+    ]
+    payload = json.dumps(context, ensure_ascii=True, separators=(",", ":"))
+    return hashlib.sha256(
+        b"jireh-privileged-school-setup-action-v1\x00" + payload.encode("ascii")
+    ).hexdigest()
+
+
+def begin_setup_action_proof(
+    *, operator, credential_id_digest, action, setup_intent_id,
+    authorization_reference,
+):
+    """Bind a verified-key challenge to an existing immutable setup receipt.
+
+    Only the receipt owner may prove the proposal action; approval requires
+    a distinct eligible operator. No school is created or authorized here.
+    """
+    _setup_enabled()
+    digest = _setup_action_digest(
+        operator_id=getattr(operator, "pk", None), action=action,
+        setup_intent_id=setup_intent_id,
+        authorization_reference=authorization_reference,
+    )
+    return _begin_action_proof(
+        operator=operator, credential_id_digest=credential_id_digest,
+        action=action, digest=digest,
+    )
+
+
+def complete_setup_action_proof(*, operator, intent_id, response):
+    """Verify only a setup challenge, never a director-action challenge."""
+    _setup_enabled()
+    return _complete_action_proof(
+        operator=operator, intent_id=_setup_uuid(intent_id), response=response,
+        allowed_actions=_SETUP_ACTIONS,
+    )
+
+
+def consume_setup_action_proof(
+    *, operator, intent_id, action, setup_intent_id, authorization_reference,
+):
+    """Consume one exact receipt-bound proof inside a future transaction.
+
+    The caller must independently verify the external authorization reference,
+    preparation and code availability, and consume BOTH distinct operators'
+    proofs atomically with the separately approved business operation.
+    This primitive neither accepts a school setup nor grants provisioning.
+    """
+    _setup_enabled()
+    if not connection.in_atomic_block:
+        raise PermissionDenied("School setup evidence needs an authorized transaction.")
+    account = _operator_locked(operator)
+    digest = _setup_action_digest(
+        operator_id=account.pk, action=action, setup_intent_id=setup_intent_id,
+        authorization_reference=authorization_reference, lock=True,
+    )
+    return _consume_action_proof(
+        account=account, intent_id=_setup_uuid(intent_id), action=action,
+        digest=digest,
+    )

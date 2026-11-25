@@ -1,7 +1,7 @@
 """Synthetic cryptographic contracts for action-specific WebAuthn MFA evidence."""
 
 from unittest.mock import patch
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from cryptography.hazmat.primitives.asymmetric import ec
 from django.core.exceptions import PermissionDenied
@@ -9,11 +9,14 @@ from django.db import IntegrityError, connection, transaction
 from django.test import TransactionTestCase
 from django.utils import timezone
 
-from .models import OperatorWebAuthnActionIntent
+from .models import OperatorWebAuthnActionIntent, School, SchoolSetupIntent
 from .operator_webauthn_actions import (
     begin_director_action_proof,
+    begin_setup_action_proof,
     complete_director_action_proof,
+    complete_setup_action_proof,
     consume_director_action_proof,
+    consume_setup_action_proof,
     director_action_digest,
 )
 from .operator_webauthn_registry import revoke_registered_operator_credential
@@ -231,3 +234,126 @@ class OperatorActionWebAuthnTests(TransactionTestCase):
             director_action_digest(**self.proposal()),
             director_action_digest(**self.approval()),
         )
+
+
+    def setup_receipt(self, owner=None):
+        return SchoolSetupIntent.objects.create(
+            proposed_by=self.operator if owner is None else owner,
+            idempotency_key=uuid4(), candidate_digest="a" * 64,
+        )
+
+    def setup_scope(self, receipt, action=None, **override):
+        scope = dict(
+            action=action or OperatorWebAuthnActionIntent.ACTION_SETUP_PROPOSE,
+            setup_intent_id=receipt.pk, authorization_reference=REFERENCE,
+        )
+        scope.update(override)
+        return scope
+
+    def begin_setup(self, scope):
+        return begin_setup_action_proof(
+            operator=self.operator, credential_id_digest=self.digest, **scope,
+        )
+
+    def consume_setup(self, intent_id, scope):
+        return consume_setup_action_proof(
+            operator=self.operator, intent_id=intent_id, **scope,
+        )
+
+    def test_setup_action_disabled_and_wrong_role_denied_before_challenge(self):
+        own = self.setup_receipt()
+        other = self.setup_receipt(self.second)
+        with self.settings(JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED=False):
+            with self.assertRaises(PermissionDenied):
+                self.begin_setup(self.setup_scope(own))
+        with self.settings(JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED=True):
+            invalid_scopes = (
+                self.setup_scope(other),
+                self.setup_scope(own, OperatorWebAuthnActionIntent.ACTION_SETUP_APPROVE),
+                self.setup_scope(own, setup_intent_id=UUID(int=0)),
+                self.setup_scope(own, setup_intent_id=uuid4()),
+                self.setup_scope(own, authorization_reference="invalid reference"),
+            )
+            for scope in invalid_scopes:
+                with self.subTest(scope=scope), self.assertRaises(PermissionDenied):
+                    self.begin_setup(scope)
+        self.assertFalse(OperatorWebAuthnActionIntent.objects.exists())
+        self.assertFalse(School.objects.exists())
+
+    def test_setup_proof_binds_exact_receipt_and_reference_not_director_action(self):
+        own = self.setup_receipt()
+        another = self.setup_receipt()
+        scope = self.setup_scope(own)
+        with self.settings(JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED=True):
+            options, proof = self.begin_setup(scope)
+            response = self.assertion(options)
+            with self.assertRaises(PermissionDenied):
+                complete_director_action_proof(
+                    operator=self.operator, intent_id=proof, response=response,
+                )
+            self.assertEqual(complete_setup_action_proof(
+                operator=self.operator, intent_id=proof, response=response,
+            ), 1)
+            for changed in (
+                self.setup_scope(another),
+                self.setup_scope(own, authorization_reference="SCHOOL-AUTHORIZATION-2026-002"),
+            ):
+                with self.subTest(changed=changed), self.assertRaises(PermissionDenied):
+                    with transaction.atomic():
+                        self.consume_setup(proof, changed)
+            with self.assertRaises(PermissionDenied):
+                with transaction.atomic():
+                    self.consume(proof)
+            with self.assertRaises(PermissionDenied):
+                self.consume_setup(proof, scope)
+            self.assertIsNone(OperatorWebAuthnActionIntent.objects.get(pk=proof).consumed_at)
+            with transaction.atomic():
+                self.assertEqual(self.consume_setup(proof, scope), proof)
+            with self.assertRaises(PermissionDenied):
+                with transaction.atomic():
+                    self.consume_setup(proof, scope)
+        self.assertFalse(School.objects.exists())
+
+    def test_setup_independent_approval_rolls_back_and_cannot_be_reused(self):
+        receipt = self.setup_receipt(self.second)
+        scope = self.setup_scope(
+            receipt, OperatorWebAuthnActionIntent.ACTION_SETUP_APPROVE,
+        )
+        with self.settings(JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED=True):
+            options, proof = self.begin_setup(scope)
+            self.assertEqual(complete_setup_action_proof(
+                operator=self.operator, intent_id=proof,
+                response=self.assertion(options),
+            ), 1)
+            with self.assertRaisesMessage(RuntimeError, "synthetic setup rollback"):
+                with transaction.atomic():
+                    self.consume_setup(proof, scope)
+                    raise RuntimeError("synthetic setup rollback")
+            self.assertIsNone(OperatorWebAuthnActionIntent.objects.get(pk=proof).consumed_at)
+            with self.settings(JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED=False):
+                with self.assertRaises(PermissionDenied):
+                    with transaction.atomic():
+                        self.consume_setup(proof, scope)
+            with transaction.atomic():
+                self.assertEqual(self.consume_setup(proof, scope), proof)
+            with self.assertRaises(PermissionDenied):
+                with transaction.atomic():
+                    self.consume_setup(proof, scope)
+        self.assertFalse(School.objects.exists())
+
+    def test_setup_proof_rejects_revocation_before_consumption(self):
+        scope = self.setup_scope(self.setup_receipt())
+        with self.settings(JIREH_SCHOOL_SETUP_ACTION_MFA_ENABLED=True):
+            options, proof = self.begin_setup(scope)
+            complete_setup_action_proof(
+                operator=self.operator, intent_id=proof,
+                response=self.assertion(options),
+            )
+            revoke_registered_operator_credential(
+                operator=self.operator, credential_id_digest=self.digest,
+            )
+            with self.assertRaises(PermissionDenied):
+                with transaction.atomic():
+                    self.consume_setup(proof, scope)
+        self.assertIsNone(OperatorWebAuthnActionIntent.objects.get(pk=proof).consumed_at)
+        self.assertFalse(School.objects.exists())
