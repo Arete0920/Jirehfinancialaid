@@ -11,22 +11,32 @@ candidate. The closed standalone runtime never imports it.
 import json
 import os
 import secrets
+from decimal import Decimal
 from functools import wraps
 
 from django.conf import settings
 from django.core.exceptions import PermissionDenied
-from django.http import Http404, HttpResponseForbidden, HttpResponseNotFound
+from django.http import Http404, HttpResponseForbidden, HttpResponseNotFound, HttpResponse
 from django.shortcuts import get_object_or_404, render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.csrf import ensure_csrf_cookie
-from django.views.decorators.http import require_safe
+from django.views.decorators.http import require_POST, require_safe
 
 from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import selected_students
 from jireh.financial_aid.views import (
     staff_application_detail, staff_application_index, staff_draft_workload,
 )
+from jireh.financial_aid.assessment_contract import CandidateAssessmentError
+from jireh.financial_aid.fictional_assessment_metadata import read_fictional_assessment_metadata
+from jireh.financial_aid.questionnaire_validation import QuestionnaireValidationError
+from jireh.financial_aid.synthetic_assessment import preview_fictional_assessment_evidence
+from jireh.financial_aid.synthetic_demo_views import record_synthetic_staff_offer
+from jireh.financial_aid.synthetic_offers import read_synthetic_director_offer
+from jireh.financial_aid.workload import WorkloadIntegrityError
 from .access import require_aid_director_access, require_household_access
+from .demo_director_summary import _summary
+from .demo_seed import DEMO_SCHOOL_A_CODE, DEMO_SCHOOL_B_CODE
 from .models import AcademicYear, HouseholdAccess, SchoolStaffAccess
 from .views import household_students
 
@@ -179,13 +189,30 @@ def workspace_director(request, school_id, academic_year_id):
     inventory = _read_json(inventory_response)
     if inventory is None:
         return inventory_response
-    workload_response = staff_draft_workload(request, school_id, academic_year_id)
-    workload = _read_json(workload_response)
-    if workload is None:
-        return workload_response
+    fictional_summary = None
+    if _fictional_director_mode(school, allow_control_school=True):
+        try:
+            fictional_summary = _summary(school, year)
+        except WorkloadIntegrityError:
+            return HttpResponse("Director summary unavailable.", status=503)
+        # Reuse the CROWN-derived validated read model, rather than running
+        # a second workload aggregation for the same school and year.
+        workload = {
+            "draft_application_records": fictional_summary["draft_applications"],
+            "distinct_draft_households": fictional_summary["draft_households"],
+            "selected_household_student_links": fictional_summary["selected_household_child_links"],
+        }
+        fictional_summary["offer_face_value_dollars"] = _dollars(
+            fictional_summary["fictional_offer_face_value_cents"],
+        )
+    else:
+        workload_response = staff_draft_workload(request, school_id, academic_year_id)
+        workload = _read_json(workload_response)
+        if workload is None:
+            return workload_response
     return _page(
         request, "director", school=school, year=year,
-        inventory=inventory, workload=workload,
+        inventory=inventory, workload=workload, fictional_summary=fictional_summary,
     )
 
 
@@ -198,4 +225,73 @@ def workspace_case(request, school_id, academic_year_id, application_id):
     case = _read_json(case_response)
     if case is None:
         return case_response
-    return _page(request, "case", school=school, year=year, case=case)
+    rehearsal = None
+    if _fictional_director_mode(school):
+        try:
+            rehearsal = _director_rehearsal(
+                request.user, school, year, application_id, case,
+            )
+        except (CandidateAssessmentError, QuestionnaireValidationError, OSError, ValueError):
+            return HttpResponse("Fictional director evidence unavailable.", status=503)
+    return _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal)
+
+
+def _dollars(cents):
+    return f"{Decimal(cents) / 100:,.2f}"
+
+
+def _fictional_director_mode(school, *, allow_control_school=False):
+    codes = (DEMO_SCHOOL_A_CODE, DEMO_SCHOOL_B_CODE) if allow_control_school else (DEMO_SCHOOL_A_CODE,)
+    return (
+        school.code in codes
+        and getattr(settings, "JIREH_SYNTHETIC_SUBMISSION_ONLY", False) is True
+    )
+
+
+def _director_rehearsal(user, school, year, application_id, case):
+    scope = dict(user=user, school_id=school.pk, academic_year_id=year.pk,
+                 application_id=application_id)
+    metadata = read_fictional_assessment_metadata(**scope)
+    # The saved revision/receipt are real database facts in this disposable
+    # fixture. The existing policy preview is independent of saved answers.
+    report = preview_fictional_assessment_evidence(
+        **scope, scenario_id="fictional_modest",
+    )
+    if report.assessment is None or len(case["selected_student_ids"]) > _SCOPE_LIMIT:
+        raise ValueError("Fictional case readback unavailable.")
+    offers = []
+    for student_id in case["selected_student_ids"]:
+        if not metadata.has_fictional_receipt:
+            break
+        try:
+            saved = read_synthetic_director_offer(**scope, student_id=student_id)
+        except Http404:
+            saved = None
+        if saved is not None:
+            offers.append({"student_id": student_id, "dollars": _dollars(saved.amount_cents)})
+        else:
+            offers.append({"student_id": student_id, "dollars": None})
+    # Recheck current school authorization after readback. No encrypted
+    # questionnaire or document contents are returned to the director.
+    require_aid_director_access(user, school_id=school.pk)
+    return {
+        "metadata": metadata,
+        "recommendations": [
+            {"bucket": line.bucket.value.title(), "dollars": _dollars(line.recommendation_cents),
+             "capped": line.cap_applied}
+            for line in report.assessment.lines
+        ],
+        "preview_total": _dollars(report.assessment.total_recommendation_cents),
+        "offers": offers,
+    }
+
+
+@require_POST
+def workspace_case_offer(request, school_id, academic_year_id, application_id, student_id):
+    """Reuse the same fixed fictional offer action; no new award contract."""
+    school = require_aid_director_access(request.user, school_id=school_id)
+    if not _fictional_director_mode(school):
+        return HttpResponseNotFound()
+    return record_synthetic_staff_offer(
+        request, school_id, academic_year_id, application_id, student_id,
+    )

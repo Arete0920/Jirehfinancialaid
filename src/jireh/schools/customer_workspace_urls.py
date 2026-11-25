@@ -4,7 +4,7 @@ from django.urls import path
 from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import select_student
 from .customer_workspace import (
-    acceptance_only, workspace_case, workspace_director, workspace_family, workspace_home,
+    acceptance_only, workspace_case, workspace_case_offer, workspace_director, workspace_family, workspace_home,
 )
 from .workspace_questionnaire import workspace_questionnaire
 from .workspace_review import workspace_review
@@ -40,4 +40,6 @@ urlpatterns = [
     path(DIRECTOR, acceptance_only(workspace_director), name="jireh_workspace_director"),
     path(DIRECTOR + "cases/<uuid:application_id>/", acceptance_only(workspace_case),
          name="jireh_workspace_case"),
+    path(DIRECTOR + "cases/<uuid:application_id>/fictional-offer/<uuid:student_id>/",
+         acceptance_only(workspace_case_offer), name="jireh_workspace_case_offer"),
 ]
