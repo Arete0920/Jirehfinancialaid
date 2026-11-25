@@ -1556,3 +1556,18 @@ class SyntheticSchoolProvisioningReceipt(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Synthetic provisioning evidence cannot be deleted.")
+
+
+class FictionalContributorException(UUIDStampedModel):
+    """One pending contributor review marker for an authorized fictional draft."""
+
+    application = models.OneToOneField("financial_aid.AidApplication", on_delete=models.PROTECT)
+    requested_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Fictional contributor review requests are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Fictional contributor review requests are immutable.")

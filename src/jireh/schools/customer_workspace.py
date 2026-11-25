@@ -39,6 +39,7 @@ from .demo_director_summary import _summary
 from .demo_seed import DEMO_SCHOOL_A_CODE, DEMO_SCHOOL_B_CODE
 from .models import AcademicYear, HouseholdAccess, SchoolStaffAccess
 from .views import household_students
+from .workspace_contributor_exception import can_read_contributor_review, contributor_review_pending
 
 
 _TEST_MODULES = frozenset({
@@ -233,7 +234,10 @@ def workspace_case(request, school_id, academic_year_id, application_id):
             )
         except (CandidateAssessmentError, QuestionnaireValidationError, OSError, ValueError):
             return HttpResponse("Fictional director evidence unavailable.", status=503)
-    return _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal)
+    held = contributor_review_pending(application_id)
+    pending = held and can_read_contributor_review(request.user)
+    return _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal,
+                 contributor_review_pending=pending, fictional_offer_held=held)
 
 
 def _dollars(cents):
