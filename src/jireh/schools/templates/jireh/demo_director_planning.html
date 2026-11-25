@@ -49,6 +49,19 @@ dd{margin:0;text-align:right;font-variant-numeric:tabular-nums}
 <dt>Eligible cost before aid</dt><dd>{{ eligible_cost }}</dd>
 </dl>
 </section>
+<section aria-labelledby="regional-need">
+<h2 id="regional-need">Regional tuition need</h2>
+<p>The fictional household has two adults and two children in the Pittsburgh HUD area. The living allowance combines a two-bedroom housing benchmark with sample nonhousing expenses.</p>
+<dl>
+<dt>Monthly housing benchmark (<a href="{{ hud_source }}" rel="noreferrer">HUD FY {{ hud_year }}</a>)</dt><dd>{{ monthly_housing }}</dd>
+<dt>Annual living allowance</dt><dd>{{ living_allowance }}</dd>
+<dt>Income after the living allowance</dt><dd>{{ available_income }}</dd>
+<dt>Expected family contribution ({{ contribution_rate }} of available income)</dt><dd>{{ expected_contribution }}</dd>
+<dt>Tuition after the sibling discount</dt><dd>{{ net_tuition_before_aid }}</dd>
+<dt>Unmet tuition before any award</dt><dd>{{ unmet_tuition }}</dd>
+</dl>
+<p>Required fees are included in the family bill. The regional calculation covers tuition only and uses fictional contribution rules.</p>
+</section>
 <section aria-labelledby="proposal">
 <h2 id="proposal">Model a proposed award</h2>
 <p>Annual aid budget: {{ budget }}. This scenario starts with zero committed aid.</p>

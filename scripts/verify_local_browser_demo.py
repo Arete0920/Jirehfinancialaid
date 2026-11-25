@@ -226,6 +226,23 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             assert page.request.get(documents_url).status == 404
             assert page.request.get(review_url).status == 404
             assert page.request.get(corrected_read_url).status == 404
+
+            page.goto(BASE + "/local-demo/director-summary/")
+            page.get_by_role("link", name="Open fictional tuition and aid planning").click()
+            planning_url = page.url
+            region = page.get_by_role("region", name="Regional tuition need")
+            expect(region.get_by_role("link", name="HUD FY 2027")).to_be_visible()
+            expect(region.get_by_text("$13,959.00", exact=True)).to_be_visible()
+            page.get_by_label("Proposed award in dollars").fill("2500.00")
+            page.get_by_label("Aid category").select_option(label="Enrollment")
+            page.get_by_role("button", name="Project award").click()
+            expect(region.get_by_text("$13,959.00", exact=True)).to_be_visible()
+            expect(page.get_by_text("$22,325.00", exact=True)).to_be_visible()
+            expect(page.get_by_text("$247,500.00", exact=True)).to_be_visible()
+            page.screenshot(path=str(output / "director-regional-planning.png"), full_page=True)
+            page.get_by_role("link", name="Back to director workload").click()
+            expect(page.get_by_text("$0.00", exact=True)).to_be_visible()
+            page.goto(director_a_url)
             sign_out()
 
             sign_in("local-demo-director-b")
@@ -234,12 +251,14 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             assert page.request.get(director_a_url).status == 404
             assert page.request.get(case_url).status == 404
             assert page.request.get(corrected_read_url).status == 404
+            assert page.request.get(planning_url).status == 404
             sign_out()
 
             sign_in("local-demo-family")
             page.goto(family_url)
             expect(page.locator("#selected-count")).to_have_text("2 selected")
             assert page.request.get(director_a_url).status == 404
+            assert page.request.get(planning_url).status == 404
             page.goto(questionnaire_url)
             expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 3")
             expect(page.locator("#id_income-0-value")).to_have_value("765.43")
@@ -274,6 +293,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             context.close()
             browser.close()
         print("CUSTOMER WORKSPACE: sign-in, saved draft, financial correction, selected PDF upload, versioned readback/removal, director readback, cross-school denial and logout: PASS", flush=True)
+        print("DIRECTOR PLANNING: regional need, separate award projection, unchanged saved offers and scope denials: PASS", flush=True)
     finally:
         proc.terminate()
         try:

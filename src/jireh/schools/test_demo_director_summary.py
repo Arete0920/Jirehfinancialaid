@@ -166,6 +166,24 @@ class DirectorDatabaseTruthHTTPTests(TestCase):
             with self.assertRaises(Resolver404):
                 resolve(url)
 
+    def test_planning_explains_regional_need_independently_of_proposed_aid(self):
+        self.client.force_login(self.demo["director_a"])
+        url = "/local-demo/director-planning/"
+        for query in ({}, {"award": "2500.00", "category": "marketing"}):
+            with self.subTest(query=query):
+                page = self.client.get(url, query)
+                for value in ("Regional tuition need", "FY 2027", "Pittsburgh", "$1,389.00",
+                              "$20,268.00", "$23,825.00", "$9,866.00", "$13,959.00"):
+                    self.assertContains(page, value)
+                self.assertNotContains(page, "$14,959.00")
+
+    def test_planning_fails_closed_when_regional_allowance_pin_changes(self):
+        self.client.force_login(self.demo["director_a"])
+        with patch("jireh.financial_aid.fictional_planning_need._ALLOWANCE_SHA256", "0" * 64):
+            response = self.client.get("/local-demo/director-planning/")
+        self.assertEqual(response.status_code, 503)
+        self.assertEqual(response.json(), {"detail": "Regional need scenario unavailable."})
+
     def test_director_walkthrough_links_to_scoped_saved_summary(self):
         self.client.force_login(self.demo["director_a"])
         page = self.client.get("/local-demo/")
