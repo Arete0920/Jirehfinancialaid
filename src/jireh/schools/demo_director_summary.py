@@ -5,6 +5,8 @@ disbursement or payment view. Nothing here adds a financial questionnaire
 write path or exposes this URL in jireh.runtime.urls.
 """
 
+from decimal import Decimal
+import re
 import secrets
 
 from django.conf import settings
@@ -14,6 +16,10 @@ from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
+from jireh.financial_aid.annual_school_plan import (
+    AnnualSchoolPlanError, FICTIONAL_15145_PLAN, family_education_cost, project_fictional_award,
+)
+from jireh.financial_aid.buckets import AidBucket
 from jireh.financial_aid.models import (
     AidApplication,
     AidApplicationStudent,
@@ -30,6 +36,16 @@ from jireh.financial_aid.workload import (
 from jireh.schools.access import require_aid_director_access
 from jireh.schools.demo_seed import DEMO_SCHOOL_A_CODE, DEMO_SCHOOL_B_CODE
 from jireh.schools.models import AcademicYear, School, SchoolStaffAccess
+
+
+_PROPOSED_DOLLARS = re.compile(r"[0-9]{1,6}(?:\.[0-9]{1,2})?")
+_CATEGORY_LABELS = {
+    AidBucket.NEED: "Need",
+    AidBucket.MISSION: "Mission",
+    AidBucket.MARKETING: "Enrollment",
+    AidBucket.MERIT: "Merit",
+    AidBucket.HARDSHIP: "Hardship",
+}
 
 
 def _require_demo_director(user):
@@ -151,6 +167,19 @@ def _summary(school, year):
     }
 
 
+def _render_director_page(request, template, context, *, allow_planning_form=False):
+    nonce = secrets.token_urlsafe(16)
+    response = render(request, template, {**context, "csp_nonce": nonce})
+    form_action = "'self'" if allow_planning_form else "'none'"
+    response["Content-Security-Policy"] = (
+        f"default-src 'none'; style-src 'nonce-{nonce}'; "
+        f"form-action {form_action}; base-uri 'none'; frame-ancestors 'none'"
+    )
+    response["X-Frame-Options"] = "DENY"
+    response["X-Content-Type-Options"] = "nosniff"
+    return response
+
+
 @never_cache
 @require_GET
 def director_database_truth_demo(request):
@@ -167,18 +196,64 @@ def director_database_truth_demo(request):
     except WorkloadIntegrityError:
         return JsonResponse({"detail": "Director summary unavailable."}, status=503)
 
-    nonce = secrets.token_urlsafe(16)
-    response = render(request, "jireh/demo_director_summary.html", {
+    return _render_director_page(request, "jireh/demo_director_summary.html", {
         "school_name": school.name,
         "year_name": year.name,
         "facts": facts,
         "fictional_offer_dollars": f'{facts["fictional_offer_face_value_cents"] / 100:,.2f}',
-        "csp_nonce": nonce,
+        "has_planning_scenario": school.code == DEMO_SCHOOL_A_CODE,
     })
-    response["Content-Security-Policy"] = (
-        f"default-src 'none'; style-src 'nonce-{nonce}'; "
-        "form-action 'none'; base-uri 'none'; frame-ancestors 'none'"
-    )
-    response["X-Frame-Options"] = "DENY"
-    response["X-Content-Type-Options"] = "nosniff"
-    return response
+
+
+def _money(cents):
+    return f"${Decimal(cents) / 100:,.2f}"
+
+
+@never_cache
+@require_GET
+def director_annual_planning_demo(request):
+    """Project a fictional one-family proposal in the school-scoped demo."""
+    try:
+        school, year = _require_demo_director(request.user)
+        if school.code != DEMO_SCHOOL_A_CODE:
+            raise Http404("Planning scenario unavailable.")
+    except PermissionDenied:
+        return JsonResponse({"detail": "Forbidden."}, status=403)
+    except Http404:
+        return JsonResponse({"detail": "Not found."}, status=404)
+
+    award = request.GET.get("award", "0.00")
+    category = request.GET.get("category", AidBucket.NEED.value)
+    if (
+        (request.GET and (set(request.GET) != {"award", "category"}
+                          or any(len(request.GET.getlist(key)) != 1 for key in request.GET)))
+        or _PROPOSED_DOLLARS.fullmatch(award) is None
+        or category not in _CATEGORY_LABELS
+    ):
+        return JsonResponse({"detail": "Invalid planning proposal."}, status=400)
+
+    plan = FICTIONAL_15145_PLAN
+    cost = family_education_cost(plan, ("elementary", "middle"))
+    proposal = int(Decimal(award) * 100)
+    try:
+        projection = project_fictional_award(plan, cost, committed_aid_cents=0, proposed_aid_cents=proposal)
+    except AnnualSchoolPlanError:
+        return JsonResponse({"detail": "Proposed aid exceeds the household cost or available budget."}, status=400)
+
+    return _render_director_page(request, "jireh/demo_director_planning.html", {
+        "school_name": school.name, "year_name": year.name, "plan": plan,
+        "grade_bands": [(band, _money(band.tuition_cents)) for band in plan.grade_bands],
+        "average_tuition": _money(plan.average_tuition_cents),
+        "budget": _money(plan.annual_aid_budget_cents),
+        "sticker_tuition": _money(cost.sticker_tuition_cents),
+        "discount": _money(cost.discount_cents),
+        "fees": _money(cost.required_fees_cents),
+        "eligible_cost": _money(cost.eligible_cost_cents),
+        "categories": _CATEGORY_LABELS.items(),
+        "selected_category": category,
+        "category_label": _CATEGORY_LABELS[category],
+        "award": award,
+        "net_tuition": _money(projection.net_tuition_after_aid_cents),
+        "household_balance": _money(projection.household_balance_cents),
+        "remaining_budget": _money(projection.remaining_aid_budget_cents),
+    }, allow_planning_form=True)

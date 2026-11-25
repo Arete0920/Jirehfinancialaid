@@ -135,6 +135,37 @@ class DirectorDatabaseTruthHTTPTests(TestCase):
             with self.assertRaises(Resolver404):
                 resolve(self.url())
 
+    def test_planning_page_projects_without_writing_and_stays_within_school_scope(self):
+        url = "/local-demo/director-planning/"
+        self.assertEqual(self.client.get(url).status_code, 403)
+        for actor in ("parent", "director_b"):
+            self.client.force_login(self.demo[actor])
+            self.assertEqual(self.client.get(url).status_code, 404)
+        self.client.force_login(self.demo["director_a"])
+        self.assertContains(self.client.get(self.url()), f'href="{url}"')
+        with CaptureQueriesContext(connection) as sql:
+            page = self.client.get(url, {"award": "2500.00", "category": "marketing"})
+        self.assertTrue(all(q["sql"].lstrip().upper().startswith("SELECT") for q in sql))
+        self.assertIn("no-store", page["Cache-Control"])
+        for value in ("15145", "65 open seats", "$24,825.00", "$21,325.00", "$247,500.00",
+                      "Enrollment", "Fictional planning scenario"):
+            self.assertContains(page, value)
+        self.assertFalse(SyntheticAidOffer.objects.exists())
+
+    def test_planning_page_rejects_invalid_proposals_and_is_absent_from_runtime(self):
+        self.client.force_login(self.demo["director_a"])
+        url = "/local-demo/director-planning/"
+        for query in ("?award=-1", "?award=3.001", "?award=999999.00&category=need",
+                      "?award=1&award=2&category=need", "?award=1&category=unknown", "?school_id=2"):
+            with self.subTest(query=query):
+                self.assertEqual(self.client.get(url + query).status_code, 400)
+        self.assertEqual(self.client.post(url).status_code, 405)
+        with override_settings(JIREH_SYNTHETIC_SUBMISSION_ONLY=False):
+            self.assertEqual(self.client.get(url).status_code, 403)
+        with override_settings(ROOT_URLCONF="jireh.runtime.urls"):
+            with self.assertRaises(Resolver404):
+                resolve(url)
+
     def test_director_walkthrough_links_to_scoped_saved_summary(self):
         self.client.force_login(self.demo["director_a"])
         page = self.client.get("/local-demo/")
