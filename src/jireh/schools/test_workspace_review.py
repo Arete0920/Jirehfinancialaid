@@ -3,6 +3,7 @@ import json
 import secrets
 from pathlib import Path
 from unittest import skipUnless
+from unittest.mock import patch
 from urllib.parse import urlencode
 from uuid import uuid4
 
@@ -11,10 +12,12 @@ from django.test import Client, TestCase, override_settings
 from django.test.client import MULTIPART_CONTENT
 from django.urls import reverse
 
+from jireh.financial_aid import fictional_school_questions
 from jireh.financial_aid.document_lifecycle import create_synthetic_document, delete_synthetic_document
 from jireh.financial_aid.models import (
     AidApplication, SyntheticAidSubmission, SyntheticApplicationReview,
 )
+from jireh.financial_aid.questionnaire_validation import QuestionnaireValidationError
 from jireh.financial_aid.services import get_or_create_annual_draft, select_student_for_draft
 from jireh.financial_aid.synthetic_application_review import read_fictional_application_review
 from jireh.financial_aid.synthetic_document_views import _ALLOWED_FIXTURES, _POLICY, _backend
@@ -120,6 +123,34 @@ class WorkspaceReviewTests(TestCase):
         )
         self.assertContains(response, "Explicit fictional review required.", status_code=400)
         self.assertFalse(SyntheticApplicationReview.objects.exists())
+
+    def test_historical_school_answer_readback_and_question_only_invalidation(self):
+        self.prepare()
+        fixtures = fictional_school_questions._FIXTURES
+        with patch.object(fictional_school_questions, "_FIXTURES", fixtures[:-1]):
+            definitions = fictional_school_questions.school_questions_for_draft(self.draft, []).definitions
+            worksheet = next(item for item in definitions if item.question_key == "example-worksheet")
+            record = {"definition_id": str(worksheet.definition_id), "definition_version": "v1",
+                      "answer": "Worksheet A"}
+            self.answers["school_questions"] = [record]
+            self.assertEqual(self.save(1), 2)
+        digest = self.state()["digest"]
+        self.assertEqual(self.confirm(digest).status_code, 302)
+        self.assertContains(self.client.get(self.url, secure=True), "Worksheet A · v1")
+        self.answers["school_questions"] = [{**record, "definition_version": "v2"}]
+        with self.assertRaisesRegex(QuestionnaireValidationError, "^school_question_binding_invalid$"):
+            self.save(2)
+        self.answers["school_questions"] = [{**record, "definition_id": str(uuid4())}]
+        with self.assertRaisesRegex(QuestionnaireValidationError, "^school_question_binding_invalid$"):
+            self.save(2)
+        self.assertEqual(self.state()["digest"], digest)
+        self.answers["school_questions"] = [{**record, "answer": "Worksheet B"}]
+        self.assertEqual(self.save(2), 3)
+        self.assertEqual(self.confirm(digest).status_code, 409)
+        self.assertContains(self.client.get(self.url, secure=True), "Worksheet B · v1")
+        self.assertIsNone(self.state()["confirmation"])
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
 
     def test_incomplete_explicit_confirmation_and_stale_digest(self):
         self.assertContains(self.client.get(self.url, secure=True), "Incomplete rehearsal")

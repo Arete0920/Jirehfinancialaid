@@ -1,6 +1,7 @@
 """Acceptance for household-scoped fictional questionnaire contributors."""
 import json
 import secrets
+from datetime import date
 from pathlib import Path
 from urllib.parse import urlencode
 from uuid import uuid5
@@ -14,9 +15,9 @@ from jireh.financial_aid.services import get_or_create_annual_draft
 from jireh.financial_aid.synthetic_questionnaire_storage import (
     FictionalQuestionnairePolicy, read_fictional_questionnaire, save_fictional_questionnaire,
 )
-from .demo_seed import seed_synthetic_browser_demo
+from .demo_seed import DEMO_SCHOOL_B_CODE, seed_synthetic_browser_demo
 from .grant_admin import revoke_household_access
-from .models import Household, HouseholdAccess, Student
+from .models import AcademicYear, Household, HouseholdAccess, School, Student
 from .services import link_student_to_household
 
 
@@ -63,7 +64,7 @@ class WorkspaceQuestionnaireContributorTests(TestCase):
         self.assertIn("member", fields)
         return [value for value, _ in fields["member"].choices]
 
-    def _post(self, member, revision=0, previous_rows=0, *, csrf=True, balances=False):
+    def _post(self, member, revision=0, previous_rows=0, *, csrf=True, balances=False, school_fields=None):
         payload = {"revision": revision}
         for section in ("income", "assets", "liabilities", "expenses"):
             payload[f"{section}-TOTAL_FORMS"] = int(section == "income")
@@ -82,10 +83,12 @@ class WorkspaceQuestionnaireContributorTests(TestCase):
                     f"{section}-0-as_of_date": "2026-06-30",
                     f"{section}-0-member": member,
                 })
+        if school_fields:
+            payload.update(school_fields)
         headers = {"HTTP_ORIGIN": "https://testserver"}
         if csrf:
             headers["HTTP_X_CSRFTOKEN"] = self.client.cookies["csrftoken"].value
-        return self.client.post(self.url, urlencode(payload),
+        return self.client.post(self.url, urlencode(payload, doseq=True),
                                 content_type="application/x-www-form-urlencoded", secure=True, **headers)
 
     def _read(self):
@@ -150,4 +153,69 @@ class WorkspaceQuestionnaireContributorTests(TestCase):
                                 household_id=self.ids["household_id"], subject_user_id=self.parent.pk)
         self.assertEqual(self.client.get(self.url, secure=True).status_code, 404)
         self.assertEqual(self._post(secondary).status_code, 404)
+        self.assertFalse(SyntheticQuestionnaireDraft.objects.exists())
+
+    def test_optional_school_questions_save_typed_values_and_reject_untrusted_input(self):
+        page = self.client.get(self.url, secure=True)
+        self.assertContains(page, "Include the example checklist?")
+        self.assertContains(page, "Worksheet C")
+        primary = self._choices(page)[0]
+        fields = {
+            "school-question-example-checklist": "no",
+            "school-question-example-checklist-version": "v1",
+            "school-question-example-worksheet": "Worksheet C",
+            "school-question-example-worksheet-version": "v2",
+        }
+        for invalid in (
+            {"school-question-example-checklist": ["yes", "no"]},
+            {"school-question-example-worksheet-version": "v1"},
+            {"school-question-example-worksheet-version": " v2 "},
+            {"school-question-unknown": "untrusted"},
+            {"school-definition-id": "untrusted"},
+            {"school_questions": "untrusted"},
+            {"school-question-example-worksheet": "Worksheet A"},
+            {"revision": ["4", "0"]},
+        ):
+            with self.subTest(invalid=invalid):
+                self.assertEqual(self._post(primary, school_fields=fields | invalid).status_code, 400)
+        self.assertEqual(self._read(), (0, {}))
+        self.assertEqual(self._post(primary, school_fields=fields).status_code, 302)
+        revision, saved = self._read()
+        self.assertEqual(revision, 1)
+        self.assertEqual([row["answer"] for row in saved["school_questions"]], [False, "Worksheet C"])
+        self.assertNotIn(b"Worksheet C", bytes(SyntheticQuestionnaireDraft.objects.get().ciphertext))
+        self.assertEqual(self._post(primary, school_fields=fields | {
+            "school-question-example-checklist": "yes",
+        }).status_code, 409)
+        self.assertEqual(self._read(), (revision, saved))
+        self.assertEqual(self._post(primary, revision=1, previous_rows=1).status_code, 302)
+        self.assertEqual(self._read()[1]["school_questions"], saved["school_questions"])
+        other = Client()
+        other.force_login(self.other_parent)
+        other_url = reverse("jireh_workspace_questionnaire", kwargs=self.ids)
+        self.assertEqual(other.get(other_url, secure=True).status_code, 404)
+
+    def test_authorized_other_school_and_year_cannot_post_the_demo_questions(self):
+        year = AcademicYear.objects.create(
+            school_id=self.ids["school_id"], name="2027-28",
+            start_date=date(2027, 8, 1), end_date=date(2028, 6, 30),
+        )
+        school = School.objects.get(code=DEMO_SCHOOL_B_CODE)
+        household = Household.objects.get(school=school)
+        HouseholdAccess.objects.create(household=household, user=self.parent)
+        scopes = (
+            dict(self.ids, academic_year_id=year.pk),
+            dict(school_id=school.pk, household_id=household.pk,
+                 academic_year_id=AcademicYear.objects.get(school=school).pk),
+        )
+        for scope in scopes:
+            with self.subTest(scope=scope):
+                get_or_create_annual_draft(user=self.parent, **scope)
+                self.url = reverse("jireh_workspace_questionnaire", kwargs=scope)
+                page = self.client.get(self.url, secure=True)
+                self.assertNotContains(page, "Include the example checklist?", status_code=200)
+                self.assertEqual(self._post(self._choices(page)[0], school_fields={
+                    "school-question-example-checklist": "yes",
+                    "school-question-example-checklist-version": "v1",
+                }).status_code, 400)
         self.assertFalse(SyntheticQuestionnaireDraft.objects.exists())
