@@ -1213,9 +1213,13 @@ class OperatorWebAuthnActionIntent(UUIDStampedModel):
 
     ACTION_DIRECTOR_PROPOSE = "DIRECTOR_PROPOSE"
     ACTION_DIRECTOR_APPROVE = "DIRECTOR_APPROVE"
+    ACTION_SETUP_PROPOSE = "SCHOOL_SETUP_PROPOSE"
+    ACTION_SETUP_APPROVE = "SCHOOL_SETUP_APPROVE"
     ACTION_CHOICES = (
         (ACTION_DIRECTOR_PROPOSE, "Director proposal"),
         (ACTION_DIRECTOR_APPROVE, "Director approval"),
+        (ACTION_SETUP_PROPOSE, "School setup proposal"),
+        (ACTION_SETUP_APPROVE, "School setup approval"),
     )
 
     operator = models.ForeignKey(
