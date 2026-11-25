@@ -181,6 +181,34 @@ class SavedNeedWorkspaceTests(TestCase):
             self.assertNotContains(self.get_case(), "Record fictional income evidence")
             self.assertEqual(post({**data, "questionnaire_revision": "2"}).status_code, 403)
 
+    def test_fictional_enrollment_preview_is_independent_of_need_and_plan_revision_bound(self):
+        from dataclasses import replace
+
+        from jireh.financial_aid.annual_school_plan import FICTIONAL_15145_PLAN
+        from jireh.financial_aid.models import FictionalNeedDecision
+        from jireh.financial_aid.school_plan_revisions import record_fictional_school_plan
+
+        self.assertNotContains(self.get_case(), 'id="enrollment-preview-maximum"')
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
+            page = self.get_case()
+            self.assertContains(page, 'id="assessment-need-state">Evidence unavailable</td>')
+            self.assertContains(page, 'id="enrollment-preview-maximum">$1,000.00</strong>')
+            self.assertContains(page, "22 elementary seats")
+            self.assertContains(page, "$15,000.00")
+            self.assertContains(page, "Combined recommendation unavailable")
+            self.assertEqual(self.get_case("parent").status_code, 404)
+            self.assertEqual(self.get_case("director_b").status_code, 404)
+            self.assertFalse(FictionalNeedDecision.objects.exists())
+            self.assertFalse(SyntheticAidOffer.objects.exists())
+            record_fictional_school_plan(
+                user=self.demo["director_a"], school_id=self.fixture.school_id,
+                academic_year_id=self.fixture.academic_year_id,
+                plan=replace(FICTIONAL_15145_PLAN, annual_aid_budget_cents=25_100_000),
+            )
+            changed = self.get_case()
+            self.assertContains(changed, "Refresh the fictional enrollment scenario for the current school plan.")
+            self.assertNotContains(changed, 'id="enrollment-preview-maximum"')
+
     def test_context_is_explicit_and_contributor_hold_prevents_calculation(self):
         from unittest.mock import patch
 

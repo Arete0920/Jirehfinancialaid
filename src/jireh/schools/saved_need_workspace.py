@@ -30,6 +30,7 @@ class SavedNeedFixture:
     academic_year_id: UUID
     household_id: UUID
     grades: tuple[tuple[UUID, str], ...]
+    enrollment_plan_id: UUID
 
 
 def configure_saved_need_fixture(demo):
@@ -38,7 +39,7 @@ def configure_saved_need_fixture(demo):
     if (getattr(settings, "JIREH_CUSTOMER_WORKSPACE_ACCEPTANCE", False) is not True
             or demo["school_a"].code != DEMO_SCHOOL_A_CODE):
         raise PermissionDenied("Fictional saved need unavailable.")
-    record_fictional_school_plan(
+    enrollment_plan = record_fictional_school_plan(
         user=demo["director_a"], school_id=demo["school_a"].pk,
         academic_year_id=demo["year_a"].pk, plan=FICTIONAL_15145_PLAN,
     )
@@ -50,6 +51,7 @@ def configure_saved_need_fixture(demo):
     return SavedNeedFixture(
         demo["school_a"].pk, demo["year_a"].pk, demo["household_a"].pk,
         ((demo["student_a1"].pk, "elementary"), (demo["student_a2"].pk, "middle")),
+        enrollment_plan.pk,
     )
 
 
