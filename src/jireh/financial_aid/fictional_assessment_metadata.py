@@ -10,7 +10,11 @@ from jireh.schools.access import require_aid_director_access
 from jireh.schools.demo_seed import DEMO_SCHOOL_A_CODE
 from jireh.schools.models import SchoolStaffAccess
 
-from .models import AidApplication, AidApplicationStudent, FinancialDocument
+from .models import (
+    AidApplication, AidApplicationStudent, FinancialDocument,
+    SyntheticApplicationReview, SyntheticAidSubmission,
+    SYNTHETIC_DISCLOSURE_VERSION, SYNTHETIC_REVIEW_VERSION,
+)
 from .synthetic_questionnaire_preview import require_synthetic_questionnaire_preview
 
 
@@ -25,6 +29,9 @@ class FictionalAssessmentMetadata:
     has_selected_student: bool
     has_active_document_metadata: bool
     has_pending_document_removal: bool
+    has_historical_confirmation: bool
+    has_confirmation_at_saved_revision: bool
+    has_fictional_receipt: bool
 
 
 def read_fictional_assessment_metadata(*, user, school_id, academic_year_id, application_id):
@@ -37,6 +44,14 @@ def read_fictional_assessment_metadata(*, user, school_id, academic_year_id, app
     students = AidApplicationStudent.objects.for_school(school.pk).filter(
         application_id=OuterRef("pk"),
         household_student__household_id=OuterRef("household_id"),
+    )
+    reviews = SyntheticApplicationReview.objects.filter(
+        questionnaire__application_id=OuterRef("pk"),
+        disclosure_version=SYNTHETIC_REVIEW_VERSION,
+    )
+    receipts = SyntheticAidSubmission.objects.filter(
+        application_id=OuterRef("pk"), accuracy_attested=True,
+        consent_version=SYNTHETIC_DISCLOSURE_VERSION,
     )
     # Recheck the current grant and scope in the same statement as the metadata
     # read. A revocation between the preliminary check and this read must deny.
@@ -57,6 +72,11 @@ def read_fictional_assessment_metadata(*, user, school_id, academic_year_id, app
         has_selected_student=Exists(students),
         has_active_document_metadata=Exists(documents.filter(state=FinancialDocument.STATE_ACTIVE)),
         has_pending_document_removal=Exists(documents.filter(state=FinancialDocument.STATE_DELETE_PENDING)),
+        has_historical_confirmation=Exists(reviews),
+        has_confirmation_at_saved_revision=Exists(reviews.filter(
+            questionnaire_revision=F("questionnaire__revision"),
+        )),
+        has_fictional_receipt=Exists(receipts),
     ).first()
     if values is None:
         raise Http404("Fictional assessment metadata unavailable.")

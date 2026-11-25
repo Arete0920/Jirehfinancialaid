@@ -10,8 +10,9 @@ from django.urls import reverse
 
 from jireh.financial_aid.models import (
     AidApplication, AidApplicationStudent, SyntheticQuestionnaireDraft,
-    SyntheticQuestionnaireEvent,
+    SyntheticQuestionnaireEvent, SyntheticAidOffer, SyntheticAidSubmission,
 )
+from jireh.financial_aid.synthetic_submission import record_synthetic_demo_submission
 from jireh.schools.demo_seed import DEMO_PASSWORD, seed_synthetic_browser_demo
 from jireh.schools.grant_admin import revoke_household_access
 from jireh.schools.models import Household, HouseholdAccess, Student
@@ -280,3 +281,61 @@ class CustomerWorkspaceTests(TestCase):
         self.assertEqual(self._questionnaire_post(family, data).status_code, 404)
         self.assertEqual(SyntheticQuestionnaireDraft.objects.get().revision, 1)
         self.assertEqual(SyntheticQuestionnaireEvent.objects.count(), 1)
+
+
+    def test_director_case_uses_saved_evidence_and_existing_fictional_offer_workflow(self):
+        family, member = self._start_questionnaire()
+        self.assertEqual(self._questionnaire_post(
+            family, self._questionnaire_payload(member=member),
+        ).status_code, 302)
+        self._get(family, "jireh_workspace_family", *self.scope)
+        self.assertEqual(self._post(family, "jireh_workspace_select", *self.scope, self.child.pk).status_code, 200)
+        app = AidApplication.objects.get(household_id=self.scope[1])
+        case_scope = (self.scope[0], self.scope[2], app.pk)
+        director = self._client("director_a")
+        case = self._get(director, "jireh_workspace_case", *case_scope)
+        self.assertContains(case, "Saved questionnaire revision: 1")
+        self.assertContains(case, "No saved confirmation")
+        self.assertContains(case, "No fictional receipt recorded")
+        self.assertContains(case, "Example total: $92.00")
+        self.assertNotContains(case, "1234.56")
+        self.assertNotContains(case, "Record fictional $250 need offer")
+        url = reverse("jireh_workspace_case_offer", args=(*case_scope, self.child.pk))
+        headers = {
+            "HTTP_X_CSRFTOKEN": director.cookies["csrftoken"].value,
+            "HTTP_REFERER": "https://testserver/workspace/",
+        }
+        self.assertEqual(director.post(
+            url, data=b"", content_type="application/octet-stream", secure=True, **headers,
+        ).status_code, 409)
+        record_synthetic_demo_submission(
+            user=self.fixture["parent"], school_id=self.scope[0],
+            household_id=self.scope[1], academic_year_id=self.scope[2],
+            accuracy_attested=True,
+        )
+        self.assertContains(self._get(director, "jireh_workspace_case", *case_scope),
+                            "Record fictional $250 need offer")
+        self.assertEqual(director.post(url, secure=True, data=b"",
+                         content_type="application/octet-stream").status_code, 403)
+        for _ in range(2):
+            response = director.post(url, data=b"", content_type="application/octet-stream",
+                                     secure=True, **headers)
+            self.assertEqual(response.status_code, 200)
+        self.assertEqual(SyntheticAidSubmission.objects.count(), 1)
+        self.assertEqual(SyntheticAidOffer.objects.count(), 1)
+        saved = self._get(director, "jireh_workspace_case", *case_scope)
+        self.assertContains(saved, "Saved fictional need offer: $250.00")
+        self.assertNotContains(saved, "Record fictional $250 need offer")
+        report = self._get(director, "jireh_workspace_director", self.scope[0], self.scope[2])
+        self.assertContains(report, 'id="fictional-receipt-total">1</strong>')
+        self.assertContains(report, 'id="fictional-offer-total">1</strong>')
+        self.assertContains(report, 'id="fictional-offer-value">$250.00</strong>')
+        for role in ("parent", "director_b", "operator"):
+            self.assertEqual(self._get(self._client(role), "jireh_workspace_case", *case_scope).status_code, 404)
+        with override_settings(JIREH_SYNTHETIC_SUBMISSION_ONLY=False):
+            disabled = self._get(director, "jireh_workspace_case", *case_scope)
+            self.assertNotContains(disabled, "Fictional decisions")
+            self.assertEqual(director.post(url, data=b"", content_type="application/octet-stream",
+                                         secure=True, **headers).status_code, 404)
+        app.refresh_from_db()
+        self.assertEqual(app.status, AidApplication.STATUS_DRAFT)

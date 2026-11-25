@@ -214,6 +214,13 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             page.get_by_role("link", name="Open case").click()
             case_url = page.url
             expect(page.locator("#case-child-count")).to_have_text("2")
+            expect(page.locator("#director-evidence-revision")).to_have_text("Saved questionnaire revision: 3")
+            expect(page.locator("#director-document-status")).to_have_text("Supporting document metadata present")
+            expect(page.locator("#director-review-history")).to_have_text("Historical confirmation at saved revision")
+            expect(page.locator("#director-example-total")).to_have_text("Example total: $92.00")
+            expect(page.locator("#director-receipt-status")).to_have_text("No fictional receipt recorded")
+            expect(page.get_by_role("button", name="Record fictional $250 need offer")).to_have_count(0)
+            page.screenshot(path=str(output / "customer-workspace-director-case.png"), full_page=True)
             assert page.request.get(family_url).status == 404
             assert page.request.get(questionnaire_url).status == 404
             assert page.request.get(documents_url).status == 404
