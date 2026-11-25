@@ -174,6 +174,18 @@ class WorkspaceReviewTests(TestCase):
         self.client.force_login(self.fixture["director_b"])
         self.assertEqual(self.client.get(case_url, secure=True).status_code, 404)
 
+        other_household = self.fixture["household_b"]
+        HouseholdAccess.objects.create(household=other_household, user=self.scope["user"])
+        other_draft = get_or_create_annual_draft(user=self.scope["user"], school_id=other_household.school_id,
+            household_id=other_household.pk, academic_year_id=self.fixture["year_b"].pk)
+        FictionalContributorException.objects.create(application=other_draft, requested_by=self.scope["user"])
+        other_reviewer = self.fixture["director_b"]
+        other_reviewer.user_permissions.add(Permission.objects.get(content_type__app_label="schools",
+            codename="view_fictionalcontributorexception"))
+        self.assertContains(self.client.get(reverse("jireh_workspace_case", kwargs={"school_id": other_draft.school_id,
+            "academic_year_id": other_draft.academic_year_id, "application_id": other_draft.pk}), secure=True),
+            "Additional review is pending.")
+
     @skipUnless(connection.vendor == "postgresql", "PostgreSQL trigger evidence")
     def test_postgresql_contributor_review_marker_rejects_wrong_actor_and_rewrites(self):
         from .models import FictionalContributorException

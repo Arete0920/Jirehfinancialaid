@@ -234,7 +234,7 @@ def workspace_case(request, school_id, academic_year_id, application_id):
             )
         except (CandidateAssessmentError, QuestionnaireValidationError, OSError, ValueError):
             return HttpResponse("Fictional director evidence unavailable.", status=503)
-    held = rehearsal is not None and contributor_review_pending(application_id)
+    held = contributor_review_pending(application_id)
     pending = held and can_read_contributor_review(request.user)
     return _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal,
                  contributor_review_pending=pending, fictional_offer_held=held)
