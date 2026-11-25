@@ -37,7 +37,7 @@ from jireh.financial_aid.workload import WorkloadIntegrityError
 from .access import require_aid_director_access, require_household_access
 from .demo_director_summary import _summary
 from .demo_seed import DEMO_SCHOOL_A_CODE, DEMO_SCHOOL_B_CODE
-from .models import AcademicYear, HouseholdAccess, SchoolStaffAccess
+from .models import AcademicYear, FictionalContributorDecision, HouseholdAccess, SchoolStaffAccess
 from .views import household_students
 from .workspace_contributor_exception import can_read_contributor_review, contributor_review_pending
 
@@ -235,9 +235,16 @@ def workspace_case(request, school_id, academic_year_id, application_id):
         except (CandidateAssessmentError, QuestionnaireValidationError, OSError, ValueError):
             return HttpResponse("Fictional director evidence unavailable.", status=503)
     held = contributor_review_pending(application_id)
-    pending = held and can_read_contributor_review(request.user)
-    return _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal,
-                 contributor_review_pending=pending, fictional_offer_held=held)
+    can_review = can_read_contributor_review(request.user)
+    contributor_decision = None
+    if can_review and not held:
+        contributor_decision = FictionalContributorDecision.objects.filter(marker__application_id=application_id).first()
+    response = _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal,
+                     contributor_review_pending=held and can_review, fictional_offer_held=held,
+                     contributor_decision=contributor_decision)
+    if held and can_review:
+        response["Referrer-Policy"] = "same-origin"
+    return response
 
 
 def _dollars(cents):

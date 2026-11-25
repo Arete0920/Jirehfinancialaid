@@ -1571,3 +1571,29 @@ class FictionalContributorException(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Fictional contributor review requests are immutable.")
+
+
+class FictionalContributorDecision(UUIDStampedModel):
+    """Immutable school director disposition for one fictional contributor hold."""
+
+    class Outcome(models.TextChoices):
+        ALTERNATE_EVIDENCE = "alternate_evidence_accepted", "Alternate evidence accepted"
+        CONTRIBUTOR_EXCEPTION = "contributor_exception_approved", "Contributor exception approved"
+
+    marker = models.OneToOneField(FictionalContributorException, on_delete=models.PROTECT, related_name="resolution")
+    decided_by = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
+    outcome = models.CharField(max_length=40, choices=Outcome)
+
+    class Meta:
+        constraints = [models.CheckConstraint(
+            condition=Q(outcome__in=("alternate_evidence_accepted", "contributor_exception_approved")),
+            name="jireh_contributor_decision_outcome",
+        )]
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Fictional contributor decisions are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Fictional contributor decisions are immutable.")

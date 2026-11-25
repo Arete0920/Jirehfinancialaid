@@ -8,7 +8,7 @@ from .customer_workspace import (
 )
 from .workspace_questionnaire import workspace_questionnaire
 from .workspace_review import workspace_review
-from .workspace_contributor_exception import workspace_contributor_exception
+from .workspace_contributor_exception import workspace_contributor_decision, workspace_contributor_exception
 from .workspace_documents import (
     workspace_documents, workspace_document_sample, workspace_document_upload,
     workspace_document_read, workspace_document_remove,
@@ -43,6 +43,8 @@ urlpatterns = [
     path(DIRECTOR, acceptance_only(workspace_director), name="jireh_workspace_director"),
     path(DIRECTOR + "cases/<uuid:application_id>/", acceptance_only(workspace_case),
          name="jireh_workspace_case"),
+    path(DIRECTOR + "cases/<uuid:application_id>/contributor-decision/",
+         acceptance_only(workspace_contributor_decision), name="jireh_workspace_contributor_decision"),
     path(DIRECTOR + "cases/<uuid:application_id>/fictional-offer/<uuid:student_id>/",
          acceptance_only(workspace_case_offer), name="jireh_workspace_case_offer"),
 ]
