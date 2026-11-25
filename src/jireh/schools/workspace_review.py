@@ -1,14 +1,22 @@
 """Disposable family review page using saved, independently scoped records."""
+import hmac
+
 from django.conf import settings
-from django.http import HttpResponse
+from django.core.exceptions import ValidationError
+from django.db import transaction
+from django.http import Http404, HttpResponse
 from django.shortcuts import redirect
 from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
-from django.views.decorators.http import require_http_methods
+from django.views.decorators.http import require_POST, require_http_methods
 
 from jireh.financial_aid.document_lifecycle import DocumentLifecycleError
 from jireh.financial_aid.questionnaire_validation import QuestionnaireValidationError
 from jireh.financial_aid.synthetic_document_views import PrivateDocumentStorageError
+from jireh.financial_aid.models import SyntheticAidSubmission
+from jireh.financial_aid.synthetic_submission import record_synthetic_demo_submission
 from .customer_workspace import _page
+from .fictional_need_decisions import fixture_matches
+from .workspace_contributor_exception import contributor_review_pending
 
 
 @ensure_csrf_cookie
@@ -53,8 +61,52 @@ def workspace_review(request, school_id, household_id, academic_year_id):
     except (QuestionnaireValidationError, DocumentLifecycleError, PrivateDocumentStorageError, OSError):
         return HttpResponse("Fictional review unavailable.", status=503)
     draft = state["draft"]
+    rehearsal_receipt = None
+    if fixture_matches(school_id, academic_year_id, household_id):
+        rehearsal_receipt = {
+            "recorded": SyntheticAidSubmission.objects.filter(application=draft).exists(),
+            "available": bool(state["confirmation"]) and not state["reasons"]
+                         and not contributor_review_pending(draft.pk),
+        }
     response = _page(request, "review", household=draft.household,
                      year=draft.academic_year, review=state,
-                     submission_preflight=preflight)
+                     submission_preflight=preflight, rehearsal_receipt=rehearsal_receipt)
     response["Referrer-Policy"] = "same-origin"
     return response
+
+
+@require_POST
+@csrf_protect
+@transaction.atomic
+def workspace_rehearsal_receipt(request, school_id, household_id, academic_year_id):
+    """Explicit fictional milestone only, never final paid submission or consent."""
+    if not fixture_matches(school_id, academic_year_id, household_id):
+        raise Http404("Fictional receipt unavailable.")
+    if (request.GET or request.content_type != "application/x-www-form-urlencoded"
+            or set(request.POST) - {"csrfmiddlewaretoken", "state_digest", "attested"}
+            or request.POST.getlist("attested") != ["yes"]
+            or len(request.POST.getlist("state_digest")) != 1):
+        return HttpResponse("Explicit fictional receipt confirmation required.", status=400)
+    try:
+        from jireh.financial_aid.synthetic_application_review import (
+            FictionalReviewError, read_fictional_application_review,
+        )
+    except ImportError:
+        return HttpResponse("Fictional receipt unavailable.", status=503)
+    try:
+        state = read_fictional_application_review(
+            user=request.user, school_id=school_id, household_id=household_id,
+            academic_year_id=academic_year_id,
+            key=getattr(settings, "JIREH_SYNTHETIC_QUESTIONNAIRE_KEY", None),
+        )
+        if (state["reasons"] or not state["confirmation"]
+                or not hmac.compare_digest(state["digest"], request.POST["state_digest"])):
+            return HttpResponse("Current fictional review required.", status=409)
+        record_synthetic_demo_submission(
+            user=request.user, school_id=school_id, household_id=household_id,
+            academic_year_id=academic_year_id, accuracy_attested=True,
+        )
+    except (FictionalReviewError, ValidationError, QuestionnaireValidationError,
+            DocumentLifecycleError, PrivateDocumentStorageError, OSError, TypeError):
+        return HttpResponse("Fictional receipt unavailable.", status=409)
+    return redirect("jireh_workspace_review", school_id, household_id, academic_year_id)

@@ -6,6 +6,7 @@ from pathlib import Path
 from uuid import UUID
 
 from django.conf import settings
+from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
@@ -41,6 +42,11 @@ def configure_saved_need_fixture(demo):
         user=demo["director_a"], school_id=demo["school_a"].pk,
         academic_year_id=demo["year_a"].pk, plan=FICTIONAL_15145_PLAN,
     )
+    # Only the explicitly seeded director receives separate rehearsal authority.
+    demo["director_a"].user_permissions.add(Permission.objects.get(
+        content_type__app_label="financial_aid", content_type__model="fictionalneeddecision",
+        codename="add_fictionalneeddecision",
+    ))
     return SavedNeedFixture(
         demo["school_a"].pk, demo["year_a"].pk, demo["household_a"].pk,
         ((demo["student_a1"].pk, "elementary"), (demo["student_a2"].pk, "middle")),
@@ -115,8 +121,12 @@ def read_saved_need_preview(
     # decrypted documents, credentials or school-authorized decisions.
     return {
         "status": "available",
+        "questionnaire_id": result.questionnaire_id,
         "questionnaire_revision": result.questionnaire_revision,
+        "plan_id": result.plan_id,
         "plan_revision": result.plan_revision,
+        "calculation_version": result.regional_need.calculation_version,
+        "dataset_sha256": result.regional_need.dataset_sha256,
         "net_tuition_cents": result.cost.net_tuition_cents,
         "allowance_cents": result.regional_need.allowance_cents,
         "contribution_cents": result.regional_need.expected_contribution_cents,

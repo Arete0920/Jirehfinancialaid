@@ -292,3 +292,15 @@ review suppresses the calculated result. The older fixed five-bucket example
 and $250 fictional offer remain separate; the calculated need is not a binding
 recommendation or an allocation of school funds. No customer or live route is
 added. The browser verifier exercises saved income correction and readback.
+
+### Recorded fictional need decisions
+
+After reconfirming the current saved review, the seeded family may explicitly
+record a fictional rehearsal receipt. The receipt does not change DRAFT, legal
+submission, or payment status. The separately permissioned seeded director can
+record a nonbinding need decision up to the calculated tuition need and the
+remaining simulated school budget. Corrections append a revision, and an exact
+retry cannot duplicate funds. The director workload sums the latest decision per
+household, not its complete history; a zero adjustment withdraws a prior amount.
+The family sees only its latest recorded fictional amount. These records are
+separate from the fixed $250 example offers and all real award or tuition ledgers.

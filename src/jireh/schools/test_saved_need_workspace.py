@@ -177,3 +177,87 @@ class SavedNeedWorkspaceTests(TestCase):
         self.assertFalse(SyntheticAidSubmission.objects.exists())
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+
+
+    def test_recorded_need_decision_is_revision_bound_and_reconciles_latest_amount(self):
+        from django.core.exceptions import PermissionDenied, ValidationError
+        from django.db import IntegrityError, connection, transaction
+        from django.contrib.auth.models import Permission
+        from jireh.financial_aid.models import FictionalNeedDecision
+        from jireh.financial_aid.synthetic_submission import record_synthetic_demo_submission
+        from .fictional_need_decisions import record_fictional_need_decision, read_decision_budget
+
+        self.save(0, self.answers)
+        scope = dict(user=self.demo["director_a"], school_id=self.fixture.school_id,
+                     year_id=self.fixture.academic_year_id, application_id=self.draft.pk,
+                     expected_revision=0, questionnaire_revision=1, plan_revision=1,
+                     amount_cents=250_000)
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
+            with self.assertRaises(ValidationError):
+                record_fictional_need_decision(**scope)
+            record_synthetic_demo_submission(**self.scope, accuracy_attested=True)
+            director = self.demo["director_a"]
+            permission = Permission.objects.get(
+                content_type__app_label="financial_aid", content_type__model="fictionalneeddecision",
+                codename="add_fictionalneeddecision",
+            )
+            director.user_permissions.remove(permission)
+            with self.assertRaises(PermissionDenied):
+                record_fictional_need_decision(**scope)
+            director.user_permissions.add(permission)
+            self.assertContains(self.get_case(), "Record fictional need decision")
+            first = record_fictional_need_decision(**scope)
+            self.assertEqual(first.amount_cents, 250_000)
+            self.assertEqual(first.need_cents, 1_395_900)
+            self.assertEqual(first.remaining_budget_cents, 24_750_000)
+            self.assertEqual(record_fictional_need_decision(**scope).pk, first.pk)
+            with self.assertRaises(ValidationError):
+                record_fictional_need_decision(**{**scope, "amount_cents": 300_000})
+            changed = {**scope, "expected_revision": 1, "amount_cents": 200_000}
+            second = record_fictional_need_decision(**changed)
+            self.assertEqual(second.revision, 2)
+            self.assertEqual(FictionalNeedDecision.objects.count(), 2)
+            budget = read_decision_budget(user=director, school_id=self.fixture.school_id,
+                                          year_id=self.fixture.academic_year_id)
+            self.assertEqual(budget["allocated_cents"], 200_000)
+            self.assertEqual(budget["remaining_cents"], 24_800_000)
+            family = Client()
+            family.force_login(self.demo["parent"])
+            family_url = reverse("jireh_workspace_family", args=(
+                self.fixture.school_id, self.fixture.household_id, self.fixture.academic_year_id,
+            ))
+            self.assertContains(family.get(family_url, secure=True),
+                                'id="family-decision-amount">$2,000.00</p>')
+            with self.assertRaises(ValidationError):
+                record_fictional_need_decision(**{**changed, "expected_revision": 2, "amount_cents": 1_395_901})
+            first.amount_cents = 1
+            with self.assertRaises(ValidationError):
+                first.save()
+            if connection.vendor == "postgresql":
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    FictionalNeedDecision.objects.filter(pk=first.pk).update(amount_cents=1)
+                with self.assertRaises(IntegrityError), transaction.atomic():
+                    FictionalNeedDecision.objects.filter(pk=first.pk).delete()
+                row = dict(
+                    application=second.application, questionnaire=second.questionnaire,
+                    questionnaire_revision=second.questionnaire_revision, plan=second.plan,
+                    receipt=second.receipt, actor_user=director, revision=3,
+                    amount_cents=second.amount_cents, need_cents=second.need_cents,
+                    remaining_budget_cents=second.remaining_budget_cents,
+                    calculation_version=second.calculation_version, dataset_sha256=second.dataset_sha256,
+                )
+                for invalid in (
+                    {"actor_user": self.demo["director_b"]},
+                    {"actor_user": self.demo["parent"]},
+                    {"questionnaire_revision": 2}, {"revision": 4},
+                    {"remaining_budget_cents": 1}, {"dataset_sha256": "0"*64},
+                ):
+                    with self.assertRaises(IntegrityError), transaction.atomic():
+                        FictionalNeedDecision.objects.create(**{**row, **invalid})
+                self.assertEqual(FictionalNeedDecision.objects.count(), 2)
+            with self.settings(JIREH_SYNTHETIC_SUBMISSION_ONLY=False):
+                with self.assertRaises(PermissionDenied):
+                    record_fictional_need_decision(**changed)
+        self.assertFalse(SyntheticAidOffer.objects.exists())
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)

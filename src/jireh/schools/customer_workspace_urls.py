@@ -5,10 +5,10 @@ from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import select_student
 from .customer_workspace import (
     acceptance_only, workspace_case, workspace_case_offer, workspace_case_projection,
-    workspace_director, workspace_family, workspace_home,
+    workspace_director, workspace_family, workspace_home, workspace_need_decision,
 )
 from .workspace_questionnaire import workspace_questionnaire
-from .workspace_review import workspace_review
+from .workspace_review import workspace_rehearsal_receipt, workspace_review
 from .workspace_contributor_exception import workspace_contributor_decision, workspace_contributor_exception
 from .workspace_documents import (
     workspace_documents, workspace_document_sample, workspace_document_upload,
@@ -39,11 +39,15 @@ urlpatterns = [
     path(FAMILY + "documents/<uuid:document_id>/remove/", acceptance_only(workspace_document_remove),
          name="jireh_workspace_document_remove"),
     path(FAMILY + "review/", acceptance_only(workspace_review), name="jireh_workspace_review"),
+    path(FAMILY + "review/rehearsal-receipt/", acceptance_only(workspace_rehearsal_receipt),
+         name="jireh_workspace_rehearsal_receipt"),
     path(FAMILY + "review/contributor-exception/", acceptance_only(workspace_contributor_exception),
          name="jireh_workspace_contributor_exception"),
     path(DIRECTOR, acceptance_only(workspace_director), name="jireh_workspace_director"),
     path(DIRECTOR + "cases/<uuid:application_id>/", acceptance_only(workspace_case),
          name="jireh_workspace_case"),
+    path(DIRECTOR + "cases/<uuid:application_id>/need-decision/",
+         acceptance_only(workspace_need_decision), name="jireh_workspace_need_decision"),
     path(DIRECTOR + "cases/<uuid:application_id>/need-projection/",
          acceptance_only(workspace_case_projection), name="jireh_workspace_case_projection"),
     path(DIRECTOR + "cases/<uuid:application_id>/contributor-decision/",
