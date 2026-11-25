@@ -8,13 +8,27 @@ from django.db import migrations, models
 
 DECISION_GUARD = """
 CREATE FUNCTION jireh_contributor_decision_guard() RETURNS trigger AS $body$
+DECLARE
+    target_school uuid;
+    target_application uuid;
 BEGIN
     IF TG_OP <> 'INSERT' THEN
         RAISE EXCEPTION USING ERRCODE='23514', MESSAGE='Contributor review decision is immutable';
     END IF;
-    PERFORM 1 FROM financial_aid_aidapplication a
+    SELECT a.school_id, a.id INTO target_school, target_application FROM financial_aid_aidapplication a
     JOIN schools_fictionalcontributorexception m ON m.application_id=a.id
-    WHERE m.id=NEW.marker_id FOR UPDATE OF a;
+    WHERE m.id=NEW.marker_id;
+
+    -- Match the HTTP writer's order and keep direct authority stable until commit.
+    PERFORM 1 FROM schools_school WHERE id=target_school FOR UPDATE;
+    PERFORM 1 FROM schools_schoolstaffaccess WHERE school_id=target_school AND user_id=NEW.decided_by_id FOR UPDATE;
+    PERFORM 1 FROM auth_user WHERE id=NEW.decided_by_id FOR UPDATE;
+    PERFORM 1 FROM auth_user_user_permissions up
+    JOIN auth_permission p ON p.id=up.permission_id
+    JOIN django_content_type t ON t.id=p.content_type_id
+    WHERE up.user_id=NEW.decided_by_id AND t.app_label='schools' AND t.model='fictionalcontributorexception'
+      AND p.codename='view_fictionalcontributorexception' FOR UPDATE OF up;
+    PERFORM 1 FROM financial_aid_aidapplication WHERE id=target_application FOR UPDATE;
     IF NOT EXISTS (
         SELECT 1 FROM schools_fictionalcontributorexception m
         JOIN financial_aid_aidapplication a ON a.id=m.application_id

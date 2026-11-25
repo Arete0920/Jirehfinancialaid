@@ -239,9 +239,12 @@ def workspace_case(request, school_id, academic_year_id, application_id):
     contributor_decision = None
     if can_review and not held:
         contributor_decision = FictionalContributorDecision.objects.filter(marker__application_id=application_id).first()
-    return _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal,
-                 contributor_review_pending=held and can_review, fictional_offer_held=held,
-                 contributor_decision=contributor_decision)
+    response = _page(request, "case", school=school, year=year, case=case, rehearsal=rehearsal,
+                     contributor_review_pending=held and can_review, fictional_offer_held=held,
+                     contributor_decision=contributor_decision)
+    if held and can_review:
+        response["Referrer-Policy"] = "same-origin"
+    return response
 
 
 def _dollars(cents):

@@ -248,6 +248,7 @@ class WorkspaceReviewTests(TestCase):
         self.client.force_login(self.fixture["director_b"])
         self.assertEqual(decide().status_code, 404)
         self.client.force_login(director)
+        self.assertEqual(self.client.get(case_url, secure=True)["Referrer-Policy"], "same-origin")
         self.assertEqual(decide(csrf=False).status_code, 403)
         self.assertEqual(decide("private evidence").status_code, 400)
         for _ in range(2):
@@ -295,6 +296,9 @@ class WorkspaceReviewTests(TestCase):
             FictionalContributorDecision.objects.filter(pk=decision.pk).delete()
         receipt = record_synthetic_demo_submission(**self.scope, accuracy_attested=True)
         self.assertEqual(receipt.application_id, self.draft.pk)
+        offer = record_synthetic_officer_offer(user=director, school_id=self.draft.school_id,
+            academic_year_id=self.draft.academic_year_id, application_id=self.draft.pk, student_id=self.children[0].pk)
+        self.assertEqual(offer.application_id, self.draft.pk)
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
 

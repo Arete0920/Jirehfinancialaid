@@ -1,6 +1,7 @@
 """Accept a reason-free confidential review request in the fictional workspace."""
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.db import transaction
 from django.http import Http404, HttpResponse
 from django.shortcuts import get_object_or_404, redirect
@@ -25,15 +26,18 @@ def contributor_review_status(application_id):
     return "completed" if marker["resolution__pk"] is not None else "pending"
 
 
-def can_read_contributor_review(user):
+def can_read_contributor_review(user, *, lock=False):
     """Require an explicit grant in addition to the caller's school director check."""
-    return (
-        getattr(settings, "JIREH_SYNTHETIC_APPLICATION_REVIEW", False) is True
-        and user.user_permissions.filter(
-            content_type__app_label="schools", content_type__model="fictionalcontributorexception",
-            codename="view_fictionalcontributorexception",
-        ).exists()
+    if getattr(settings, "JIREH_SYNTHETIC_APPLICATION_REVIEW", False) is not True:
+        return False
+    grants = user.user_permissions.through.objects.filter(
+        user_id=user.pk, permission__content_type__app_label="schools",
+        permission__content_type__model="fictionalcontributorexception",
+        permission__codename="view_fictionalcontributorexception",
     )
+    if lock:
+        grants = grants.select_for_update(of=("self",))
+    return grants.exists()
 
 
 @require_POST
@@ -67,7 +71,8 @@ def workspace_contributor_decision(request, school_id, academic_year_id, applica
     get_object_or_404(School.objects.select_for_update(), pk=school.pk, is_active=True)
     get_object_or_404(SchoolStaffAccess.objects.select_for_update(), school=school, user=request.user,
                       role=SchoolStaffAccess.ROLE_AID_DIRECTOR, is_active=True)
-    if not can_read_contributor_review(request.user):
+    get_object_or_404(get_user_model().objects.select_for_update(), pk=request.user.pk, is_active=True)
+    if not can_read_contributor_review(request.user, lock=True):
         raise Http404("Fictional review unavailable.")
     outcomes = request.POST.getlist("decision")
     if (request.GET or request.content_type != "application/x-www-form-urlencoded"
