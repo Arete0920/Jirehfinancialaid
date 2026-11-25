@@ -1597,3 +1597,96 @@ class FictionalContributorDecision(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Fictional contributor decisions are immutable.")
+
+
+class DirectorWebAuthnCredential(UUIDStampedModel):
+    """School-grant-bound public key, distinct from the Arete operator registry.
+
+    No live enrollment mechanism is authorized. An enrollment timestamp is
+    trusted fixture evidence only until a separate enrollment process is accepted.
+    """
+
+    grant = models.ForeignKey(SchoolStaffAccess, on_delete=models.PROTECT)
+    credential_id_digest = models.CharField(max_length=64, unique=True)
+    credential_data = models.BinaryField(max_length=4096)
+    rp_id = models.CharField(max_length=253)
+    enrollment_verified_at = models.DateTimeField(null=True, blank=True)
+    sign_count = models.PositiveBigIntegerField(default=0)
+    revoked_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(condition=Q(sign_count__lte=4294967295),
+                                   name="jireh_director_credential_counter32"),
+        ]
+
+    def clean(self):
+        super().clean()
+        import hashlib
+        import hmac
+        from .operator_webauthn import _known_credential, _server
+
+        try:
+            _server(rp_id=self.rp_id, origin=f"https://{self.rp_id}")
+            credential = _known_credential(bytes(self.credential_data))
+        except (TypeError, ValueError) as exc:
+            raise ValidationError("Invalid director credential.") from exc
+        digest = hashlib.sha256(credential.credential_id).hexdigest()
+        if not isinstance(self.credential_id_digest, str) or not hmac.compare_digest(digest, self.credential_id_digest):
+            raise ValidationError("Director credential identifier mismatch.")
+        if self.revoked_at and self.enrollment_verified_at and self.revoked_at < self.enrollment_verified_at:
+            raise ValidationError("Credential revocation predates enrollment.")
+        if not self._state.adding:
+            old = type(self).objects.filter(pk=self.pk).first()
+            if old is not None and (
+                self.grant_id != old.grant_id or self.rp_id != old.rp_id
+                or self.credential_id_digest != old.credential_id_digest
+                or bytes(self.credential_data) != bytes(old.credential_data)
+                or self.sign_count < old.sign_count
+                or (old.enrollment_verified_at is not None and self.enrollment_verified_at != old.enrollment_verified_at)
+                or (old.revoked_at is not None and self.revoked_at != old.revoked_at)
+            ):
+                raise ValidationError("Director credential binding or history cannot be rewritten.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Director credentials cannot be deleted.")
+
+
+class DirectorWebAuthnChallenge(UUIDStampedModel):
+    """Durable, one-use assertion bound to a school grant and session digest."""
+
+    credential = models.ForeignKey(DirectorWebAuthnCredential, on_delete=models.PROTECT)
+    session_digest = models.CharField(max_length=64)
+    challenge = models.CharField(max_length=128, unique=True)
+    expires_at = models.DateTimeField()
+    closed_at = models.DateTimeField(null=True, blank=True)
+    verified_at = models.DateTimeField(null=True, blank=True)
+    verified_sign_count = models.PositiveBigIntegerField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(fields=["credential"], condition=Q(closed_at__isnull=True),
+                                    name="jireh_one_open_director_challenge"),
+            models.CheckConstraint(
+                condition=(Q(verified_at__isnull=True, verified_sign_count__isnull=True)
+                           | Q(verified_at__isnull=False, closed_at__isnull=False,
+                               verified_at=F("closed_at"), verified_sign_count__isnull=False,
+                               verified_sign_count__gte=1, verified_sign_count__lte=4294967295)),
+                name="jireh_director_verified_challenge",
+            ),
+        ]
+
+    def clean(self):
+        super().clean()
+        if not self._state.adding:
+            old = type(self).objects.filter(pk=self.pk).first()
+            if old is not None and (
+                old.closed_at is not None or any(
+                    getattr(self, name) != getattr(old, name) for name in
+                    ("credential_id", "session_digest", "challenge", "expires_at")
+                )
+            ):
+                raise ValidationError("Director challenge history cannot be rewritten.")
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Director challenge history cannot be deleted.")
