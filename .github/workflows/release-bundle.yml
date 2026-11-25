@@ -81,6 +81,49 @@ jobs:
           assert Client().get("/healthz/", secure=True, HTTP_HOST="jireh.example.invalid").status_code == 200
           print("Offline packaged runtime: closed-route liveness PASS; database/deployment NOT TESTED")
           PY
+      - name: Verify the offline-installed guided demo starts from extracted source
+        run: |
+          set -euo pipefail
+          cd "$RUNNER_TEMP/jireh-acceptance/jireh"
+          py="$RUNNER_TEMP/jireh-offline-venv/bin/python"
+          "$py" - <<'PY'
+          import runpy
+          import signal
+          import socket
+          import subprocess
+          import sys
+          import urllib.request
+          from pathlib import Path
+
+          root = Path.cwd()
+          # Never contact a pre-existing local process as if it were our demo.
+          with socket.socket() as probe:
+              probe.bind(("127.0.0.1", 8765))
+          wait_for_demo = runpy.run_path(str(root / "scripts/verify_local_browser_demo.py"))["wait_for_demo"]
+          proc = subprocess.Popen([sys.executable, str(root / "scripts/run_local_browser_demo.py")], cwd=root)
+          try:
+              wait_for_demo(proc)
+              opener = urllib.request.build_opener(urllib.request.ProxyHandler({}))
+              with opener.open("http://127.0.0.1:8765/local-demo/", timeout=5) as response:
+                  page = response.read(2_000_000)
+                  assert response.status == 200
+                  assert b"Presenter guide" in page and b"Family applicant" in page
+                  assert "default-src 'none'" in response.headers["Content-Security-Policy"]
+              with opener.open("http://127.0.0.1:8765/workspace/", timeout=5) as response:
+                  assert response.status == 200 and b"Sign in" in response.read(2_000_000)
+              assert proc.poll() is None
+              print("Offline packaged disposable guided demo and workspace startup: PASS")
+          finally:
+              if proc.poll() is None:
+                  proc.send_signal(signal.SIGINT)
+                  try:
+                      proc.wait(timeout=10)
+                  except subprocess.TimeoutExpired:
+                      proc.kill()
+                      proc.wait()
+                      raise RuntimeError("Disposable launcher did not stop cleanly")
+          assert proc.returncode == 0
+          PY
       - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
           name: jireh-offline-bundle-${{ env.RELEASE_SHA }}
