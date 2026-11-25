@@ -1,4 +1,4 @@
-"""Disposable test-only Django session login and logout.
+"""Django credential admission shared with disposable session routes.
 
 No registration, password-reset delivery, account recovery, public routes or
 deployment changes. The login POST requires CSRF and rejects unknown accounts
@@ -77,6 +77,11 @@ def test_family_login(request):
     if request.method == "GET":
         return JsonResponse({"ready": True})
 
+    return authenticate_session(request)
+
+
+def authenticate_session(request, *, eligible=None, family_session_key=None):
+    """Shared credential admission; callers must enforce POST, CSRF and route policy."""
     if getattr(request.user, "is_authenticated", False):
         return JsonResponse({"detail": "Forbidden."}, status=403)
 
@@ -99,11 +104,14 @@ def test_family_login(request):
         return response
 
     user = authenticate(request=request, username=username, password=password)
-    if user is None or not getattr(user, "is_active", False):
+    if (user is None or not getattr(user, "is_active", False)
+            or (eligible is not None and not eligible(user))):
         # No username, password, or reason for authentication failure is sent.
         return JsonResponse({"detail": "Invalid credentials."}, status=401)
 
     login(request, user)
+    if family_session_key is not None:
+        request.session[family_session_key] = True
     # The browser cookie and server-side session both expire within 15 minutes.
     request.session.set_expiry(LOGIN_SESSION_LIFETIME_SECONDS)
     return JsonResponse({"authenticated": True})
@@ -114,5 +122,10 @@ def test_family_login(request):
 @require_POST
 def test_family_logout(request):
     """Invalidate only the caller's session, including its prior session key."""
+    return end_session(request)
+
+
+def end_session(request):
+    """Shared session invalidation; callers must enforce POST and CSRF."""
     logout(request)
     return JsonResponse({"authenticated": False})
