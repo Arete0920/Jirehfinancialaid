@@ -660,8 +660,13 @@ def main():
                 expect(row.get_by_role("cell", name="2026-27", exact=True)).to_be_visible()
                 expect(row.get_by_role("cell", name="Fictional seed only", exact=True)).to_be_visible()
                 expect(row.get_by_role("cell", name="Not configured", exact=True)).to_be_visible()
+            expect(page.get_by_role("heading", name="School preparation status")).to_be_visible()
+            expect(page.get_by_text("No preparation receipts have been recorded.")).to_be_visible()
+            preparation = page.get_by_role("table", name="Saved fictional preparation status")
+            expect(preparation.locator("tbody tr")).to_have_count(5)
+            expect(preparation.locator("tbody td")).to_have_text(["0"] * 5)
             page.screenshot(path=str(output / "platform-operations-preview.png"), full_page=True)
-            print("CHROMIUM OPERATIONS: two saved fictional schools; no creation or integrations", flush=True)
+            print("CHROMIUM OPERATIONS: two saved fictional schools; no receipts or provisioning", flush=True)
             page.get_by_role("link", name="Return to the fictional walkthrough").click()
             pending_receipts = []
             receipt_readback = "**/synthetic/receipt/read/"

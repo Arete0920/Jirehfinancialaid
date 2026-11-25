@@ -28,6 +28,19 @@ a{color:#216247}strong{font-weight:700}@media(max-width:760px){table{display:blo
 <tr><td>{{ school.name }}</td><td>{{ school.code }}</td><td>{% if school.active %}Active test school{% else %}Inactive test school{% endif %}</td><td>{{ school.academic_year }}</td><td>{{ school.director_grants }}</td><td>{{ school.setup }}</td><td>{{ school.integration }}</td></tr>
 {% endfor %}
 </tbody></table>
+<section class="panel"><h2>School preparation status</h2>
+<p>Saved, operator-owned fictional setup receipts and verified preparation history. Prepared means the code was available at the time of preflight, not reserved, provisioned or approved for activation.</p>
+{% if not preparation_total %}<p>No preparation receipts have been recorded.</p>{% endif %}
+<table aria-label="Saved fictional preparation status">
+<thead><tr><th scope="col">Latest preparation state</th><th scope="col">Receipts</th></tr></thead>
+<tbody>
+<tr><th scope="row">Received, not queued</th><td>{{ preparation_counts.RECEIVED }}</td></tr>
+<tr><th scope="row">Queued</th><td>{{ preparation_counts.QUEUED }}</td></tr>
+<tr><th scope="row">Requeued</th><td>{{ preparation_counts.REQUEUED }}</td></tr>
+<tr><th scope="row">Prepared</th><td>{{ preparation_counts.PREPARED }}</td></tr>
+<tr><th scope="row">Failed</th><td>{{ preparation_counts.FAILED }}</td></tr>
+</tbody>
+</table></section>
 <section class="panel"><h2>Next implementation gates</h2>
 <p>Audited, idempotent school provisioning; verified operator authorization; two-person first-director approval; optional school-scoped SIS connector contracts; operational monitoring; and protected deployment acceptance remain incomplete.</p></section>
 <p class="small">No household names, applications, financial records, authentication secrets, payments or partner credentials are included.</p>

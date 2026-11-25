@@ -6,13 +6,15 @@ privileged bootstrap, or production API. Only synthetic school metadata.
 import secrets
 
 from django.conf import settings
+from django.core.exceptions import PermissionDenied
+from django.db import DatabaseError
 from django.http import JsonResponse
 from django.shortcuts import render
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
 from .demo_seed import DEMO_OPERATOR, DEMO_SCHOOL_A_CODE, DEMO_SCHOOL_B_CODE
-from .models import AcademicYear, School, SchoolStaffAccess
+from .models import AcademicYear, School, SchoolSetupIntent, SchoolStaffAccess
 
 
 class OperationsPreviewIntegrityError(RuntimeError):
@@ -70,6 +72,25 @@ def _saved_school_inventory():
     return rows
 
 
+def _saved_preparation_counts(operator):
+    """Read only the operator's verified preparation history, never credentials.
+
+    This is an observational summary of disposable receipts, not a claim
+    that a code is reserved or that a school is authorized for activation.
+    """
+    # The preparation service imports the operator guard from this module.
+    # Import its existing history validator only after module initialization.
+    from .demo_preparation_jobs import _verified_history
+
+    counts = dict.fromkeys(("RECEIVED", "QUEUED", "REQUEUED", "PREPARED", "FAILED"), 0)
+    receipts = SchoolSetupIntent.objects.filter(proposed_by_id=operator.pk).order_by("pk")
+    for receipt in receipts:
+        history = _verified_history(receipt)
+        state = history[-1].action if history else "RECEIVED"
+        counts[state] += 1
+    return counts
+
+
 @never_cache
 @require_GET
 def local_operations_preview(request):
@@ -80,11 +101,14 @@ def local_operations_preview(request):
         return JsonResponse({"detail": "Forbidden."}, status=403)
     try:
         rows = _saved_school_inventory()
-    except OperationsPreviewIntegrityError:
+        preparation_counts = _saved_preparation_counts(request.user)
+    except (OperationsPreviewIntegrityError, PermissionDenied, DatabaseError):
         return JsonResponse({"detail": "Operations preview unavailable."}, status=503)
     nonce = secrets.token_urlsafe(16)
     response = render(request, "jireh/demo_platform_operations.html", {
         "schools": rows, "csp_nonce": nonce,
+        "preparation_counts": preparation_counts,
+        "preparation_total": sum(preparation_counts.values()),
     })
     response["Content-Security-Policy"] = (
         f"default-src 'none'; style-src 'nonce-{nonce}'; "
