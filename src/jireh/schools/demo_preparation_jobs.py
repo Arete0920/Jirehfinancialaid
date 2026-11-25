@@ -6,17 +6,16 @@ provisioned school, external authorization, or integration. The receipt
 row serializes a bounded append-only event stream. No worker is launched.
 """
 
-import os
 from dataclasses import asdict
 from uuid import UUID
 
 from django.conf import settings
-from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import DatabaseError, transaction
 
-from .demo_platform_operations import _authorized_operator
-from .demo_setup_intents import _TEST_SETTINGS, _candidate_evidence
+from .demo_setup_intents import (
+    _candidate_evidence, _locked_setup_operator, _require_setup_context,
+)
 from .models import School, SchoolPreparationEvent, SchoolSetupIntent
 from .school_setup_preflight import (
     SchoolSetupPreflightError,
@@ -33,14 +32,9 @@ _REASONS = {
 }
 
 
-def _check_context(operator):
-    startup = os.environ.get("DJANGO_SETTINGS_MODULE")
-    if (startup not in _TEST_SETTINGS
-            or settings.SETTINGS_MODULE not in (None, startup)
-            or getattr(settings, "JIREH_SYNTHETIC_SETUP_INTENT_ONLY", False) is not True
-            or getattr(settings, "JIREH_SYNTHETIC_PREPARATION_JOB_ONLY", False) is not True
-            or not isinstance(operator, get_user_model())
-            or not _authorized_operator(operator)):
+def _check_context(operator, *, privileged=False):
+    _require_setup_context(operator, privileged=privileged)
+    if getattr(settings, "JIREH_SYNTHETIC_PREPARATION_JOB_ONLY", False) is not True:
         raise PermissionDenied("Synthetic preparation job disabled or denied.")
 
 
@@ -127,15 +121,18 @@ def _apply_command(intent, actor, candidate, history, command, request_key):
     )
 
 
-def advance_synthetic_preparation(*, operator, payload, command, request_key):
+def advance_synthetic_preparation(
+    *, operator, payload, command, request_key, privileged=False,
+):
     """Apply one explicit test command to the exact owned setup receipt.
 
     An identical request returns its original event without mutation.
     Retries are separate requests, require a recorded failure and a cleared
     code conflict, and cannot exceed two. PREPARED does not reserve a code.
-    Only the fictional operator may use this service in disposable tests.
+    The ordinary demo operator remains distinct from the explicitly enabled
+    privileged provisioning rehearsal in disposable tests.
     """
-    _check_context(operator)
+    _check_context(operator, privileged=privileged)
     if type(command) is not str or command not in _COMMANDS:
         raise ValidationError("Invalid preparation command.")
     if not isinstance(request_key, UUID) or not request_key.int:
@@ -144,15 +141,11 @@ def advance_synthetic_preparation(*, operator, payload, command, request_key):
         candidate = validate_school_setup_candidate(payload)
     except SchoolSetupPreflightError:
         raise ValidationError("Invalid school setup proposal.") from None
-    key, digest = _candidate_evidence(asdict(candidate))
+    key, digest = _candidate_evidence(asdict(candidate), privileged=privileged)
 
     try:
         with transaction.atomic(durable=True):
-            actor = get_user_model()._default_manager.select_for_update().filter(
-                pk=operator.pk,
-            ).first()
-            if actor is None or not _authorized_operator(actor):
-                raise PermissionDenied("Synthetic preparation denied.")
+            actor = _locked_setup_operator(operator, privileged=privileged)
             intent = SchoolSetupIntent.objects.select_for_update().filter(
                 idempotency_key=key,
             ).first()

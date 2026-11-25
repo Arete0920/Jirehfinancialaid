@@ -154,7 +154,12 @@ jobs:
           django.setup()
           from django.db import connection
           with connection.cursor() as cursor:
-              cursor.execute("SELECT COUNT(*) FROM pg_trigger WHERE tgname LIKE 'jireh%guard' AND NOT tgisinternal")
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger "
+                  "WHERE tgname IN ('jireh_tenant_link_guard', 'jireh_tenant_app_guard', "
+                  "'jireh_tenant_selection_guard', 'jireh_tenant_audit_guard', "
+                  "'jireh_school_guard') AND NOT tgisinternal"
+              )
               count = cursor.fetchone()[0]
           assert count == 0, f"Trigger rollback incomplete: {count}"
           print("PostgreSQL trigger rollback: PASS")
@@ -165,7 +170,12 @@ jobs:
           django.setup()
           from django.db import connection
           with connection.cursor() as cursor:
-              cursor.execute("SELECT COUNT(*) FROM pg_trigger WHERE tgname LIKE 'jireh%guard' AND NOT tgisinternal")
+              cursor.execute(
+                  "SELECT COUNT(*) FROM pg_trigger "
+                  "WHERE tgname IN ('jireh_tenant_link_guard', 'jireh_tenant_app_guard', "
+                  "'jireh_tenant_selection_guard', 'jireh_tenant_audit_guard', "
+                  "'jireh_school_guard') AND NOT tgisinternal"
+              )
               count = cursor.fetchone()[0]
           assert count == 7, f"Trigger reapply incomplete: {count}"
           print("PostgreSQL trigger reapply: PASS")
