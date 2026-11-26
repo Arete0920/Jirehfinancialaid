@@ -38,14 +38,14 @@ class _ThreadedServer(ThreadingMixIn, WSGIServer):
 
 
 @contextmanager
-def _https_server():
+def _https_server(rp=_RP):
     """Pin only this run's certificate, and bind exclusively to loopback."""
-    with tempfile.TemporaryDirectory(prefix="jireh-operator-browser-") as directory:
+    with tempfile.TemporaryDirectory(prefix="jireh-https-browser-") as directory:
         root = Path(directory)
         cert, key = root / "cert.pem", root / "key.pem"
         subprocess.run([
             "openssl", "req", "-x509", "-newkey", "rsa:2048", "-nodes", "-days", "1",
-            "-subj", f"/CN={_RP}", "-addext", f"subjectAltName=DNS:{_RP}",
+            "-subj", f"/CN={rp}", "-addext", f"subjectAltName=DNS:{rp}",
             "-keyout", str(key), "-out", str(cert),
         ], check=True, stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         key.chmod(0o600)

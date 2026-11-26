@@ -63,6 +63,10 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/jireh-browser-source/jireh"
           PYTHONPATH=src python scripts/verify_authenticated_customer_portal.py
+      - name: Verify authenticated financial journey on disposable HTTPS
+        run: |
+          cd "$RUNNER_TEMP/jireh-browser-source/jireh"
+          PYTHONPATH=src python manage.py test jireh.financial_aid.customer_financial_browser_acceptance.AuthenticatedFinancialBrowserAcceptance.test_family_to_director --settings=jireh.schools.test_settings --noinput
       - name: Verify independent operator portal on disposable HTTPS
         run: |
           cd "$RUNNER_TEMP/jireh-browser-source/jireh"
