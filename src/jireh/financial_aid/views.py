@@ -1,7 +1,8 @@
 """Staff application inventory, enabled only in disposable test routing.
 
 School identity is verified from an explicit aid-director grant. This is
-read-only: no family finances, documents, award recommendations or mutations.
+read-only: no raw family finances, document content, awards or mutations.
+The explicit authenticated fixture profile may expose revision-bound assessment metadata.
 """
 
 from django.core.exceptions import PermissionDenied
@@ -62,8 +63,9 @@ def staff_application_index(request, school_id, academic_year_id):
 def staff_application_detail(request, school_id, academic_year_id, application_id):
     """Authorized read-only draft case detail for disposable test routing only.
 
-    This deliberately excludes household identity, financial questions,
-    assessments, documents, and awards. The URL is untrusted school scope.
+    This excludes household identity, raw financial answers, document content
+    and awards. The separately gated fixture profile adds read-only assessment
+    evidence. The URL is untrusted school scope.
     """
     try:
         school = require_aid_director_access(request.user, school_id=school_id)
@@ -90,16 +92,23 @@ def staff_application_detail(request, school_id, academic_year_id, application_i
         .order_by("household_student__student_id")
         .values_list("household_student__student_id", flat=True)
     )
-    return JsonResponse(
-        {
-            "school_id": str(school.pk),
-            "academic_year_id": str(application.academic_year_id),
-            "application_id": str(application.pk),
-            "status": application.status,
-            "selected_student_count": len(selected_ids),
-            "selected_student_ids": [str(student_id) for student_id in selected_ids],
-        }
-    )
+    case = {
+        "school_id": str(school.pk),
+        "academic_year_id": str(application.academic_year_id),
+        "application_id": str(application.pk),
+        "status": application.status,
+        "selected_student_count": len(selected_ids),
+        "selected_student_ids": [str(student_id) for student_id in selected_ids],
+    }
+    from jireh.runtime.customer_financial_policy import financial_profile_available
+
+    if financial_profile_available():
+        from jireh.runtime.customer_assessment import read_authenticated_case_assessment
+
+        evidence = read_authenticated_case_assessment(request, school.pk, academic_year_id, application.pk)
+        if evidence is not None:
+            case["financial_evidence"] = evidence
+    return JsonResponse(case)
 
 
 @never_cache

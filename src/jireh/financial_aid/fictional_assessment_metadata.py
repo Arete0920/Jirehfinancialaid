@@ -34,9 +34,20 @@ class FictionalAssessmentMetadata:
     has_fictional_receipt: bool
 
 
-def read_fictional_assessment_metadata(*, user, school_id, academic_year_id, application_id):
+def read_fictional_assessment_metadata(*, user, school_id, academic_year_id, application_id,
+                                       fixture_scope=None):
     """Return saved metadata for one authorized fictional draft, without calculating aid."""
-    require_synthetic_questionnaire_preview()
+    if fixture_scope is None:
+        require_synthetic_questionnaire_preview()
+        case_scope = {"school__code": DEMO_SCHOOL_A_CODE}
+    else:
+        from jireh.runtime.customer_financial_policy import financial_scope_allowed
+
+        if (type(fixture_scope) is not tuple or len(fixture_scope) != 3
+                or fixture_scope[0] != school_id or fixture_scope[2] != academic_year_id
+                or not financial_scope_allowed(*fixture_scope)):
+            raise Http404("Fictional assessment metadata unavailable.")
+        case_scope = {"household_id": fixture_scope[1]}
     school = require_aid_director_access(user, school_id=school_id)
     documents = FinancialDocument.objects.for_school(school.pk).filter(
         application_id=OuterRef("pk"), household_id=OuterRef("household_id"),
@@ -59,12 +70,12 @@ def read_fictional_assessment_metadata(*, user, school_id, academic_year_id, app
         pk=application_id, academic_year_id=academic_year_id,
         academic_year__school_id=school.pk,
         household__school_id=school.pk, household__is_active=True,
-        school__code=DEMO_SCHOOL_A_CODE, school__is_active=True,
+        school__is_active=True,
         school__staff_access_grants__user_id=user.pk,
         school__staff_access_grants__user__is_active=True,
         school__staff_access_grants__role=SchoolStaffAccess.ROLE_AID_DIRECTOR,
         school__staff_access_grants__is_active=True,
-        status=AidApplication.STATUS_DRAFT,
+        status=AidApplication.STATUS_DRAFT, **case_scope,
     ).values(
         "school_id", "academic_year_id",
         application_id=F("pk"),
