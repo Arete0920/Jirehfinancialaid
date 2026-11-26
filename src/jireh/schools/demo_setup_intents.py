@@ -1,7 +1,8 @@
 """Disposable-test rehearsal of immutable setup intent persistence.
 
-There is no runtime caller, URL, school creation, activation, job runner,
-payment, or SIS integration in this receipt service. A separate disposable
+Only the explicit disposable operator preparation adapter may call this
+service from the independent operations router. No school creation,
+activation, job runner, payment, or SIS integration occurs here. A separate disposable
 provisioning rehearsal can opt into the same validator and receipt with an
 allowlisted operator; production authorization remains separate.
 """
@@ -95,19 +96,33 @@ def _locked_setup_operator(operator, *, privileged=False):
     return account
 
 
-def record_synthetic_setup_intent(*, operator, payload, privileged=False):
+def _require_setup_write_context(operator, payload, *, privileged=False, portal_request=None):
+    """Keep provisioning guards intact; admit only the exact preparation request."""
+    if portal_request is None:
+        _require_setup_context(operator, privileged=privileged)
+        return
+    if privileged is not True:
+        raise PermissionDenied("Privileged preparation rehearsal required.")
+    from jireh.runtime.operator_preparation import require_preparation_request
+
+    require_preparation_request(portal_request, operator=operator, payload=payload)
+
+
+def record_synthetic_setup_intent(*, operator, payload, privileged=False, portal_request=None):
     """Persist one fictional receipt; only exact owned replay is accepted.
 
     The optional privileged path is internal to disposable provisioning tests.
     It never changes the authorization requirements of the demo dashboard.
     """
-    _require_setup_context(operator, privileged=privileged)
+    _require_setup_write_context(operator, payload, privileged=privileged, portal_request=portal_request)
     idempotency_key, candidate_digest = _candidate_evidence(
         payload, privileged=privileged,
     )
     try:
         with transaction.atomic(durable=True):
             account = _locked_setup_operator(operator, privileged=privileged)
+            if portal_request is not None:
+                _require_setup_write_context(account, payload, privileged=privileged, portal_request=portal_request)
             receipt, _ = SchoolSetupIntent.objects.get_or_create(
                 idempotency_key=idempotency_key,
                 defaults={

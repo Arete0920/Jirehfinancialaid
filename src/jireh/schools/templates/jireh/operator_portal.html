@@ -3,7 +3,7 @@
 <style nonce="{{ csp_nonce }}">
 :root{color-scheme:light;font:16px/1.5 system-ui,sans-serif;background:#f5f8f6;color:#173f35}*{box-sizing:border-box}body{margin:0}header{background:#123b32;color:white;padding:20px 6vw;font-weight:750}main{max-width:1120px;margin:auto;padding:24px}section,.notice{background:white;border:1px solid #d6e6dc;padding:20px;border-radius:8px;margin:16px 0}.notice{background:#fff8e9;border-color:#e6d4a9}label{display:block;font-weight:650;margin-top:12px}input,select{width:100%;max-width:440px;font:inherit;padding:9px;display:block;border:1px solid #a6b9ad;border-radius:5px}button{font:inherit;font-weight:650;background:#176747;color:white;border:0;border-radius:6px;padding:10px 15px;margin-top:12px;cursor:pointer}button:disabled{opacity:.6}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #ae852b;outline-offset:3px}table{width:100%;border-collapse:collapse}th,td{text-align:left;padding:12px;border-bottom:1px solid #d6e6dc}th{background:#eaf4ed}.scroll{overflow-x:auto}#message:not(:empty){background:#fff8e9;padding:12px}
 </style></head><body><header>JIREH. · ARETE OPERATIONS</header><main>
-<h1>School operations command center</h1><p class="notice">Fictional acceptance only. Read-only verified setup records. School activation, grants, billing and SIS connections are unavailable.</p><div id="message" role="alert" aria-live="polite"></div>
+<h1>School operations command center</h1><p class="notice">Fictional acceptance only. School activation, grants, billing and SIS connections are unavailable.</p><div id="message" role="alert" aria-live="polite"></div>
 {% if verified %}
 <section><h2>Verified school registry</h2><p>Only schools linked to your recorded provisioning participation are shown. Saved active status is not release authorization.</p>
 {% if schools %}<div class="scroll"><table aria-label="Verified school registry"><thead><tr><th scope="col">School</th><th scope="col">Code</th><th scope="col">Timezone</th><th scope="col">State</th><th scope="col">Academic years</th><th scope="col">Director status</th><th scope="col">Active directors</th></tr></thead><tbody>
@@ -21,7 +21,17 @@
 <tr data-preparation-state="PREPARED"><th scope="row">Prepared</th><td>{{ preparation_counts.PREPARED }}</td></tr>
 <tr data-preparation-state="FAILED"><th scope="row">Failed</th><td>{{ preparation_counts.FAILED }}</td></tr>
 </tbody></table></div>
-<p>Prepared means the school code was available at preflight, not reserved or approved for activation. No preparation, provisioning, or retry can be initiated here.</p></section>
+<p>Prepared means the school code was available at preflight. The code is still unreserved and activation requires separate approval.</p></section>
+{% if preparation_enabled %}
+<section aria-labelledby="fixture-preparation-heading">
+<h2 id="fixture-preparation-heading">Prepare a fictional school</h2>
+<p id="preparation-candidate" hidden></p>
+<p id="preparation-progress" role="status">Checking saved preparation status…</p>
+<form id="preparation-form" action="{% url 'jireh_operator_preparation' %}" method="post">
+{% csrf_token %}<button id="preparation-action" type="submit" hidden></button>
+</form>
+</section>
+{% endif %}
 <section><h2>Operational restrictions</h2><p>Review verified setup evidence before seeking separate authorization. No production readiness or external integration approval is inferred from this registry.</p></section>
 {% elif credential_refs %}<section><h2>Verify operator security key</h2><form data-command="verify" action="{% url 'jireh_operator_begin' %}" data-complete="{% url 'jireh_operator_complete' %}" method="post">{% csrf_token %}<label>Security key<select name="credential_id_digest" required>{% for ref in credential_refs %}<option value="{{ ref }}">Registered key {{ forloop.counter }}</option>{% endfor %}</select></label><button>Verify security key</button></form></section>
 {% elif not authenticated %}<section><h2>Operator sign-in</h2><form data-command="login" action="{% url 'jireh_operator_login' %}" method="post">{% csrf_token %}<label>Username<input name="username" autocomplete="username" maxlength="150" required></label><label>Password<input name="password" type="password" autocomplete="current-password" maxlength="1024" required></label><button>Continue to security key</button></form></section>
@@ -35,4 +45,56 @@ function decode(value){return Uint8Array.from(atob(value.replaceAll("-","+").rep
 function encode(value){return btoa(String.fromCharCode(...new Uint8Array(value))).replaceAll("+","-").replaceAll("/","_").replaceAll("=","");}
 async function verify(form,fields,token){const result=await send(form.action,token,{credential_id_digest:fields.get("credential_id_digest")});const options=result.options.publicKey;options.challenge=decode(options.challenge);options.allowCredentials=options.allowCredentials.map(item=>({...item,id:decode(item.id)}));const key=await navigator.credentials.get({publicKey:options});if(!key)throw new Error("verification");const proof=key.response;return send(form.dataset.complete,token,{assertion:{id:key.id,rawId:encode(key.rawId),type:key.type,response:{clientDataJSON:encode(proof.clientDataJSON),authenticatorData:encode(proof.authenticatorData),signature:encode(proof.signature),userHandle:proof.userHandle?encode(proof.userHandle):null}}});}
 for(const form of document.querySelectorAll("form[data-command]"))form.addEventListener("submit",async event=>{event.preventDefault();if(document.body.dataset.pending==="yes")return;document.body.dataset.pending="yes";const buttons=Array.from(document.querySelectorAll("button"));buttons.forEach(button=>button.disabled=true);const fields=new FormData(form),token=fields.get("csrfmiddlewaretoken");message.textContent="";try{if(form.dataset.command==="verify")await verify(form,fields,token);else if(form.dataset.command==="login")await send(form.action,token,{username:fields.get("username"),password:fields.get("password")});else await send(form.action,token,{});window.location.assign("{% url 'jireh_operator_home' %}");}catch(error){message.textContent=error.message==="http-429"?"Too many attempts. Try again later.":"Request could not be completed. Reload to verify the current session.";}finally{for(const input of form.querySelectorAll('input[type="password"]'))input.value="";document.body.dataset.pending="no";buttons.forEach(button=>button.disabled=false);}});
+const preparationForm = document.getElementById("preparation-form");
+if (preparationForm) {
+    const actionButton = document.getElementById("preparation-action");
+    const candidate = document.getElementById("preparation-candidate");
+    const progress = document.getElementById("preparation-progress");
+    const steps = new Map([
+        ["NOT_RECORDED", ["Setup ready to record.", "RECORD", "Record fictional setup"]],
+        ["RECEIVED", ["Setup recorded.", "QUEUE", "Queue preflight"]],
+        ["QUEUED", ["Preflight queued.", "RUN", "Run preflight"]],
+        ["FAILED", ["Preflight failed. Reload after the school code conflict is cleared to check for a retry."]],
+        ["REQUEUED", ["Preflight queued again.", "RUN", "Run preflight"]],
+        ["PREPARED", ["Fictional preflight complete."]],
+    ]);
+    let command;
+    fetch(preparationForm.action, {credentials: "same-origin", cache: "no-store", redirect: "error"})
+        .then(response => {
+            if (!response.ok) throw new Error("Preparation unavailable");
+            return response.json();
+        })
+        .then(result => {
+            const [status, nextCommand, label] = result.state === "FAILED" && result.retry_available === true
+                ? ["The school code conflict has cleared. Preflight can be retried.", "RETRY", "Retry preflight"]
+                : steps.get(result.state);
+            candidate.textContent = result.candidate.name;
+            candidate.hidden = false;
+            progress.textContent = status;
+            command = nextCommand;
+            if (command) {
+                actionButton.textContent = label;
+                actionButton.hidden = false;
+            }
+        })
+        .catch(() => {
+            progress.textContent = "Saved preparation status is unavailable. Reload to check again.";
+        });
+    preparationForm.addEventListener("submit", async event => {
+        event.preventDefault();
+        if (!command || actionButton.disabled || document.body.dataset.pending === "yes") return;
+        document.body.dataset.pending = "yes";
+        actionButton.disabled = true;
+        const token = new FormData(preparationForm).get("csrfmiddlewaretoken");
+        try {
+            await send(preparationForm.action, token, {
+                command,
+                request_key: command === "RECORD" ? null : crypto.randomUUID(),
+            });
+            window.location.assign("{% url 'jireh_operator_home' %}");
+        } catch {
+            progress.textContent = "The result could not be confirmed. Reload to check saved status before retrying.";
+        }
+    });
+}
 </script></body></html>

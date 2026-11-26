@@ -12,6 +12,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from socketserver import ThreadingMixIn
 from unittest.mock import patch
+from uuid import uuid4
 from wsgiref.simple_server import WSGIRequestHandler, WSGIServer, make_server
 
 from django.core.wsgi import get_wsgi_application
@@ -21,6 +22,7 @@ from cryptography import x509
 from cryptography.hazmat.primitives import serialization
 
 from .models import OperatorWebAuthnCredential, School, SyntheticSchoolProvisioningReceipt
+from .school_setup_preflight import SchoolSetupCandidate
 from .test_operator_portal import OperatorPortalTests
 from .test_operator_webauthn_registry import CREDENTIAL_ID, PASSWORD
 
@@ -112,6 +114,16 @@ class OperatorBrowserAcceptance(OperatorPortalTests):
 
     def test_operator_browser(self):
         from playwright.sync_api import expect, sync_playwright
+
+        candidate = SchoolSetupCandidate(
+            "synthetic-browser-preparation", "Synthetic Browser Preparation",
+            "America/New_York", str(uuid4()),
+        )
+        self.enterContext(self.settings(
+            JIREH_OPERATOR_PREPARATION_ACCEPTANCE=True,
+            JIREH_OPERATOR_PREPARATION_FIXTURE=(self.operator.pk, candidate),
+        ))
+        conflict = School.objects.create(code=candidate.code, name="Fictional conflict", is_active=False)
         with _https_server() as (port, pin, _), sync_playwright() as playwright:
             browser = playwright.chromium.launch(headless=True, args=[
                 "--no-proxy-server",
@@ -159,6 +171,23 @@ class OperatorBrowserAcceptance(OperatorPortalTests):
                 expect(page.get_by_role("heading", name="School preparation status")).to_be_visible()
                 expect(page.locator("#preparation-total")).to_have_text("1")
                 expect(page.locator('[data-preparation-state="PREPARED"] td')).to_have_text("1")
+                expect(page.get_by_text(candidate.name, exact=True)).to_be_visible()
+                page.get_by_role("button", name="Record fictional setup").click()
+                expect(page.locator('[data-preparation-state="RECEIVED"] td')).to_have_text("1")
+                page.get_by_role("button", name="Queue preflight").click()
+                expect(page.locator('[data-preparation-state="QUEUED"] td')).to_have_text("1")
+                page.get_by_role("button", name="Run preflight").click()
+                expect(page.locator('[data-preparation-state="FAILED"] td')).to_have_text("1")
+                expect(page.locator("#preparation-progress")).to_contain_text("Preflight failed.")
+                expect(page.get_by_role("button", name="Retry preflight")).to_have_count(0)
+                _database_readback(lambda: School.objects.filter(pk=conflict.pk).delete())
+                page.reload()
+                page.get_by_role("button", name="Retry preflight").click()
+                expect(page.locator('[data-preparation-state="REQUEUED"] td')).to_have_text("1")
+                page.get_by_role("button", name="Run preflight").click()
+                expect(page.locator('[data-preparation-state="PREPARED"] td')).to_have_text("2")
+                expect(page.get_by_role("button", name="Run preflight")).to_have_count(0)
+                expect(page.get_by_role("button", name="Retry preflight")).to_have_count(0)
                 self.assertGreater(_database_readback(lambda: OperatorWebAuthnCredential.objects.values_list(
                     "sign_count", flat=True).get(pk=self.credential.pk)), count)
                 self.assertEqual(page.goto(_ORIGIN + "/operations/create/").status, 404)
@@ -174,6 +203,6 @@ class OperatorBrowserAcceptance(OperatorPortalTests):
                 self.assertFalse(_database_readback(lambda: School.objects.values_list(
                     "is_active", flat=True).get(pk=self.receipt.school_id)))
                 self.assertFalse(errors, errors)
-                print("PASS: authenticated operator browser, signed WebAuthn, registry, closed routes and logout", flush=True)
+                print("PASS: authenticated operator browser, signed WebAuthn, registry, preparation failure and retry, closed routes and logout", flush=True)
             finally:
                 browser.close()
