@@ -10,7 +10,10 @@ from django.contrib.auth.models import Permission
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import transaction
 
-from jireh.financial_aid.annual_school_plan import FICTIONAL_15145_PLAN, AnnualSchoolPlanError
+from jireh.financial_aid.annual_school_plan import (
+    FICTIONAL_15145_PLAN, AnnualSchoolPlanError, project_fictional_award,
+)
+from jireh.runtime.customer_financial_policy import financial_scope_allowed
 from jireh.financial_aid.assessment_contract import CandidateAssessmentError
 from jireh.financial_aid.fictional_planning_need import fictional_planning_context
 from jireh.financial_aid.models import AidApplication
@@ -59,7 +62,7 @@ def configure_saved_need_fixture(demo):
 def read_saved_need_preview(
     *, user, school, year, application_id, questionnaire_revision,
     expected_plan_revision=None, scenario_committed_aid_cents=0,
-    scenario_proposed_aid_cents=0, changed_income_review=None, assessment_date=None,
+    scenario_proposed_aid_cents=0, changed_income_review=None, assessment_date=None, fixture_scope=None,
 ):
     """No client-supplied geography, grades, rule parameters or raw financial rows.
 
@@ -72,7 +75,11 @@ def read_saved_need_preview(
             or school.code != DEMO_SCHOOL_A_CODE
             or (fixture.school_id, fixture.academic_year_id) != (school.pk, year.pk)):
         return None
-    require_synthetic_questionnaire_preview()
+    if fixture_scope is None:
+        require_synthetic_questionnaire_preview()
+    elif (fixture_scope != (school.pk, fixture.household_id, year.pk)
+          or not financial_scope_allowed(*fixture_scope) or changed_income_review is not None):
+        return None
     _lock_authorized_school(actor=user, school_id=school.pk)
     draft = AidApplication.objects.for_school(school.pk).filter(
         pk=application_id, academic_year=year, household_id=fixture.household_id,
@@ -93,7 +100,9 @@ def read_saved_need_preview(
     except ImportError:
         return {"status": "unavailable"}
     try:
-        plan = read_fictional_school_plan(user=user, school_id=school.pk, academic_year_id=year.pk)
+        plan = read_fictional_school_plan(
+            user=user, school_id=school.pk, academic_year_id=year.pk, fixture_scope=fixture_scope,
+        )
         if plan is None or (expected_plan_revision is not None
                             and plan.revision != expected_plan_revision):
             return {"status": "unavailable"}
@@ -107,12 +116,20 @@ def read_saved_need_preview(
                 questionnaire_revision=questionnaire_revision, plan_revision=plan.revision,
                 grade_assignments=fixture.grades, questionnaire_policy=policy,
                 balance_date=date(2026, 6, 30),
-                scenario_committed_aid_cents=scenario_committed_aid_cents,
-                scenario_proposed_aid_cents=scenario_proposed_aid_cents,
+                scenario_committed_aid_cents=scenario_committed_aid_cents if fixture_scope is None else 0,
+                scenario_proposed_aid_cents=scenario_proposed_aid_cents if fixture_scope is None else 0,
                 changed_income_review=changed_income_review, assessment_date=assessment_date,
                 **fictional_planning_context(),
-            ),
+            ), fixture_scope=fixture_scope,
         )
+        # The signed calculation remains read-only and receives zero proposals.
+        # Apply the shared budget primitive to its verified result here.
+        projection = result.projection
+        if fixture_scope is not None:
+            projection = project_fictional_award(
+                plan.as_plan(), result.cost, committed_aid_cents=scenario_committed_aid_cents,
+                proposed_aid_cents=scenario_proposed_aid_cents,
+            )
     except (SavedFictionalNeedError, QuestionnaireValidationError, CandidateAssessmentError,
             AnnualSchoolPlanError, ValidationError, OSError, UnicodeError, json.JSONDecodeError):
         return {"status": "unavailable"}
@@ -138,7 +155,7 @@ def read_saved_need_preview(
         "projection": {
             "committed_cents": scenario_committed_aid_cents,
             "proposed_cents": scenario_proposed_aid_cents,
-            "household_balance_cents": result.projection.household_balance_cents,
-            "remaining_budget_cents": result.projection.remaining_aid_budget_cents,
+            "household_balance_cents": projection.household_balance_cents,
+            "remaining_budget_cents": projection.remaining_aid_budget_cents,
         },
     }

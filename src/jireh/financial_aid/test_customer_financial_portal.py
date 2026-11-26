@@ -3,18 +3,24 @@ import secrets
 from urllib.parse import urlencode
 from uuid import uuid4, uuid5
 
+from django.conf import settings
 from django.contrib.auth import get_user_model
+from django.contrib.auth.models import Permission
 from django.db import IntegrityError, connection, transaction
 from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
 
 from jireh.financial_aid.models import (
-    AidApplication, FinancialDocument, SyntheticAidSubmission, SyntheticApplicationReview,
+    AidApplication, FictionalNeedDecision, FinancialDocument, SyntheticAidSubmission, SyntheticApplicationReview,
     SyntheticPrepaymentHandoff, SyntheticQuestionnaireDraft, SyntheticQuestionnaireEvent,
 )
 from jireh.financial_aid.synthetic_document_views import _ALLOWED_FIXTURES
+from jireh.schools.demo_seed import DEMO_SCHOOL_A_CODE
+from jireh.schools.saved_need_workspace import SavedNeedFixture
 from jireh.schools.models import FictionalContributorException, Household, HouseholdAccess, Student
 from jireh.schools.services import link_student_to_household
+from .annual_school_plan import FICTIONAL_15145_PLAN
+from .school_plan_revisions import record_fictional_school_plan
 from . import test_customer_portal as portal
 from . import test_customer_director_sessions as fixtures
 
@@ -142,6 +148,99 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
         self.assertFalse(SyntheticAidSubmission.objects.exists())
         self.assertEqual(self.get(self.client, self.url("review") + "rehearsal-receipt/").status_code, 404)
+
+    def test_signed_decision_uses_current_handoff_and_preserves_draft(self):
+        self.school.code = DEMO_SCHOOL_A_CODE
+        self.school.save(update_fields=["code", "updated_at"])
+        grades = []
+        for grade in ("elementary", "middle"):
+            child = Student.objects.create(school=self.school, first_name=grade.title(), last_name="Fictional")
+            link_student_to_household(school_id=self.school.pk, household_id=self.household.pk, student_id=child.pk)
+            self.assertEqual(self.post(self.client, self.url("select", child.pk), {}, self.csrf()).status_code, 200)
+            grades.append((child.pk, grade))
+        with self.settings(JIREH_SYNTHETIC_SUBMISSION_ONLY=True):
+            record_fictional_school_plan(
+                user=self.actor, school_id=self.school.pk, academic_year_id=self.year.pk, plan=FICTIONAL_15145_PLAN,
+            )
+        self.enterContext(self.settings(JIREH_SAVED_NEED_FIXTURE=SavedNeedFixture(
+            self.school.pk, self.year.pk, self.household.pk, tuple(grades),
+        )))
+        answers = self.rows(value="0.00")
+        answers.update({
+            "income-0-value": "40000.00", "income-0-period_end": "2026-12-31",
+            "assets-0-as_of_date": "2026-06-30", "liabilities-0-as_of_date": "2026-06-30",
+        })
+        self.assertEqual(self.form("questionnaire", answers).status_code, 302)
+        self.assertEqual(self.upload(_ALLOWED_FIXTURES[0]).status_code, 200)
+        digest = self.get(self.client, self.url("review")).context["review"]["digest"]
+        self.assertEqual(self.form("review", {"state_digest": digest, "reviewed": "yes"}).status_code, 302)
+        self.assertEqual(self.form("prepayment_handoff", {"state_digest": digest, "handed_off": "yes"}).status_code, 302)
+        handoff = SyntheticPrepaymentHandoff.objects.get()
+        director = Client(enforce_csrf_checks=True)
+        self.verified(director)
+        case_args = (self.school.pk, self.year.pk, self.draft.pk)
+        case = reverse("jireh_workspace_case", args=case_args)
+        payload = {
+            "handoff": str(handoff.pk), "decision_revision": 0, "questionnaire_revision": 1,
+            "plan_revision": 1, "amount": "250.00", "confirmed": "yes",
+        }
+
+        def post_decision(form=None, *, client=director, csrf=True, args=case_args):
+            headers = {"HTTP_HOST": fixtures.RP, "HTTP_ORIGIN": fixtures.ORIGIN}
+            if csrf:
+                headers["HTTP_X_CSRFTOKEN"] = client.cookies[settings.CSRF_COOKIE_NAME].value
+            return client.post(
+                reverse("jireh_signed_need_decision", args=args), urlencode(form or payload),
+                content_type="application/x-www-form-urlencoded", secure=True, **headers,
+            )
+
+        self.assertNotContains(self.get(director, case), "Record a fictional need decision")
+        self.assertEqual(post_decision().status_code, 403)
+        permission = Permission.objects.get(content_type__app_label="financial_aid", codename="add_fictionalneeddecision")
+        self.actor.user_permissions.add(permission)
+        self.assertContains(self.get(director, case), "Record a fictional need decision")
+        unrelated = Permission.objects.get(content_type__app_label="auth", codename="change_user")
+        self.actor.user_permissions.add(unrelated)
+        self.assertEqual(self.get(director, case).status_code, 403)
+        self.actor.user_permissions.remove(unrelated)
+        self.assertEqual(post_decision(csrf=False).status_code, 403)
+        self.assertEqual(post_decision(client=self.client).status_code, 403)
+        self.assertEqual(post_decision(args=(self.other_school.pk, self.other_year.pk, self.draft.pk)).status_code, 403)
+        self.assertEqual(post_decision({**payload, "handoff": str(uuid4())}).status_code, 409)
+        self.assertEqual(post_decision({**payload, "amount": "50000.00"}).status_code, 409)
+        for _ in range(2):
+            response = post_decision()
+            self.assertRedirects(response, case, fetch_redirect_response=False)
+        row = FictionalNeedDecision.objects.get()
+        self.assertEqual((row.revision, row.handoff_id, row.receipt_id, row.amount_cents),
+                         (1, handoff.pk, None, 25_000))
+        self.assertContains(self.get(self.client, self.family()), "$250.00")
+        other_parent = get_user_model().objects.create_user(
+            username="second-fictional-parent", password=fixtures.PASSWORD,
+        )
+        HouseholdAccess.objects.create(user=other_parent, household=self.household)
+        other_family = Client(enforce_csrf_checks=True)
+        self.assertEqual(self.login_family(other_family, other_parent).status_code, 200)
+        self.assertNotContains(self.get(other_family, self.family()), "$250.00")
+
+        self.assertEqual(self.upload(_ALLOWED_FIXTURES[1]).status_code, 200)
+        self.assertEqual(post_decision().status_code, 409)
+        self.assertNotContains(self.get(self.client, self.family()), "$250.00")
+        self.assertEqual(FictionalNeedDecision.objects.count(), 1)
+        if connection.vendor == "postgresql":
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                FictionalNeedDecision.objects.update(amount_cents=1)
+            values = FictionalNeedDecision.objects.values(
+                "application_id", "questionnaire_id", "questionnaire_revision", "plan_id", "actor_user_id",
+                "amount_cents", "need_cents", "remaining_budget_cents", "calculation_version", "dataset_sha256",
+            ).get()
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                FictionalNeedDecision.objects.create(**values, revision=2)
+        self.actor.user_permissions.remove(permission)
+        self.assertEqual(post_decision().status_code, 403)
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
 
     def test_separate_prepayment_handoff_tracks_the_exact_review(self):
         child = Student.objects.create(school=self.school, first_name="Fictional", last_name="Child")

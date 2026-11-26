@@ -39,17 +39,19 @@ def record_prepayment_handoff(*, user, school_id, household_id, academic_year_id
     return handoff
 
 
-def current_prepayment_handoff(draft, questionnaire_revision):
-    """Revalidate family evidence under the caller's authorized school lock."""
+def current_prepayment_handoff(draft, questionnaire_revision, *, handoff_id=None):
+    """Return revalidated family evidence under the caller's school lock."""
     school_id, household_id, academic_year_id = draft.school_id, draft.household_id, draft.academic_year_id
     if (questionnaire_revision is None or not financial_scope_allowed(school_id, household_id, academic_year_id)
             or contributor_review_pending(draft.pk)):
-        return False
+        return None
     handoffs = SyntheticPrepaymentHandoff.objects.filter(
         confirmation__questionnaire__application=draft,
         confirmation__questionnaire_revision=questionnaire_revision,
     )
-    actors = get_user_model().objects.filter(pk__in=handoffs.values("confirmation__actor_user_id"))
+    if handoff_id is not None:
+        handoffs = handoffs.filter(pk=handoff_id)
+    actors = get_user_model().objects.filter(pk__in=handoffs.values("confirmation__actor_user_id")).order_by("pk")
     for actor in actors:
         if not nonprivileged_family_account(actor):
             continue
@@ -61,6 +63,8 @@ def current_prepayment_handoff(draft, questionnaire_revision):
         except (Http404, PermissionDenied, FictionalReviewError, QuestionnaireValidationError,
                 DocumentLifecycleError, PrivateDocumentStorageError, OSError):
             continue
-        if state["confirmation"] is not None and handoffs.filter(confirmation=state["confirmation"]).exists():
-            return True
-    return False
+        if state["confirmation"] is not None:
+            handoff = handoffs.filter(confirmation=state["confirmation"]).first()
+            if handoff is not None:
+                return handoff
+    return None

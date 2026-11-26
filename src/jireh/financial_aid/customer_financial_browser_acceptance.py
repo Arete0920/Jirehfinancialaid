@@ -2,6 +2,8 @@
 import base64
 from decimal import Decimal
 
+from django.contrib.auth.models import Permission
+
 from cryptography.hazmat.primitives import serialization
 from django.test import TransactionTestCase, override_settings
 from django.urls import reverse
@@ -47,6 +49,9 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
                 user=self.actor, school_id=self.school.pk,
                 academic_year_id=self.year.pk, plan=FICTIONAL_15145_PLAN,
             )
+        self.actor.user_permissions.add(Permission.objects.get(
+            content_type__app_label="financial_aid", codename="add_fictionalneeddecision",
+        ))
         self.enterContext(self.settings(
             JIREH_FINANCIAL_FIXTURE_SCOPES=(self.scope,),
             JIREH_SAVED_NEED_FIXTURE=SavedNeedFixture(
@@ -184,7 +189,12 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
                 expect(panel.locator("#director-prepayment-handoff")).to_have_text("Current fictional draft handed off")
                 expect(panel.get_by_text("Questionnaire revision 1 · School plan revision 1", exact=True)).to_be_visible()
                 expect(panel.get_by_text("Combined recommendation and award decision unavailable.", exact=True)).to_be_visible()
-                print("PASS: authenticated director HTML shows the calculated need and revision provenance", flush=True)
+                decision_form = page.get_by_role("region", name="Record a fictional need decision")
+                decision_form.get_by_label("Fictional need amount").fill("250.00")
+                decision_form.get_by_role("checkbox").check()
+                decision_form.get_by_role("button", name="Record fictional need decision").click()
+                expect(page.locator("#signed-director-decision-amount")).to_have_text("$250.00")
+                print("PASS: signed director records a nonbinding decision from the current handoff", flush=True)
                 response = page.goto(case_url)
                 self.assertEqual(response.status, 200)
                 evidence = response.json()["financial_evidence"]
@@ -201,8 +211,16 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
                 self.assertEqual(_database_readback(lambda: AidApplication.objects.values_list(
                     "status", flat=True,
                 ).get(pk=self.draft.pk)), AidApplication.STATUS_DRAFT)
-                for model in (FictionalNeedDecision, SyntheticAidOffer, SyntheticAidSubmission):
+                self.assertEqual(_database_readback(FictionalNeedDecision.objects.count), 1)
+                for model in (SyntheticAidOffer, SyntheticAidSubmission):
                     self.assertFalse(_database_readback(model.objects.exists))
+                page.goto(fixtures.ORIGIN + "/customer/")
+                page.get_by_role("button", name="Sign out").click()
+                expect(page.get_by_role("heading", name="Family sign-in")).to_be_visible()
+                self._family_login(page, expect)
+                self.assertEqual(page.goto(family_url).status, 200)
+                expect(page.locator("#family-decision-amount")).to_have_text("$250.00")
+                self.assertEqual(page.goto(case_page).status, 403)
                 self.assertFalse(errors, errors)
                 print("PASS: authenticated family financial browser, saved PDF and review, signed director case readback", flush=True)
             finally:
