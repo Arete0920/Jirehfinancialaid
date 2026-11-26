@@ -67,6 +67,7 @@ class CustomerWorkspaceTests(TestCase):
         client = Client(enforce_csrf_checks=True)
         page = self._get(client, "jireh_workspace")
         self.assertContains(page, "Sign in")
+        self.assertNotContains(page, "Return to presenter guide")
         self.assertNotContains(page, DEMO_PASSWORD)
         self.assertIn("no-store", page["Cache-Control"])
         self.assertEqual(page["X-Frame-Options"], "DENY")
