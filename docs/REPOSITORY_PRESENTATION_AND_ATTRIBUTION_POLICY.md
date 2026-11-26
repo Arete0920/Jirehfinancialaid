@@ -62,6 +62,21 @@ The solo-owner review path must say when independent human review is **unavailab
 
 **Implementation truth:** Merely merging this policy does not install a CI gate or certify compliance. Until enforcement is implemented and verified, reviews must explicitly identify the manual-only control and unresolved findings.
 
+### Operational review and exception records
+
+- Inspect tracked Git objects rather than relying on a filename-extension list. A media, nontext, link or submodule object requires an exact-object review record, including text-based media whose visual meaning cannot be established by a text scan.
+- The three named governance/control files are content exceptions because they define and test the vocabulary; their filenames and object types remain checked. Review changes to those controls explicitly. Dependency and vendor paths are not blanket content exceptions.
+- Record necessary factual references by exact location, line, matched term and full-line digest in the gate's reviewed-reference registry. Record assets by path and exact Git object, or uploaded release assets by release ID, asset ID and exact SHA-256 digest. Each record must cite a factual reason and actual owner decision. A changed reference or object needs renewed review. Never manufacture an approval to pass CI.
+- The required foundation job continues to enforce tracked content and applicable pull-request narratives. The separate presentation workflow checks repository name, description, topics and homepage, and applicable first-party issue or published release narratives. Its issue/release results are alerts, not branch-protection or prepublication approvals. Owner-adopted external issue guidance must also be reviewed.
+- Before publishing or materially editing a release, screenshot, external description, presentation, document or buyer-facing material, inventory the actual artifact and its version; review wording, visual content, metadata, embedded third-party attribution and any material technical or contractual disclosure. Record the reviewed version, reviewer, date, findings, disposition and owner decision in the maintained project record. Re-run the repository presentation workflow on metadata changes that do not otherwise trigger it. Do not treat a post-publication check as approval to publish.
+- Do not claim comprehensive compliance if an external artifact inventory, a relevant contextual claim, an owner decision or exact-version review is missing. The owner validates approval references; a machine cannot establish an independent human approval from text.
+
+### Baseline review — November 26, 2026
+
+At main commit 7b37f910720c03ccb418cc2900ecbe6ff8879367, GitHub reported 306 tracked blobs, no submodules and no tracked visual media. The former extension-based gate excluded .github/CODEOWNERS and .gitignore; both were manually checked without findings. Repository name and description were neutral; topics and homepage were empty and no GitHub releases existed. The exact-main presentation run 45779629807 passed under the existing gate. The active Jireh-main-protection ruleset 27810515 requires the foundation context containing the gate and has no bypass actors.
+
+Review of the then-visible open issue and pull-request narratives found no matching presentation terms. Six closed pull requests (#1, #2, #3, #5, #7 and #8) contained factual coordination or provenance references before the November 23 policy. Preserve those records and the associated historical source references. This snapshot does not certify all historical comments, external materials, future repository metadata or a new candidate commit.
+
 ## 7. Acceptance criteria
 
 This standard is fully operational for Jireh only when:
