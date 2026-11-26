@@ -37,6 +37,10 @@ class AuthenticatedCaseAssessmentTests(TransactionTestCase):
         row = application or self.draft
         return reverse("jireh_customer_case", args=(row.school_id, row.academic_year_id, row.pk))
 
+    def case_page_url(self, application=None):
+        row = application or self.draft
+        return reverse("jireh_workspace_case", args=(row.school_id, row.academic_year_id, row.pk))
+
     def evidence(self, client):
         response = self.get(client, self.case_url())
         self.assertEqual(response.status_code, 200, response.content)
@@ -46,12 +50,15 @@ class AuthenticatedCaseAssessmentTests(TransactionTestCase):
         director = Client(enforce_csrf_checks=True)
         self.assertEqual(self.password(director).status_code, 200)
         self.assertEqual(self.get(director, self.case_url()).status_code, 403)
+        self.assertEqual(self.get(director, self.case_page_url()).status_code, 403)
         challenge = self.begin(director)
         self.assertEqual(self.post(director, self.route("complete"), self.signed(challenge), self.token(director)).status_code, 200)
         initial = self.evidence(director)
         self.assertIsNone(initial["questionnaire_revision"])
         self.assertEqual(initial["need"], {"status": "unavailable"})
         self.assertFalse(initial["award_decision_available"])
+        self.assertContains(self.get(director, self.case_page_url()), "Saved evidence is insufficient for a need estimate.")
+        self.assertEqual(self.get(self.client, self.case_page_url()).status_code, 403)
         self.assertEqual(self.get(self.client, self.case_url()).status_code, 403)
         self.assertEqual(self.form("questionnaire", self.rows()).status_code, 302)
         after = self.evidence(director)
@@ -64,9 +71,11 @@ class AuthenticatedCaseAssessmentTests(TransactionTestCase):
         response = self.get(director, self.case_url(draft))
         self.assertEqual(response.status_code, 200)
         self.assertNotIn("financial_evidence", response.json())
+        self.assertNotContains(self.get(director, self.case_page_url(draft)), "Fictional assessment evidence")
         self.grant.is_active = False
         self.grant.save(update_fields=["is_active", "updated_at"])
         self.assertEqual(self.get(director, self.case_url()).status_code, 403)
+        self.assertEqual(self.get(director, self.case_page_url()).status_code, 403)
 
     def test_actual_saved_need_updates_and_contributor_hold_blocks_estimate(self):
         self.school.code = DEMO_SCHOOL_A_CODE
@@ -97,6 +106,12 @@ class AuthenticatedCaseAssessmentTests(TransactionTestCase):
         self.assertEqual(before["unmet_tuition_cents"], 1_395_900)
         self.assertFalse(before["financial_verification_established"])
         self.assertTrue(before["requires_school_authorization"])
+        page = self.get(director, self.case_page_url())
+        self.assertContains(page, "Fictional assessment evidence")
+        self.assertContains(page, "$13,959.00")
+        self.assertContains(page, "Questionnaire revision 1")
+        self.assertContains(page, "School plan revision 1")
+        self.assertNotContains(page, "40000.00")
         answers["revision"] = 1
         for section in ("income", "assets", "liabilities", "expenses"):
             answers[f"{section}-INITIAL_FORMS"] = 1
@@ -109,6 +124,9 @@ class AuthenticatedCaseAssessmentTests(TransactionTestCase):
         held = self.evidence(director)
         self.assertTrue(held["contributor_review_pending"])
         self.assertEqual(held["need"], {"status": "held"})
+        page = self.get(director, self.case_page_url())
+        self.assertContains(page, "Need estimate held pending contributor review.")
+        self.assertNotContains(page, "$8,959.00")
         self.assertEqual(held["combined_recommendation"], "unavailable")
         self.assertFalse(held["award_decision_available"])
         self.assertFalse(FictionalNeedDecision.objects.exists())
