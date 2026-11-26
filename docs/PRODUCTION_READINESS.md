@@ -1,19 +1,34 @@
 # Standalone Jireh production readiness — NO-GO
 
 **Status:** NO-GO. **Scope:** `Arete0920/Jirehfinancialaid`, not CROWN.
-**Verified protected-main source checkpoint (2026-11-25 Eastern, 8:48 p.m.):**
-[`efc7931db734017d2549301d5005c8ab3e7c483f`](https://github.com/Arete0920/Jirehfinancialaid/commit/efc7931db734017d2549301d5005c8ab3e7c483f), merged [#158](https://github.com/Arete0920/Jirehfinancialaid/pull/158) —
-**seven completed SUCCESS check contexts**: Python 3.12 contracts (226/226),
-Django 5.2 (676 tests, 62 skipped, no failures), disposable PostgreSQL 16
-(676/676, no skips), synthetic Chromium browser acceptance, SonarCloud,
-current dependency evidence, and repository presentation.
-Exact-commit [foundation 45738204055](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45738204055),
-[browser 45738204108](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45738204108),
-[dependencies 45738204107](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45738204107), and
-[presentation 45738204067](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45738204067) runs passed.
-SonarCloud also passed on this SHA. The Chromium artifact
-[15080326064](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45738204108/artifacts/15080326064)
-was present and unexpired at inspection.
+**Verified protected-main source checkpoint (2026-11-26 Eastern):**
+[`33fdeaccc05621d479be9962c87a304b2844c878`](https://github.com/Arete0920/Jirehfinancialaid/commit/33fdeaccc05621d479be9962c87a304b2844c878), merged [#167](https://github.com/Arete0920/Jirehfinancialaid/pull/167) —
+**six completed SUCCESS check contexts**: Python 3.12 contracts (240/240),
+Django 5.2 (684 tests, 622 passed, 62 skipped, no failures), disposable PostgreSQL 16
+(684/684, no skips), extracted-source Chromium acceptance, SonarCloud and
+repository presentation. Exact-main [foundation 45853892130](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45853892130),
+[browser 45853892038](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45853892038)
+and [presentation 45853891871](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45853891871)
+runs passed. The PostgreSQL logs include application, reversal and reapplication
+of migration 0014 in disposable CI. SonarCloud passed on the same SHA.
+The exact-main [browser artifact 15136215040](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45853892038/artifacts/15136215040)
+was downloaded; ZIP SHA-256
+`6f0d55461d6358a0f26d21a7c21dd54698c4f6114aa32af89254d730d278b71f`
+matched the reported digest and all 28 ZIP entries passed integrity checks.
+Its source manifest identifies this commit, tree
+`2d673dbe471ef0997b85a9ef6038ba330595ca82`, 260 selected source files
+and `authorizes_deployment: false`. The 26 screenshot previews were inspected;
+final full-resolution, video, presenter equipment and owner acceptance remain
+outstanding. The signed financial and operator journeys are evidenced by
+the exact-main browser logs, not by a new recorded sales presentation.
+
+**Previous verified checkpoint (2026-11-25 Eastern):**
+[`efc7931db734017d2549301d5005c8ab3e7c483f`](https://github.com/Arete0920/Jirehfinancialaid/commit/efc7931db734017d2549301d5005c8ab3e7c483f),
+[#158](https://github.com/Arete0920/Jirehfinancialaid/pull/158), seven successful contexts including
+[dependency audit 45738204107](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45738204107).
+This is historical dependency evidence; compared source changes through the
+November 26 checkpoint did not modify the pinned requirements or dependency
+audit workflow. Obtain final exact-candidate dependency evidence separately.
 
 **Historical checkpoint:** [#114](https://github.com/Arete0920/Jirehfinancialaid/pull/114) at
 [`30d859dd2522e85cc993609a336696e8148cf074`](https://github.com/Arete0920/Jirehfinancialaid/commit/30d859dd2522e85cc993609a336696e8148cf074)
@@ -23,7 +38,13 @@ documents, review, provisioning, school planning, saved need and decision journa
 [#146](https://github.com/Arete0920/Jirehfinancialaid/pull/146)–[#148](https://github.com/Arete0920/Jirehfinancialaid/pull/148) (changed-income evidence and direct journal privilege audit),
 and [#150](https://github.com/Arete0920/Jirehfinancialaid/pull/150), [#152](https://github.com/Arete0920/Jirehfinancialaid/pull/152)–[#158](https://github.com/Arete0920/Jirehfinancialaid/pull/158) (separately guarded customer routes,
 authenticated family and director sessions, fixture financial workflow,
-director case evidence and independent operator portal).
+director case evidence and independent operator portal). Subsequent merged PRs
+[#149](https://github.com/Arete0920/Jirehfinancialaid/pull/149), [#151](https://github.com/Arete0920/Jirehfinancialaid/pull/151), [#160](https://github.com/Arete0920/Jirehfinancialaid/pull/160)–[#167](https://github.com/Arete0920/Jirehfinancialaid/pull/167)
+add assessment and enrollment evidence, the signed family financial journey,
+repository governance, operator preparation readback and commands, current
+family handoff, and signed nonbinding need decisions with family readback.
+The actual application remains DRAFT. No live final submission or school
+activation is authorized.
 This is a dated immutable checkpoint. Refetch main and its exact checks before
 any subsequent change; do not interpret the ledger as a live inventory.
 
@@ -58,8 +79,8 @@ stop duplicate writes through explicit coordination and current GitHub checks.
 
 ## Evidence classification
 
-- **Source/CI evidence:** seven successful check contexts on the pinned SHA;
-  all four recorded push workflows succeeded. The PostgreSQL job verified model
+- **Source/CI evidence:** six successful check contexts on the pinned SHA;
+  the three recorded push workflows and SonarCloud succeeded. The PostgreSQL job verified model
   and migration consistency, selected reversal/reapplication paths and closed
   runtime routing. This is not deployed-environment acceptance.
 - **Tenant and identity acceptance:** current suites exercise distinct schools,
@@ -67,7 +88,7 @@ stop duplicate writes through explicit coordination and current GitHub checks.
   mutations. Browser acceptance includes fictional invitation dual-proof
   redemption, family login/draft/selection/readback/logout, director password
   plus virtual WebAuthn signed assertion, and independent operator password
-  plus WebAuthn and read-only registry. No live identity provider or real
+  plus WebAuthn, registry and opt-in fictional preparation. No live identity provider or real
   institutional onboarding is certified.
 - **Runtime exposure:** `src/jireh/runtime/settings.py` still mounts
   `jireh.runtime.urls`, containing only GET/HEAD `/healthz/` and `/readyz/`.
@@ -77,38 +98,41 @@ stop duplicate writes through explicit coordination and current GitHub checks.
   financial and operator profiles require disposable identity/database contexts;
   the operator profile expressly excludes customer profile flags.
 - **Browser evidence:** the pinned
-  [Chromium run](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45738204108) verified the extracted
+  [Chromium run](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45853892038) verified the extracted
   acceptance source, including fictional document selection/version/readback/
   removal, contributor review, changed income, saved need, decision/budget
-  readback and the independently authenticated family/director/operator flows.
-  These are not proof of a complete single authenticated financial journey
-  or production readiness. The manual presenter uses fictional data only.
-- **PR inventory at the checkpoint:** 10 open issues and two open PRs,
-  [#149](https://github.com/Arete0920/Jirehfinancialaid/pull/149) and [#151](https://github.com/Arete0920/Jirehfinancialaid/pull/151). Both exact branch heads had six passing check
-  contexts, but both were behind main. #149 presents current evidence in the
-  fictional director workspace; #157 separately adds authenticated director
-  case API evidence. Reconcile the functional overlap, do not replace either
-  implementation. #151 adds an offline enrollment policy preview and tests;
-  no runtime call site or live policy is approved. #65 is closed without merge;
-  do not reopen or import its retired frontend dependency graph. Historical
-  branch refs are not active work assignments.
+  readback, authenticated family questionnaire/document/review/handoff,
+  signed director nonbinding decision, family readback and the separately
+  authenticated operator preparation failure/retry journey. This is disposable
+  fixture acceptance, not deployed customer acceptance. The existing guided
+  presenter uses fictional data only; exact-build rehearsal and owner approval
+  remain separate.
+- **PR inventory at the checkpoint:** ten open issues (#43–#51 and #109)
+  and zero open PRs. #149 and #151 are merged; #161 exposes the fictional
+  enrollment preview in the director case; #162 displays existing assessment
+  evidence in the authenticated case. #165–#167 integrate the current
+  prepayment handoff, operator preparation and signed fictional decisions.
+  #65 is closed without merge; do not reopen or import its retired frontend
+  dependency graph. Historical branch refs are not active work assignments.
 - **Operations:** existing fictional setup validation, immutable receipts,
   preparation/retry, action-bound WebAuthn, inactive-school provisioning and
-  scoped registry are implemented. The independent authenticated operator
-  portal from #158 displays verified registry information but does not expose
-  school creation, activation, grant, billing or integration mutations.
+  scoped registry are implemented. #164 adds authenticated preparation readback;
+  #166 connects the signed operator portal to the exact opt-in fictional
+  setup and preparation services. No authenticated school creation, activation,
+  grants, billing or integration mutations are exposed by that portal.
 - **Database trust:** #148 adds direct PostgreSQL journal ACL audit coverage.
   It is not independent verification of calculated financial need, a full
   database role/RLS/indirect-access audit, or target-environment acceptance.
 - **Governance and dependencies:** the
   [active main ruleset](https://github.com/Arete0920/Jirehfinancialaid/rules/27810515) requires PRs, strict current-head
   Python, Django, PostgreSQL and SonarCloud checks, with no bypass actors and
-  zero required approving reviewers. Browser and dependency checks also passed
-  but are not separately required by that ruleset. Independent human review
+  zero required approving reviewers. Browser and presentation checks passed
+  on the pinned SHA; dependency evidence is from the previous checkpoint.
+  These are not separately required by that ruleset. Independent human review
   is unavailable in the solo-maintainer path; do not imply human approval
-  from automated checks. The current dependency audit reports 12 pinned
+  from automated checks. The November 25 dependency audit reported 12 pinned
   packages, zero public OSV matches, and no missing or yanked hashes for the
-  inspected pins. This does not establish absence of other vulnerabilities,
+  inspected pins; it is not a new exact-SHA dependency audit. This does not establish absence of other vulnerabilities,
   repository security alerts, or licensing issues.
 - **Packaging:** exact-source offline acceptance bundle construction exists
   and the browser run exercised extracted tracked source. The dedicated
@@ -153,15 +177,15 @@ them when future customers voluntarily submit applications.
 | --- | --- | --- | --- |
 | P0 | Standalone school/household/year identity | Unique annual draft; explicit grants; child selection; authenticated customer core and browser readback | Target-environment identity and tenant acceptance |
 | P0 | Saved financial questionnaire | 31 approved development field paths, editable four financial sections, encrypted revision-bound fictional persistence, contributors and versioned school questions (#119, #122, #123, #127, #156) | Complete approved field/roster, consent, verification, retention and privacy policies; Q01–Q10 not fully resolved [#43](https://github.com/Arete0920/Jirehfinancialaid/issues/43) |
-| P0 | Family-to-director journey | Guided browser demonstration and authenticated family/director portal; fixture questionnaire/documents/review routes; authenticated director API evidence (#155–#157) | Display existing `case.financial_evidence` in authenticated case HTML; verify full authenticated synthetic financial journey, including authorized decisions and readback without enabling live submission [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
-| P0 | Application review and final submission | Revision-bound review confirmation, readiness checks, fictional receipt; offline fee and submission validation; actual AidApplication model is DRAFT-only | Approve durable nonfinal lifecycle and consent/amendment policy; final SUBMITTED remains blocked until authoritative payment reconciliation [#45](https://github.com/Arete0920/Jirehfinancialaid/issues/45) |
+| P0 | Family-to-director journey | Guided browser demonstration; authenticated fictional family questionnaire/documents/review/handoff, signed director assessment and nonbinding need decision, family readback (#155–#157, #160, #162, #165, #167) | Rehearse exact presenter candidate; approve real-world workflow, consent, role matrix, award lifecycle and target-environment acceptance [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
+| P0 | Application review and final submission | Revision-bound review confirmation, current fictional prepayment handoff (#165), fictional receipt; offline fee and submission validation; actual AidApplication model is DRAFT-only | Approve durable nonfinal lifecycle and consent/amendment policy; final SUBMITTED remains blocked until authoritative payment reconciliation [#45](https://github.com/Arete0920/Jirehfinancialaid/issues/45) |
 | P1 | Financial documents | Scoped encrypted fictional upload/version/read/removal, audit, local ClamAV adapter (#97, #120, #156) | Approved production storage, scanning, key operations, retention, access and restore; real document collection remains disabled [#44](https://github.com/Arete0920/Jirehfinancialaid/issues/44) |
-| P1 | Need and five buckets | Versioned five-bucket arithmetic, school-year plan, pinned fictional HUD allowance, saved-data need, dated changed income (#74, #132, #138–#147); #151 open | Approve methodology and school-specific category rules; distinguish preview from binding award; verify existing open PRs [#46](https://github.com/Arete0920/Jirehfinancialaid/issues/46) |
-| P1 | Director decisions and reporting | Scoped workload and case readback; append-only fictional need decisions, budget reconciliation, contributor decision and changed-income evidence; #149 open | Unify authenticated readback and authorization with existing decision services; commercial award lifecycle and DB trust boundary [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
+| P1 | Need and five buckets | Versioned five-bucket arithmetic, school-year plan, pinned fictional HUD allowance, saved-data need, dated changed income (#74, #132, #138–#147); #149/#151 merged and #161 fictional enrollment preview displayed | Approve methodology and school-specific category rules; distinguish preview from binding award and do not infer combined recommendations [#46](https://github.com/Arete0920/Jirehfinancialaid/issues/46) |
+| P1 | Director decisions and reporting | Scoped workload and case readback; append-only fictional need decisions, budget reconciliation, contributor decision and changed-income evidence; signed director decisions using current handoff and family readback (#167) | Approve commercial award lifecycle, role matrix, database writer trust boundary and target-environment acceptance [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) |
 | P1 | Onboarding and recovery | Grants, invitation dual proof, loopback SMTP, verified recovery foundations, director WebAuthn and authenticated sessions (#153–#155) | Institutional identity, real delivery, authorized onboarding, helpdesk and recovery acceptance [#49](https://github.com/Arete0920/Jirehfinancialaid/issues/49) |
-| P1 | Independent operations | Setup validation, durable receipts, preparation/retry, inactive-school fictional provisioning, scoped registry and authenticated read-only operator portal (#131, #135, #158) | Authorized preparation/provisioning browser integration, activation policy, institutional onboarding and operational acceptance [#109](https://github.com/Arete0920/Jirehfinancialaid/issues/109) |
+| P1 | Independent operations | Setup validation, durable receipts, preparation/retry, inactive-school fictional provisioning, scoped registry and authenticated operator registry, preparation readback and opt-in fictional preparation commands (#131, #135, #158, #164, #166) | Authorized inactive provisioning browser integration, activation policy, institutional onboarding and operational acceptance [#109](https://github.com/Arete0920/Jirehfinancialaid/issues/109) |
 | P0 | Runtime and release packaging | Closed production URLConf; distinct guarded acceptance profiles; exact-source offline bundle builder and extracted-source browser verification | Complete reviewed prepayment acceptance profile, exact-release packaging evidence, hosting selection and deployment certification |
-| P0 | Security and release | Seven current source checks passed; sanitized telemetry, readiness and direct-journal ACL audit | Verify the eleven target-environment D/T/S/M/I/A gates below [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48) |
+| P0 | Security and release | Six exact-main source checks passed; historical dependency audit; sanitized telemetry, readiness and direct-journal ACL audit | Verify the eleven target-environment D/T/S/M/I/A gates below [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48) |
 | Deferred | Paid final submission / CompuWerx | $55 once per household fee and mandatory reconciliation contract | No provider-specific activity before separate owner authorization; paid commercial release remains blocked [#50](https://github.com/Arete0920/Jirehfinancialaid/issues/50) |
 | Deferred | Partnerships, branding and exceptional multi-school use | Independent architecture and school-scoped identity; historical CROWN code is test-only reference | Optional SIS, approved configurable identity/branding and multi-school policy; do not make a CROWN dependency [#51](https://github.com/Arete0920/Jirehfinancialaid/issues/51) |
 
@@ -172,16 +196,15 @@ checks, target-environment acceptance, and actual business activation separately
 
 ### Execution order
 
-1. Reconcile the existing open PRs #149 and #151 against current protected main,
-   respecting existing branch ownership. #149 and #157 share a functional area,
-   not changed file paths; avoid duplicate assessment logic and new replacement
-   PRs. Obtain fresh exact-head CI after synchronization.
-2. Reuse the existing authenticated customer and independent operator
-   interfaces, not a second set of financial or operations engines. Complete
-   the authenticated director evidence display and integrated fictional
-   family/review/director journey with negative authorization and revision tests.
-   The expanded presenter demonstration remains a distinct acceptance decision,
-   including owner-approved Jireh branding and manual pacing.
+1. Preserve the integrated #166/#167 implementation. At the November 26
+   checkpoint there are zero open PRs; do not reopen merged PRs or create
+   competing financial/operations engines. Refetch current main, open issues,
+   PRs, exact heads, changed-file overlap, rules and checks before further work.
+2. Obtain final exact-candidate offline wheelhouse/package, dependency and
+   extracted-source Chromium evidence using the existing workflows. Rehearse
+   the existing salesperson-guided fictional demo on the intended equipment;
+   review the exact screenshots, script, claims and metadata, and record the
+   owner decision separately. No public login, real data or live activation.
 3. Reconcile unresolved product/privacy decisions in their existing issues
    (#43–#47, #49, #109); no inferred formula, consent policy, live storage,
    school activation or real account creation. Establish the database writer
