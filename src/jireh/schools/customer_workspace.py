@@ -30,10 +30,8 @@ from jireh.financial_aid.student_views import selected_students
 from jireh.financial_aid.views import (
     staff_application_detail, staff_application_index, staff_draft_workload,
 )
-from jireh.financial_aid.assessment_contract import CandidateAssessmentError
 from jireh.financial_aid.fictional_assessment_metadata import read_fictional_assessment_metadata
 from jireh.financial_aid.questionnaire_validation import QuestionnaireValidationError
-from jireh.financial_aid.synthetic_assessment import preview_fictional_assessment_evidence
 from jireh.financial_aid.synthetic_demo_views import record_synthetic_staff_offer
 from jireh.financial_aid.synthetic_offers import read_synthetic_director_offer
 from jireh.financial_aid.workload import WorkloadIntegrityError
@@ -250,7 +248,7 @@ def workspace_case(request, school_id, academic_year_id, application_id):
             rehearsal = _director_rehearsal(
                 request.user, school, year, application_id, case,
             )
-        except (CandidateAssessmentError, QuestionnaireValidationError, OSError, ValueError):
+        except (QuestionnaireValidationError, OSError, ValueError):
             return HttpResponse("Fictional director evidence unavailable.", status=503)
     held = contributor_review_pending(application_id)
     can_review = can_read_contributor_review(request.user)
@@ -285,12 +283,7 @@ def _director_rehearsal(user, school, year, application_id, case):
     scope = dict(user=user, school_id=school.pk, academic_year_id=year.pk,
                  application_id=application_id)
     metadata = read_fictional_assessment_metadata(**scope)
-    # The saved revision/receipt are real database facts in this disposable
-    # fixture. The existing policy preview is independent of saved answers.
-    report = preview_fictional_assessment_evidence(
-        **scope, scenario_id="fictional_modest",
-    )
-    if report.assessment is None or len(case["selected_student_ids"]) > _SCOPE_LIMIT:
+    if len(case["selected_student_ids"]) > _SCOPE_LIMIT:
         raise ValueError("Fictional case readback unavailable.")
     offers = []
     for student_id in case["selected_student_ids"]:
@@ -335,12 +328,6 @@ def _director_rehearsal(user, school, year, application_id, case):
         "saved_need": saved_need,
         "income_evidence": income_evidence,
         "decision_journal": journal,
-        "recommendations": [
-            {"bucket": line.bucket.value.title(), "dollars": _dollars(line.recommendation_cents),
-             "capped": line.cap_applied}
-            for line in report.assessment.lines
-        ],
-        "preview_total": _dollars(report.assessment.total_recommendation_cents),
         "offers": offers,
     }
 
