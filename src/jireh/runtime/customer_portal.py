@@ -18,6 +18,7 @@ from jireh.financial_aid.family_views import family_annual_draft
 from jireh.financial_aid.student_views import selected_students
 from jireh.financial_aid.views import staff_application_detail, staff_application_index, staff_draft_workload
 from jireh.schools.access import require_aid_director_access, require_household_access
+from jireh.schools.fictional_need_decisions import read_signed_family_decision
 from jireh.schools.models import AcademicYear, HouseholdAccess, SchoolStaffAccess
 from jireh.schools.session_views import end_session
 from jireh.schools.views import household_students
@@ -177,7 +178,12 @@ def portal_family(request, school_id, household_id, academic_year_id):
         ids = set(selected["student_ids"])
     children = [{**student, "selected": student["id"] in ids} for student in json.loads(students.content)["students"]]
     financial = financial_scope_allowed(school_id, household_id, academic_year_id)
-    return _page(request, "family", household=household, year=year, draft=draft,
+    family_decision = read_signed_family_decision(
+        user=request.user, school_id=school_id, household_id=household_id, year_id=academic_year_id,
+    ) if financial and draft is not None else None
+    if family_decision is not None:
+        family_decision["dollars"] = f'{Decimal(family_decision["amount_cents"]) / 100:,.2f}'
+    return _page(request, "family", household=household, year=year, draft=draft, family_decision=family_decision,
                  children=children, selected_count=len(ids), questionnaire_enabled=financial,
                  documents_enabled=financial, review_enabled=financial)
 
@@ -223,4 +229,12 @@ def portal_case(request, school_id, academic_year_id, application_id):
                 ("unmet_tuition_cents", "Calculated unmet tuition"),
             )
         }
-    return _page(request, "case", school=school, year=year, case=case, need_amounts=need_amounts)
+    decision = evidence.get("fictional_decision") if evidence else None
+    if decision is not None and decision["amount_cents"] is not None:
+        decision["dollars"] = f'${Decimal(decision["amount_cents"]) / 100:,.2f}'
+    response = _page(request, "case", school=school, year=year, case=case, need_amounts=need_amounts,
+                     signed_decision=decision)
+    if decision is not None:
+        # The same-origin form POST needs an Origin or Referer for Django CSRF.
+        response["Referrer-Policy"] = "same-origin"
+    return response

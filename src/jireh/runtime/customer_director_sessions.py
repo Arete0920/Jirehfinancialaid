@@ -25,6 +25,8 @@ from jireh.schools.login_budget import charge_director_assertion_attempt
 from jireh.schools.models import DirectorWebAuthnChallenge, DirectorWebAuthnCredential, GrantTransitionEvent
 from jireh.schools.session_views import authenticate_session, end_session
 
+from .customer_financial_policy import financial_profile_available
+
 DIRECTOR_SESSION_KEY = "jireh_customer_director_session"
 _TEST_SETTINGS = frozenset({"jireh.schools.test_settings", "jireh.schools.postgres_test_settings"})
 _PENDING_SECONDS = 300
@@ -51,7 +53,17 @@ def director_session_available(request):
 
 def _director_credentials(user, school_id):
     if (not user.is_authenticated or not user.is_active or user.is_staff or user.is_superuser
-            or user.user_permissions.exists() or user.groups.exists()):
+            or user.groups.exists()):
+        return DirectorWebAuthnCredential.objects.none()
+    permissions = user.user_permissions.all()
+    if financial_profile_available() and any(
+        scope[0] == school_id for scope in settings.JIREH_FINANCIAL_FIXTURE_SCOPES
+    ):
+        permissions = permissions.exclude(
+            content_type__app_label="financial_aid", content_type__model="fictionalneeddecision",
+            codename="add_fictionalneeddecision",
+        )
+    if permissions.exists():
         return DirectorWebAuthnCredential.objects.none()
     return DirectorWebAuthnCredential.objects.filter(
         grant__school_id=school_id, grant__school__is_active=True, grant__user_id=user.pk,

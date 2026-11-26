@@ -2,9 +2,11 @@
 from functools import wraps
 
 from django.core.exceptions import PermissionDenied
+from django.db import transaction
 from django.http import Http404
 from django.urls import path
 
+from jireh.schools.customer_workspace import workspace_need_decision
 from jireh.schools.workspace_contributor_exception import workspace_contributor_exception
 from jireh.schools.workspace_documents import (
     workspace_documents, workspace_document_sample, workspace_document_upload,
@@ -12,8 +14,8 @@ from jireh.schools.workspace_documents import (
 )
 from jireh.schools.workspace_questionnaire import workspace_questionnaire
 from jireh.schools.workspace_review import workspace_prepayment_handoff, workspace_review
-from .customer_financial_policy import financial_scope_allowed
-from .customer_portal import _family_allowed, portal_only
+from .customer_financial_policy import financial_profile_available, financial_scope_allowed
+from .customer_portal import _director_allowed, _family_allowed, portal_only
 from .customer_portal_urls import urlpatterns as portal_patterns
 
 
@@ -29,8 +31,23 @@ def fixture_family_only(view):
     return guarded
 
 
+@portal_only
+@transaction.atomic
+def signed_need_decision(request, school_id, academic_year_id, application_id):
+    if not financial_profile_available():
+        raise Http404()
+    if not _director_allowed(request, school_id):
+        raise PermissionDenied()
+    result = workspace_need_decision(request, school_id, academic_year_id, application_id, signed=True)
+    if not _director_allowed(request, school_id):
+        raise PermissionDenied()
+    return result
+
+
 _FAMILY = "customer/family/<uuid:school_id>/<uuid:household_id>/<uuid:academic_year_id>/"
 urlpatterns = [*portal_patterns,
+    path("customer/director/<uuid:school_id>/<uuid:academic_year_id>/cases/<uuid:application_id>/decision/",
+         signed_need_decision, name="jireh_signed_need_decision"),
     path(_FAMILY + "questionnaire/", fixture_family_only(workspace_questionnaire),
          name="jireh_workspace_questionnaire"),
     path(_FAMILY + "documents/", fixture_family_only(workspace_documents), name="jireh_workspace_documents"),

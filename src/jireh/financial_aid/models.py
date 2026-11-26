@@ -638,7 +638,8 @@ class FictionalNeedDecision(UUIDStampedModel):
     questionnaire = models.ForeignKey(SyntheticQuestionnaireDraft, on_delete=models.PROTECT)
     questionnaire_revision = models.PositiveIntegerField()
     plan = models.ForeignKey(FictionalSchoolPlanRevision, on_delete=models.PROTECT)
-    receipt = models.ForeignKey(SyntheticAidSubmission, on_delete=models.PROTECT)
+    receipt = models.ForeignKey(SyntheticAidSubmission, on_delete=models.PROTECT, null=True, blank=True)
+    handoff = models.ForeignKey("SyntheticPrepaymentHandoff", on_delete=models.PROTECT, null=True, blank=True)
     actor_user = models.ForeignKey(settings.AUTH_USER_MODEL, on_delete=models.PROTECT)
     revision = models.PositiveIntegerField()
     amount_cents = models.PositiveBigIntegerField()
@@ -650,6 +651,11 @@ class FictionalNeedDecision(UUIDStampedModel):
     class Meta:
         constraints = [
             models.UniqueConstraint(fields=["application", "revision"], name="jireh_need_decision_revision"),
+            models.CheckConstraint(
+                condition=Q(receipt__isnull=False, handoff__isnull=True)
+                | Q(receipt__isnull=True, handoff__isnull=False),
+                name="jireh_need_decision_one_evidence",
+            ),
             models.CheckConstraint(
                 condition=Q(revision__gt=0, questionnaire_revision__gt=0)
                 & (Q(revision__gt=1) | Q(amount_cents__gt=0))

@@ -301,6 +301,26 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% endif %}
 <p>Combined recommendation and award decision unavailable.</p>
 </section>
+{% if signed_decision %}
+<section class="panel" aria-labelledby="signed-decision-heading">
+<h2 id="signed-decision-heading">Record a fictional need decision</h2>
+{% if signed_decision.dollars %}
+<p>Latest decision: <strong id="signed-director-decision-amount">{{ signed_decision.dollars }}</strong> · Revision {{ signed_decision.revision }}</p>
+{% endif %}
+<p>This is a nonbinding fictional decision.</p>
+<form method="post" action="{% url 'jireh_signed_need_decision' school.pk year.pk case.application_id %}">
+{% csrf_token %}
+<input type="hidden" name="handoff" value="{{ signed_decision.handoff_id }}">
+<input type="hidden" name="decision_revision" value="{{ signed_decision.revision }}">
+<input type="hidden" name="questionnaire_revision" value="{{ evidence.need.questionnaire_revision }}">
+<input type="hidden" name="plan_revision" value="{{ evidence.need.plan_revision }}">
+<label for="signed-need-amount">Fictional need amount</label>
+<input id="signed-need-amount" name="amount" inputmode="decimal" maxlength="12" required>
+<label><input type="checkbox" name="confirmed" value="yes" required> Confirm the fictional decision</label>
+<button type="submit">Record fictional need decision</button>
+</form>
+</section>
+{% endif %}
 {% endif %}
 {% endwith %}
 {% if contributor_review_pending %}

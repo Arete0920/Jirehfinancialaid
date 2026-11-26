@@ -433,8 +433,10 @@ def workspace_income_evidence(request, school_id, academic_year_id, application_
 
 @require_POST
 @csrf_protect
-def workspace_need_decision(request, school_id, academic_year_id, application_id):
+def workspace_need_decision(request, school_id, academic_year_id, application_id, *, signed=False):
     fields = {"decision_revision", "questionnaire_revision", "plan_revision", "amount", "confirmed"}
+    if signed:
+        fields.add("handoff")
     if (request.GET or request.content_type != "application/x-www-form-urlencoded"
             or set(request.POST) - fields - {"csrfmiddlewaretoken"}
             or not fields <= set(request.POST)
@@ -446,12 +448,16 @@ def workspace_need_decision(request, school_id, academic_year_id, application_id
             or _PROJECTION_MONEY.fullmatch(request.POST["amount"]) is None):
         return HttpResponse("Invalid fictional decision.", status=400)
     try:
+        handoff_id = UUID(request.POST["handoff"]) if signed else None
+    except ValueError:
+        return HttpResponse("Invalid fictional handoff.", status=400)
+    try:
         record_fictional_need_decision(
             user=request.user, school_id=school_id, year_id=academic_year_id,
             application_id=application_id, expected_revision=int(request.POST["decision_revision"]),
             questionnaire_revision=int(request.POST["questionnaire_revision"]),
             plan_revision=int(request.POST["plan_revision"]),
-            amount_cents=int(Decimal(request.POST["amount"])*100),
+            amount_cents=int(Decimal(request.POST["amount"])*100), handoff_id=handoff_id,
         )
     except ValidationError:
         return HttpResponse("Fictional decision unavailable. Reload the case.", status=409)
