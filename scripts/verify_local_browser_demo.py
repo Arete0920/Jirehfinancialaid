@@ -73,19 +73,38 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
                 page.set_viewport_size(original)
                 print(f"RESPONSIVE {label}: 4 viewport checks PASS", flush=True)
 
-            def sign_in(username):
-                page.goto(BASE + "/workspace/")
-                expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
-                page.get_by_label("Username").fill(username)
-                page.get_by_label("Password").fill(password)
-                page.get_by_role("button", name="Sign in", exact=True).click()
+            def sign_in(username, *, via_presenter=True):
+                if via_presenter:
+                    # Exercise the actual presenter bridge, without a second login.
+                    page.get_by_role("link", name="Return to presenter guide", exact=True).click()
+                    family_link = page.get_by_role("link", name="Open family financial workspace")
+                    director_link = page.get_by_role("link", name="Open director financial workspace")
+                    expect(family_link).not_to_be_visible()
+                    expect(director_link).not_to_be_visible()
+                    persona, link, other = {
+                        "local-demo-family": ("Family applicant", family_link, director_link),
+                        "local-demo-director-a": ("School A director", director_link, family_link),
+                        "local-demo-director-b": ("School B director", director_link, family_link),
+                    }[username]
+                    page.get_by_role("button", name=persona, exact=True).click()
+                    expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
+                    expect(other).not_to_be_visible()
+                    link.click()
+                    expect(page.get_by_role("heading", name="Sign in")).to_have_count(0)
+                else:
+                    # Retain the original generic sign-in form acceptance.
+                    page.goto(BASE + "/workspace/")
+                    expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
+                    page.get_by_label("Username").fill(username)
+                    page.get_by_label("Password").fill(password)
+                    page.get_by_role("button", name="Sign in", exact=True).click()
                 expect(page.get_by_role("heading", name="Your workspace")).to_be_visible()
 
             def sign_out():
                 page.get_by_role("button", name="Sign out").click()
                 expect(page.get_by_role("heading", name="Sign in")).to_be_visible()
 
-            sign_in("local-demo-family")
+            sign_in("local-demo-family", via_presenter=False)
             expect(page.get_by_role("heading", name="Family applications")).to_be_visible()
             expect(page.get_by_role("heading", name="School director")).to_have_count(0)
             page.get_by_role("link", name=re.compile("Sample Family")).click()
@@ -807,6 +826,8 @@ def main():
             page.get_by_role("button", name="Arete platform operator").click()
             expect(page.locator("#authstatus")).to_have_text("Synthetic session active")
             expect(page.locator("#operator")).to_be_visible()
+            expect(page.get_by_role("link", name="Open family financial workspace")).not_to_be_visible()
+            expect(page.get_by_role("link", name="Open director financial workspace")).not_to_be_visible()
             assert summary_status(director_url) == 404, "Operator saw a school director report"
             page.locator("#operator-summary-link").click()
             expect(page.get_by_role("heading", name="School readiness overview")).to_be_visible()

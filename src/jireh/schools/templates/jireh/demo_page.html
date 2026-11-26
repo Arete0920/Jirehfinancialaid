@@ -53,6 +53,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <li><strong>Family readback and separate school.</strong> Select Family applicant and read the fictional offer; then select School B director, verify the other school is denied and inspect its empty workload.</li>
 <li><strong>Arete operations.</strong> Select Arete platform operator and open View fictional school readiness. Show the saved fictional registry and the explicit absence of provisioning, integration and billing controls.</li>
 </ol>
+<p><strong>Expanded financial workspace (alternative on a fresh demo).</strong> Choose Family applicant and Open family financial workspace to save fictional financial information, review sample documents and confirm the saved review. Record a fictional rehearsal receipt, then sign out and return to the guide. Choose School A director and Open director financial workspace to review saved need, record a nonbinding fictional decision and inspect the simulated budget. Sign out and return as Family applicant to verify the amount. The fixed $250 offer above is a separate scenario; do not combine the two walkthroughs on the same draft. The local Arete registry remains read-only. Signed director handoff and operator preparation use separate disposable acceptance profiles, not this launcher.</p>
 <p class="small"><strong>Close:</strong> No real school activation, live SIS connection, payment, real financial collection or production deployment. Stop if any saved fact or access check fails. Do not expose the loopback server.</p>
 </details>
 <div class="layout">
@@ -80,6 +81,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div class="statusbar"><span id="identity">No session selected</span><span id="authstatus">Signed out</span></div>
 <div id="family" class="hidden">
 <h3>Family overview</h3>
+<p><a class="button secondary" href="{% url 'jireh_workspace' %}">Open family financial workspace</a></p>
 <div class="grid"><div class="metric"><strong id="school-name">—</strong><span>Participating school</span></div><div class="metric"><strong id="draft-status">Not created</strong><span>Annual application status</span></div></div>
 <div class="actions"><button class="button secondary" id="load-household" type="button">Refresh household</button><button class="button" id="create-draft" type="button" disabled>Create / resume annual draft</button></div>
 <h3>Children in household</h3><div id="children"><p>Load your household to see children.</p></div>
@@ -103,7 +105,7 @@ footer{max-width:1080px;margin:auto;padding:12px 22px 35px;font-size:12px;color:
 <div id="synthetic-family-result" role="status" aria-label="Fictional receipt result"></div>
 <div id="synthetic-offer-result" role="status" aria-label="Fictional offered aid result"></div>
 </div>
-<div id="director" class="hidden"><h3>School financial aid director</h3><p>Review your school’s drafts. The demonstration offer uses a fixed $250 amount. Assessment previews use a fictional test policy.</p>
+<div id="director" class="hidden"><h3>School financial aid director</h3><p><a class="button secondary" href="{% url 'jireh_workspace' %}">Open director financial workspace</a></p><p>Review your school’s drafts. The demonstration offer uses a fixed $250 amount. Assessment previews use a fictional test policy.</p>
 <div class="grid"><div class="metric"><strong id="director-school">—</strong><span>Assigned school</span></div><div class="metric"><strong id="application-count">—</strong><span>Drafts visible</span></div></div>
 <div class="actions"><a class="button secondary" href="/local-demo/director-summary/" id="director-summary-link">View verified school workload</a><button class="button" id="load-inventory" type="button">Load school drafts</button><button class="button secondary" id="verify-director" type="button">Verify other school is denied</button></div>
 <div id="inventory"></div><div id="case-detail" role="region" aria-label="Selected case detail"></div></div>

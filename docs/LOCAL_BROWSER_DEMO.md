@@ -60,6 +60,42 @@ Do not skip the family readback or School B check. If the optional encrypted
 document prerequisites are absent, disclose the limitation and omit that
 chapter's document action; do not claim that document behavior was demonstrated.
 
+### Expanded saved-financial workspace (separate presenter option)
+
+Use a fresh disposable launcher process and the same seeded fictional school and
+household. Choose this option **instead of** the fixed $250 receipt/offer sequence
+above; the local receipt-based decision and fixed offer are separate scenarios.
+No viewer credentials or second customer login are needed: the presenter selects
+an existing fictional persona and opens its financial workspace. Do not expose the
+loopback URL or show fixture credentials. The expanded presentation still requires
+exact-candidate evidence and separate owner approval.
+
+| Chapter | Presenter action | Required saved observation |
+| --- | --- | --- |
+| 1. Family workspace | Choose **Family applicant**, then **Open family financial workspace** and Sample Family. Create the annual draft and include Jordan and Taylor. | One DRAFT, two included children; no second login. |
+| 2. Fictional financial information | Open the financial questionnaire. Use the fictional inputs below; save, reopen and verify the persisted values. | A saved revision and the same four financial sections. |
+| 3. Documents and review | Download the generated sample PDF from Manage supporting documents, select that same sample and save it. Download the saved PDF to verify it, then review the application. Confirm the saved fictional review and record the fictional rehearsal receipt. | Current review confirmed; fictional receipt recorded; final submission unavailable; $55 annual fee is disclosure only. |
+| 4. School director | Sign out, choose Return to presenter guide, select **School A director**, then **Open director financial workspace** and Synthetic Christian Academy. Open the saved case. | One household draft, two selected links, current assessment evidence and a calculated fictional need when all prerequisites are met. No combined binding recommendation. |
+| 5. Nonbinding decision and readback | Record a fictional need decision of $2,000 only when the current calculation and budget permit it; inspect the decision journal and simulated budget. Sign out, return to the presenter, choose Family applicant and reopen the same household. | The family reads its own $2,000.00 fictional decision; the draft remains DRAFT. No payment or tuition credit. |
+| 6. Separate school and Arete registry | Sign out and return to the guide. Choose School B director and inspect its scoped workspace; then return to the guide and choose Arete platform operator and View fictional school readiness. | School B has no School A cases. The local operations view shows only the fictional registry and preparation status. It has no provisioning or activation controls. |
+
+Fictional inputs from the existing browser rehearsal: employment income
+$40,000 for January 1–December 31, 2026; cash assets $500 and mortgage
+liabilities $900 as of June 30, 2026; housing expense $200 for January
+1–31, 2026. Select Yes for the example checklist question if it is shown.
+Use only generated sample PDFs and the seeded school/year. If any required
+review, decision or document control is unavailable, stop the expanded
+walkthrough rather than improvise financial values or claim success.
+The amounts are examples, not approved school methodology.
+
+The local workspace uses the fictional rehearsal receipt and existing saved
+need journal. The newer signed prepayment handoff and WebAuthn operator
+preparation are tested in distinct disposable HTTPS acceptance profiles;
+do not advertise them as live controls in this launcher. Returning to the
+guide does not itself sign out; use Sign out in the workspace before
+switching personas. The guide's persona buttons invalidate the prior session
+before selecting a new one.
+
 ### CROWN behavioral reuse (no CROWN runtime dependencies)
 
 - The [CROWN school/year dashboard read model](https://github.com/Arete0920/Crown-CSMS/blob/46b56609fe18360299b08eabaa8bccdffb356a0e/backend/crown_api/dashboards/financial_aid_live.py)

@@ -98,6 +98,8 @@ def _page(request, mode, **context):
     response = render(request, "jireh/customer_workspace.html", {
         "mode": mode, "csp_nonce": nonce,
         "authenticated": request.user.is_authenticated and request.user.is_active,
+        "local_presenter": (os.environ.get("DJANGO_SETTINGS_MODULE") == _DEMO_MODULE
+                            and settings.ROOT_URLCONF == "jireh.schools.demo_urls"),
         **context,
     })
     response["Content-Security-Policy"] = (

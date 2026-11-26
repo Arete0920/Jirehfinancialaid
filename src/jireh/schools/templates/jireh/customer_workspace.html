@@ -32,6 +32,7 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 </header>
 <main>
 <div class="notice"><strong>Acceptance workspace — fictional records only.</strong> This is not a live customer service. Enter fictional records only. Real financial data, documents, final submission, binding awards and payments are prohibited.</div>
+{% if local_presenter %}<p><a href="{% url 'jireh_local_demo' %}">Return to presenter guide</a></p>{% endif %}
 <div id="message" role="alert" aria-live="polite"></div>
 {% if mode == "login" %}
 <section class="panel login">
