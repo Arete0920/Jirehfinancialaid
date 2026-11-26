@@ -20,6 +20,7 @@ from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_safe
 
 from .demo_preparation_jobs import _check_context, _verified_history
+from .demo_platform_operations import OperationsPreviewIntegrityError, _saved_preparation_counts
 from .demo_setup_intents import _candidate_evidence, _locked_setup_operator
 from .models import (
     AcademicYear, FirstDirectorBootstrapRequest, OperatorWebAuthnActionIntent,
@@ -169,6 +170,25 @@ def read_synthetic_school_registry(*, operator):
             return tuple(result)
     except (DatabaseError, ValidationError, School.DoesNotExist):
         raise RegistryIntegrityError("School registry unavailable.") from None
+
+
+def read_synthetic_preparation_counts(*, operator):
+    """Read only the allowlisted operator's bounded, verified preparation history."""
+    from jireh.runtime.operator_portal_policy import operations_profile_available
+
+    if not operations_profile_available():
+        raise PermissionDenied("Operations readback disabled.")
+    try:
+        with transaction.atomic(durable=True):
+            # The preparation writers take the same operator lock before
+            # changing any owned setup receipt or its append-only history.
+            actor = _locked_setup_operator(operator, privileged=True)
+            try:
+                return _saved_preparation_counts(actor, max_rows=_MAX_ROWS)
+            except (PermissionDenied, OperationsPreviewIntegrityError):
+                raise RegistryIntegrityError("Preparation evidence unavailable.") from None
+    except (DatabaseError, ValidationError):
+        raise RegistryIntegrityError("Preparation evidence unavailable.") from None
 
 
 @never_cache
