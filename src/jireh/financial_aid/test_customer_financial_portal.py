@@ -4,12 +4,13 @@ from urllib.parse import urlencode
 from uuid import uuid4, uuid5
 
 from django.contrib.auth import get_user_model
+from django.db import IntegrityError, connection, transaction
 from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
 
 from jireh.financial_aid.models import (
     AidApplication, FinancialDocument, SyntheticAidSubmission, SyntheticApplicationReview,
-    SyntheticQuestionnaireDraft, SyntheticQuestionnaireEvent,
+    SyntheticPrepaymentHandoff, SyntheticQuestionnaireDraft, SyntheticQuestionnaireEvent,
 )
 from jireh.financial_aid.synthetic_document_views import _ALLOWED_FIXTURES
 from jireh.schools.models import FictionalContributorException, Household, HouseholdAccess, Student
@@ -141,6 +142,56 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
         self.assertFalse(SyntheticAidSubmission.objects.exists())
         self.assertEqual(self.get(self.client, self.url("review") + "rehearsal-receipt/").status_code, 404)
+
+    def test_separate_prepayment_handoff_tracks_the_exact_review(self):
+        child = Student.objects.create(school=self.school, first_name="Fictional", last_name="Child")
+        link_student_to_household(school_id=self.school.pk, household_id=self.household.pk, student_id=child.pk)
+        self.assertEqual(self.post(self.client, self.url("select", child.pk), {}, self.csrf()).status_code, 200)
+        self.assertEqual(self.form("questionnaire", self.rows()).status_code, 302)
+        self.assertEqual(self.upload(_ALLOWED_FIXTURES[0]).status_code, 200)
+
+        current = self.get(self.client, self.url("review"))
+        digest = current.context["review"]["digest"]
+        payload = {"state_digest": digest, "handed_off": "yes"}
+        director = Client(enforce_csrf_checks=True)
+        self.verified(director)
+        case = reverse("jireh_customer_case", args=(self.school.pk, self.year.pk, self.draft.pk))
+        self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
+        self.assertEqual(self.form("prepayment_handoff", payload).status_code, 409)
+        self.assertEqual(self.form("review", {"state_digest": digest, "reviewed": "yes"}).status_code, 302)
+        self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
+
+        self.assertContains(self.get(self.client, self.url("review")), "Hand off confirmed draft")
+        self.assertEqual(self.form("prepayment_handoff", payload, csrf=False).status_code, 403)
+        self.assertEqual(self.form("prepayment_handoff", payload, client=director, csrf=False).status_code, 403)
+        self.assertEqual(self.form("prepayment_handoff", payload).status_code, 302)
+        self.assertEqual(self.form("prepayment_handoff", payload).status_code, 302)
+        self.assertContains(self.get(self.client, self.url("review")), "Current draft handed off")
+        self.assertTrue(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
+        self.assertEqual(SyntheticPrepaymentHandoff.objects.count(), 1)
+        if connection.vendor == "postgresql":
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                SyntheticPrepaymentHandoff.objects.update(confirmation_id=SyntheticApplicationReview.objects.get().pk)
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                SyntheticPrepaymentHandoff.objects.all().delete()
+        self.assertEqual(self.upload(_ALLOWED_FIXTURES[1]).status_code, 200)
+        self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
+        self.assertEqual(self.form("questionnaire", self.rows(1, "800.00")).status_code, 302)
+        self.assertEqual(self.form("prepayment_handoff", payload).status_code, 409)
+        self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
+
+        new_digest = self.get(self.client, self.url("review")).context["review"]["digest"]
+        self.assertEqual(self.form("review", {"state_digest": new_digest, "reviewed": "yes"}).status_code, 302)
+        new_payload = {"state_digest": new_digest, "handed_off": "yes"}
+        self.assertEqual(self.form("prepayment_handoff", new_payload).status_code, 302)
+        self.assertEqual(SyntheticPrepaymentHandoff.objects.count(), 2)
+        self.assertTrue(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
+        self.assertEqual(self.form("contributor_exception", {}).status_code, 302)
+        self.assertEqual(self.form("prepayment_handoff", new_payload).status_code, 409)
+        self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
 
     def test_exact_scope_roles_revocation_and_profile_boundaries(self):
         for name in ("questionnaire", "documents", "review"):

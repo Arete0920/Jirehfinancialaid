@@ -698,3 +698,19 @@ class FictionalIncomeEvidenceReview(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Fictional income evidence reviews are immutable.")
+
+
+class SyntheticPrepaymentHandoff(UUIDStampedModel):
+    """Explicit fictional handoff tied to an immutable family confirmation."""
+
+    confirmation = models.OneToOneField(
+        SyntheticApplicationReview, on_delete=models.PROTECT, related_name="prepayment_handoff",
+    )
+
+    def save(self, *args, **kwargs):
+        if not self._state.adding:
+            raise ValidationError("Fictional prepayment handoffs are immutable.")
+        return super().save(*args, **kwargs)
+
+    def delete(self, *args, **kwargs):
+        raise ValidationError("Fictional prepayment handoffs are immutable.")

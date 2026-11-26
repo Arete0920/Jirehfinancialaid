@@ -11,7 +11,7 @@ from jireh.schools.workspace_documents import (
     workspace_document_read, workspace_document_remove,
 )
 from jireh.schools.workspace_questionnaire import workspace_questionnaire
-from jireh.schools.workspace_review import workspace_review
+from jireh.schools.workspace_review import workspace_prepayment_handoff, workspace_review
 from .customer_financial_policy import financial_scope_allowed
 from .customer_portal import _family_allowed, portal_only
 from .customer_portal_urls import urlpatterns as portal_patterns
@@ -43,6 +43,8 @@ urlpatterns = [*portal_patterns,
     path(_FAMILY + "documents/<uuid:document_id>/remove/", fixture_family_only(workspace_document_remove),
          name="jireh_workspace_document_remove"),
     path(_FAMILY + "review/", fixture_family_only(workspace_review), name="jireh_workspace_review"),
+    path(_FAMILY + "review/prepayment-handoff/", fixture_family_only(workspace_prepayment_handoff),
+         name="jireh_workspace_prepayment_handoff"),
     path(_FAMILY + "review/contributor-exception/", fixture_family_only(workspace_contributor_exception),
          name="jireh_workspace_contributor_exception"),
 ]
