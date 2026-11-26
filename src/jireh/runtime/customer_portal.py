@@ -27,6 +27,7 @@ from .customer_director_sessions import (
 from .customer_family_sessions import FAMILY_SESSION_KEY, family_session_eligible
 from .customer_onboarding import ONBOARDING_SESSION_KEY, first_household_eligible
 from .customer_urls import customer_core_available
+from .customer_financial_policy import financial_scope_allowed
 
 _SCOPE_LIMIT = 100
 _NIL = UUID(int=0)
@@ -52,7 +53,7 @@ def portal_only(view):
                 response = HttpResponse("Service unavailable.", status=503)
         response["X-Content-Type-Options"] = "nosniff"
         response["X-Frame-Options"] = "DENY"
-        response["Referrer-Policy"] = "no-referrer"
+        response.setdefault("Referrer-Policy", "no-referrer")
         response["X-Robots-Tag"] = "noindex, nofollow"
         return response
     return guarded
@@ -174,8 +175,10 @@ def portal_family(request, school_id, household_id, academic_year_id):
             raise Http404()
         ids = set(selected["student_ids"])
     children = [{**student, "selected": student["id"] in ids} for student in json.loads(students.content)["students"]]
+    financial = financial_scope_allowed(school_id, household_id, academic_year_id)
     return _page(request, "family", household=household, year=year, draft=draft,
-                 children=children, selected_count=len(ids))
+                 children=children, selected_count=len(ids), questionnaire_enabled=financial,
+                 documents_enabled=financial, review_enabled=financial)
 
 
 @ensure_csrf_cookie

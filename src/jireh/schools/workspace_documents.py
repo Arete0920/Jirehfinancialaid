@@ -21,6 +21,7 @@ from jireh.financial_aid.synthetic_document_views import (
     _ALLOWED_FIXTURES, _POLICY, _backend, _error, PrivateDocumentStorageError,
 )
 from .customer_workspace import _page
+from jireh.runtime.customer_financial_policy import financial_scope_allowed
 
 _ALLOWED_URLCONFS = frozenset((
     "jireh.schools.demo_urls", "jireh.schools.customer_workspace_urls",
@@ -30,7 +31,8 @@ _ALLOWED_URLCONFS = frozenset((
 def _scope(request, school_id, household_id, academic_year_id):
     if (
         getattr(settings, "JIREH_SYNTHETIC_DOCUMENTS_ONLY", False) is not True
-        or settings.ROOT_URLCONF not in _ALLOWED_URLCONFS
+        or (settings.ROOT_URLCONF not in _ALLOWED_URLCONFS
+            and not financial_scope_allowed(school_id, household_id, academic_year_id))
     ):
         raise PermissionDenied("Fictional documents disabled.")
     if request.GET:
