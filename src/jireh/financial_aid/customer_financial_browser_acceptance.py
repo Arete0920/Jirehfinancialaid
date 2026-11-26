@@ -176,6 +176,11 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
                 self._director_login(context, page, expect, case_url)
                 self.assertEqual(page.goto(case_page).status, 200)
                 expect(page.locator("#case-child-count")).to_have_text("2")
+                panel = page.get_by_role("region", name="Fictional assessment evidence")
+                expect(panel.get_by_text("$13,959.00", exact=True)).to_be_visible()
+                expect(panel.get_by_text("Questionnaire revision 1 · School plan revision 1", exact=True)).to_be_visible()
+                expect(panel.get_by_text("Combined recommendation and award decision unavailable.", exact=True)).to_be_visible()
+                print("PASS: authenticated director HTML shows the calculated need and revision provenance", flush=True)
                 response = page.goto(case_url)
                 self.assertEqual(response.status, 200)
                 evidence = response.json()["financial_evidence"]
