@@ -43,6 +43,7 @@ from .views import household_students
 from .workspace_contributor_exception import can_read_contributor_review, contributor_review_pending
 from .saved_need_workspace import read_saved_need_preview
 from .fictional_income_reviews import read_income_evidence, record_income_evidence
+from .enrollment_preview_workspace import read_fictional_enrollment_case
 from .fictional_need_decisions import (
     read_decision_budget, read_director_decisions, read_family_decision, record_fictional_need_decision,
 )
@@ -303,6 +304,13 @@ def _director_rehearsal(user, school, year, application_id, case):
         user=user, school=school, year=year, application_id=application_id,
         questionnaire_revision=metadata.questionnaire_revision,
     )
+    enrollment = read_fictional_enrollment_case(
+        user=user, school=school, year=year, application_id=application_id,
+        selected_student_ids=case["selected_student_ids"],
+    )
+    if enrollment and enrollment["state"] == "available":
+        for name in ("maximum", "pool", "cap"):
+            enrollment[name] = _dollars(enrollment.pop(name + "_cents"))
     income_evidence = read_income_evidence(
         user=user, school=school, year=year, application_id=application_id, baseline=saved_need,
     )
@@ -326,6 +334,7 @@ def _director_rehearsal(user, school, year, application_id, case):
     return {
         "metadata": metadata,
         "saved_need": saved_need,
+        "enrollment": enrollment,
         "income_evidence": income_evidence,
         "decision_journal": journal,
         "offers": offers,
