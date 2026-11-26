@@ -268,6 +268,27 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <section class="panel"><h2>Saved case</h2><p class="tag">{{ case.status }}</p><p class="muted">Reference: {{ case.application_id }}</p>
 <div class="metric"><strong id="case-child-count">{{ case.selected_student_count }}</strong>Selected children</div>
 <p>Private financial answers are not displayed in the director workspace.</p></section>
+{% with evidence=case.financial_evidence %}
+{% if evidence %}
+<section class="panel" aria-labelledby="authenticated-assessment-heading">
+<h2 id="authenticated-assessment-heading">Fictional assessment evidence</h2>
+{% if evidence.need.status == "available" %}
+<p>Questionnaire revision {{ evidence.need.questionnaire_revision }} · School plan revision {{ evidence.need.plan_revision }}</p>
+<div class="grid">
+{% for label, amount in need_amounts.items %}
+<div class="metric"><strong>{{ amount }}</strong>{{ label }}</div>
+{% endfor %}
+</div>
+<p class="muted">Fictional estimate. Financial evidence is unverified and a decision requires school authorization.</p>
+{% elif evidence.need.status == "held" %}
+<p>Need estimate held pending contributor review.</p>
+{% else %}
+<p>Saved evidence is insufficient for a need estimate.</p>
+{% endif %}
+<p>Combined recommendation and award decision unavailable.</p>
+</section>
+{% endif %}
+{% endwith %}
 {% if contributor_review_pending %}
 <section class="panel"><h2>Private contributor review</h2><p>Additional review is pending.</p>
 <form method="post" action="{% url 'jireh_workspace_contributor_decision' school.pk year.pk case.application_id %}">
