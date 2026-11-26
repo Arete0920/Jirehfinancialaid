@@ -1,6 +1,8 @@
 """Independent disposable operations readback profile; never a live route."""
 from django.conf import settings
 
+from jireh.schools.school_setup_preflight import SchoolSetupCandidate
+
 from .customer_director_sessions import disposable_identity_context
 from .customer_financial_policy import _disposable_database
 
@@ -34,3 +36,16 @@ def operations_profile_available():
         and all(getattr(settings, flag, False) is True for flag in _REQUIRED)
         and all(getattr(settings, flag, False) is False for flag in _FORBIDDEN)
     )
+
+
+def configured_preparation_candidate(request):
+    """Return the opt-in fixture for this actor; callers enforce the current session."""
+    fixture = getattr(settings, "JIREH_OPERATOR_PREPARATION_FIXTURE", None)
+    if (
+        getattr(settings, "JIREH_OPERATOR_PREPARATION_ACCEPTANCE", False) is True
+        and type(fixture) is tuple and len(fixture) == 2
+        and type(fixture[0]) is int and fixture[0] == request.user.pk
+        and type(fixture[1]) is SchoolSetupCandidate
+    ):
+        return fixture[1]
+    return None

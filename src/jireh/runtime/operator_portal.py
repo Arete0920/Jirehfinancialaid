@@ -1,4 +1,4 @@
-"""Read-only MFA-bound operations portal using existing operator evidence."""
+"""MFA-bound operations portal for disposable registry and preparation evidence."""
 import re
 import secrets
 from datetime import timedelta
@@ -29,7 +29,7 @@ from jireh.schools.synthetic_school_registry import (
 from .customer_director_sessions import _body, DIRECTOR_SESSION_KEY
 from .customer_family_sessions import FAMILY_SESSION_KEY
 from .customer_onboarding import ONBOARDING_SESSION_KEY
-from .operator_portal_policy import operations_profile_available
+from .operator_portal_policy import configured_preparation_candidate, operations_profile_available
 
 SESSION_KEY = "jireh_operations_acceptance"
 _PENDING = 300
@@ -224,6 +224,7 @@ def operator_home(request):
         # Recheck after both readbacks, including a concurrent credential revoke.
         if not operator_authorized(request):
             raise PermissionDenied()
+        context["preparation_enabled"] = configured_preparation_candidate(request) is not None
         context["verified"] = True
     elif request.user.is_authenticated:
         try:

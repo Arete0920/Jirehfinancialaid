@@ -15,6 +15,7 @@ from django.db import DatabaseError, transaction
 
 from .demo_setup_intents import (
     _candidate_evidence, _locked_setup_operator, _require_setup_context,
+    _require_setup_write_context,
 )
 from .models import School, SchoolPreparationEvent, SchoolSetupIntent
 from .school_setup_preflight import (
@@ -88,6 +89,13 @@ def _append(intent, actor, history, request_key, action, attempt):
     return event
 
 
+def preparation_retry_available(candidate_code, event):
+    return (
+        event is not None and event.action == "FAILED" and event.attempt < _MAX_ATTEMPTS
+        and not School.objects.filter(code=candidate_code).exists()
+    )
+
+
 def _apply_command(intent, actor, candidate, history, command, request_key):
     matches = [event for event in history if event.request_key == request_key]
     if matches:
@@ -104,8 +112,7 @@ def _apply_command(intent, actor, candidate, history, command, request_key):
         raise ValidationError("Preparation must first be queued.")
     last = history[-1]
     if command == "RETRY":
-        if (last.action != "FAILED" or last.attempt >= _MAX_ATTEMPTS
-                or School.objects.filter(code=candidate.code).exists()):
+        if not preparation_retry_available(candidate.code, last):
             raise ValidationError("Preparation retry denied.")
         return _append(
             intent, actor, history, request_key, "REQUEUED", last.attempt + 1,
@@ -122,7 +129,7 @@ def _apply_command(intent, actor, candidate, history, command, request_key):
 
 
 def advance_synthetic_preparation(
-    *, operator, payload, command, request_key, privileged=False,
+    *, operator, payload, command, request_key, privileged=False, portal_request=None,
 ):
     """Apply one explicit test command to the exact owned setup receipt.
 
@@ -132,7 +139,12 @@ def advance_synthetic_preparation(
     The ordinary demo operator remains distinct from the explicitly enabled
     privileged provisioning rehearsal in disposable tests.
     """
-    _check_context(operator, privileged=privileged)
+    if portal_request is None:
+        _check_context(operator, privileged=privileged)
+    else:
+        _require_setup_write_context(operator, payload, privileged=privileged, portal_request=portal_request)
+        if getattr(settings, "JIREH_SYNTHETIC_PREPARATION_JOB_ONLY", False) is not True:
+            raise PermissionDenied("Synthetic preparation job disabled or denied.")
     if type(command) is not str or command not in _COMMANDS:
         raise ValidationError("Invalid preparation command.")
     if not isinstance(request_key, UUID) or not request_key.int:
@@ -146,6 +158,8 @@ def advance_synthetic_preparation(
     try:
         with transaction.atomic(durable=True):
             actor = _locked_setup_operator(operator, privileged=privileged)
+            if portal_request is not None:
+                _require_setup_write_context(actor, payload, privileged=privileged, portal_request=portal_request)
             intent = SchoolSetupIntent.objects.select_for_update().filter(
                 idempotency_key=key,
             ).first()
