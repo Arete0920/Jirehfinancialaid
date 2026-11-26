@@ -16,6 +16,7 @@ from django.urls import path
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
+from .customer_financial_policy import FINANCIAL_FLAGS, financial_profile_available
 from .customer_family_sessions import (
     FAMILY_SESSION_KEY, family_session_eligible, family_login, family_logout,
 )
@@ -46,17 +47,28 @@ _FORBIDDEN = (
 )
 
 
+def customer_core_available(request):
+    """Shared closed-by-default transport and session configuration gate."""
+    financial = financial_profile_available()
+    if getattr(settings, "JIREH_CUSTOMER_FINANCIAL_ACCEPTANCE", False) is True and not financial:
+        return False
+    forbidden = tuple(flag for flag in _FORBIDDEN if not (financial and flag in FINANCIAL_FLAGS))
+    return (
+        getattr(settings, "JIREH_CUSTOMER_CORE_ACCEPTANCE", False) is True
+        and settings.DEBUG is False and request.is_secure()
+        and all(getattr(settings, name, False) is True for name in _REQUIRED)
+        and all(getattr(settings, name, False) is False for name in forbidden)
+        and settings.SESSION_ENGINE == "django.contrib.sessions.backends.db"
+    )
+
+
 def customer_core_only(view, *, allow_family_session=True, session_endpoint=False,
                        onboarding_endpoint=False, director_endpoint=False, director_access=False):
     """Protect the explicit allowlist even if accidentally included elsewhere."""
     @never_cache
     @wraps(view)
     def guarded(request, *args, **kwargs):
-        if (getattr(settings, "JIREH_CUSTOMER_CORE_ACCEPTANCE", False) is not True
-                or settings.DEBUG is not False or not request.is_secure()
-                or any(getattr(settings, name, False) is not True for name in _REQUIRED)
-                or any(getattr(settings, name, False) is not False for name in _FORBIDDEN)
-                or settings.SESSION_ENGINE != "django.contrib.sessions.backends.db"):
+        if not customer_core_available(request):
             response = JsonResponse({"detail": "Not found."}, status=404)
         elif (session_endpoint or onboarding_endpoint) and getattr(
             settings, "JIREH_CUSTOMER_FAMILY_SESSION_ACCEPTANCE", False
@@ -76,15 +88,20 @@ def customer_core_only(view, *, allow_family_session=True, session_endpoint=Fals
                     raise PermissionDenied("Director session is school restricted.")
                 if director_endpoint and (FAMILY_SESSION_KEY in request.session or ONBOARDING_SESSION_KEY in request.session):
                     raise PermissionDenied("Separate director authentication required.")
+                fixture_only = (
+                    getattr(settings, "JIREH_CUSTOMER_EXTERNAL_IDENTITY_ACCEPTANCE", False) is True
+                    and getattr(settings, "JIREH_CUSTOMER_DIRECTOR_SESSION_ACCEPTANCE", False) is False
+                    and disposable_identity_context()
+                    and not any(key in request.session for key in (
+                        DIRECTOR_SESSION_KEY, FAMILY_SESSION_KEY, ONBOARDING_SESSION_KEY,
+                    ))
+                )
                 if director_access:
-                    fixture_only = (
-                        getattr(settings, "JIREH_CUSTOMER_EXTERNAL_IDENTITY_ACCEPTANCE", False) is True
-                        and getattr(settings, "JIREH_CUSTOMER_DIRECTOR_SESSION_ACCEPTANCE", False) is False
-                        and disposable_identity_context()
-                        and DIRECTOR_SESSION_KEY not in request.session
-                    )
                     if not fixture_only and not director_session_authorized(request, kwargs["school_id"]):
                         raise PermissionDenied("Director authentication required.")
+                elif not (session_endpoint or onboarding_endpoint or director_endpoint):
+                    if not fixture_only and request.session.get(FAMILY_SESSION_KEY) is not True:
+                        raise PermissionDenied("Family authentication required.")
                 # Invitation-only password sessions are never customer sessions.
                 # Even a concurrent grant change cannot upgrade that session.
                 if not onboarding_endpoint and ONBOARDING_SESSION_KEY in request.session:

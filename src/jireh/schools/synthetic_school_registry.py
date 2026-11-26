@@ -10,6 +10,7 @@ from dataclasses import asdict, dataclass
 from re import fullmatch
 from uuid import UUID
 
+from django.conf import settings
 from django.core.exceptions import PermissionDenied, ValidationError
 from django.db import DatabaseError, transaction
 from django.db.models import Q
@@ -135,7 +136,15 @@ def read_synthetic_school_registry(*, operator):
     The school flag is a saved fact, never evidence of an approved activation.
     Do not infer live school readiness from this rehearsal.
     """
-    _check_context(operator, privileged=True)
+    # Only the new readback service may enter from the isolated operations
+    # URLConf. Existing provisioning and bootstrap write guards are unchanged.
+    from jireh.runtime.operator_portal_policy import OPERATIONS_URLCONF, operations_profile_available
+
+    if settings.ROOT_URLCONF == OPERATIONS_URLCONF:
+        if not operations_profile_available():
+            raise PermissionDenied("Operations readback disabled.")
+    else:
+        _check_context(operator, privileged=True)
     try:
         with transaction.atomic(durable=True):
             actor = _locked_setup_operator(operator, privileged=True)

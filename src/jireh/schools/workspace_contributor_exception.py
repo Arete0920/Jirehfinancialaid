@@ -9,6 +9,7 @@ from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_POST
 
 from jireh.financial_aid.models import AidApplication
+from jireh.runtime.customer_financial_policy import financial_scope_allowed
 from .access import require_aid_director_access
 from .models import FictionalContributorDecision, FictionalContributorException, School, SchoolStaffAccess
 
@@ -45,7 +46,8 @@ def can_read_contributor_review(user, *, lock=False):
 @transaction.atomic
 def workspace_contributor_exception(request, school_id, household_id, academic_year_id):
     if (getattr(settings, "JIREH_SYNTHETIC_APPLICATION_REVIEW", False) is not True
-            or getattr(settings, "JIREH_SYNTHETIC_SUBMISSION_ONLY", False) is not True):
+            or (getattr(settings, "JIREH_SYNTHETIC_SUBMISSION_ONLY", False) is not True
+                and not financial_scope_allowed(school_id, household_id, academic_year_id))):
         raise Http404("Fictional review unavailable.")
     if (request.GET or request.content_type != "application/x-www-form-urlencoded"
             or set(request.POST) - {"csrfmiddlewaretoken"}):

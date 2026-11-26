@@ -1,0 +1,83 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Jireh | Secure sign-in</title>
+<style nonce="{{ csp_nonce }}">
+:root{font:16px/1.5 system-ui,sans-serif;color:#17382e;background:#f4f7f4}*{box-sizing:border-box}body{margin:0}header{background:#103b31;color:#fff;padding:16px max(20px,calc((100% - 1000px)/2));font-weight:750;letter-spacing:.07em;font-size:23px}header span{color:#e9c17a}main{max-width:660px;margin:auto;padding:24px 16px}section{background:white;border:1px solid #dce7df;border-radius:12px;padding:20px;margin:16px 0}h1,h2{line-height:1.25}h2{font-size:20px}label{display:block;font-weight:650;margin-top:12px}input,select{width:100%;font:inherit;padding:10px;margin:4px 0 12px;border:1px solid #a6b9ad;border-radius:6px}button{font:inherit;font-weight:650;background:#176747;color:white;padding:10px 16px;border:0;border-radius:7px;cursor:pointer}button:disabled{opacity:.6}button:focus-visible,input:focus-visible,select:focus-visible{outline:3px solid #a87c26;outline-offset:3px}.notice,#message:not(:empty){background:#fff8e9;border:1px solid #e8d9b4;padding:12px;border-radius:8px}p{margin:0 0 12px}
+</style></head>
+<body><header>JIREH<span>.</span></header><main>
+<h1>Secure financial aid access</h1><p class="notice">Acceptance only. Use fictional accounts and records. No live enrollment, financial submissions, or payments.</p>
+<div id="message" role="alert" aria-live="polite"></div>
+{% if not authenticated %}
+<section><h2>Family sign-in</h2><form data-command="login" action="{% url 'jireh_customer_family_login' %}" method="post">{% csrf_token %}
+<label>Username<input name="username" autocomplete="username" maxlength="150" required></label><label>Password<input name="password" type="password" autocomplete="current-password" maxlength="1024" required></label><button>Sign in</button></form></section>
+<section><h2>First household invitation</h2><p>Use an already assigned account. Both independently issued proofs are required after sign-in.</p><form data-command="login" action="{% url 'jireh_customer_onboarding_login' %}" method="post">{% csrf_token %}
+<label>Username<input name="username" autocomplete="username" maxlength="150" required></label><label>Password<input name="password" type="password" autocomplete="current-password" maxlength="1024" required></label><button>Continue to invitation</button></form></section>
+<section><h2>School director sign-in</h2><form data-command="director-login" action="{% url 'jireh_customer_director_login' nil_school %}" method="post">{% csrf_token %}
+<label>School reference<input name="school" maxlength="36" required></label><label>Username<input name="username" autocomplete="username" maxlength="150" required></label><label>Password<input name="password" type="password" autocomplete="current-password" maxlength="1024" required></label><button>Continue to security key</button></form></section>
+{% elif pending_school %}
+<section><h2>Verify your security key</h2><p>Director access remains locked until verification succeeds.</p><form data-command="verify" action="{% url 'jireh_customer_director_begin' pending_school %}" data-complete="{% url 'jireh_customer_director_complete' pending_school %}" method="post">{% csrf_token %}
+<label>Registered credential<select name="credential_id_digest" required>{% for ref in credential_refs %}<option value="{{ ref }}">Security key {{ forloop.counter }}</option>{% endfor %}</select></label><button>Verify security key</button></form></section>
+{% elif redeem %}
+<section><h2>Redeem your first household invitation</h2><form data-command="redeem" action="{% url 'jireh_customer_onboarding_redeem' nil_school nil_household %}" method="post">{% csrf_token %}
+<label>School reference<input name="school" maxlength="36" required></label><label>Household reference<input name="household" maxlength="36" required></label><label>Invitation proof<input name="invitation_token" type="password" minlength="64" maxlength="64" autocomplete="off" required></label><label>Mailbox proof<input name="mailbox_token" type="password" minlength="64" maxlength="64" autocomplete="off" required></label><button>Redeem invitation</button></form></section>
+{% else %}<section><p>This session has no eligible customer access. Sign out and authenticate again.</p></section>{% endif %}
+{% if authenticated %}<form data-command="logout" action="{% url 'jireh_workspace_logout' %}" method="post">{% csrf_token %}<button>Sign out</button></form>{% endif %}
+</main><script nonce="{{ csp_nonce }}">
+"use strict";
+const message = document.getElementById("message");
+const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+function scoped(url, fields, household=false) {
+  const school = String(fields.get("school"));
+  if (!uuid.test(school)) throw new Error("scope");
+  if (household) {
+    const id = String(fields.get("household"));
+    if (!uuid.test(id)) throw new Error("scope");
+    url = url.replace("{{ nil_household }}", id);
+  }
+  return url.replace("{{ nil_school }}", school);
+}
+async function send(url, token, data) {
+  const response = await fetch(url, {method:"POST", credentials:"same-origin", cache:"no-store", redirect:"error", headers:{"Content-Type":"application/json","X-CSRFToken":token}, body:JSON.stringify(data)});
+  if (!response.ok) throw new Error("http-" + response.status);
+  return response.json();
+}
+function decode(value) {
+  const text = atob(value.replaceAll("-", "+").replaceAll("_", "/"));
+  return Uint8Array.from(text, character => character.charCodeAt(0));
+}
+function encode(value) {
+  return btoa(String.fromCharCode(...new Uint8Array(value))).replaceAll("+", "-").replaceAll("/", "_").replaceAll("=", "");
+}
+async function verify(form, fields, token) {
+  const result = await send(form.action, token, {credential_id_digest:fields.get("credential_id_digest")});
+  const options = result.options.publicKey;
+  options.challenge = decode(options.challenge);
+  options.allowCredentials = options.allowCredentials.map(item => ({...item,id:decode(item.id)}));
+  const credential = await navigator.credentials.get({publicKey:options});
+  if (!credential) throw new Error("verification");
+  const response = credential.response;
+  return send(form.dataset.complete, token, {challenge_id:result.challenge_id, assertion:{id:credential.id,rawId:encode(credential.rawId),type:credential.type,response:{clientDataJSON:encode(response.clientDataJSON),authenticatorData:encode(response.authenticatorData),signature:encode(response.signature),userHandle:response.userHandle ? encode(response.userHandle) : null}}});
+}
+for (const form of document.querySelectorAll("form[data-command]")) form.addEventListener("submit", async event => {
+  event.preventDefault();
+  if (document.body.dataset.pending === "yes") return;
+  document.body.dataset.pending = "yes";
+  const buttons = Array.from(document.querySelectorAll("button"));
+  buttons.forEach(button => button.disabled = true);
+  const fields = new FormData(form), token = fields.get("csrfmiddlewaretoken"), command = form.dataset.command;
+  message.textContent = "";
+  try {
+    if (command === "verify") await verify(form, fields, token);
+    else if (command === "redeem") await send(scoped(form.action,fields,true),token,{invitation_token:fields.get("invitation_token"),mailbox_token:fields.get("mailbox_token")});
+    else if (command === "logout") await send(form.action,token,{});
+    else await send(command === "director-login" ? scoped(form.action,fields) : form.action,token,{username:fields.get("username"),password:fields.get("password")});
+    window.location.assign("{% url 'jireh_workspace' %}");
+  } catch (error) {
+    message.textContent = error.message === "http-429" ? "Too many attempts. Try again later." : error.message === "http-401" ? "Invalid credentials." : "Request could not be completed. Reload to verify the current session before retrying.";
+  } finally {
+    for (const input of form.querySelectorAll('input[type="password"]')) input.value = "";
+    document.body.dataset.pending = "no";
+    buttons.forEach(button => button.disabled = false);
+  }
+});
+</script></body></html>
