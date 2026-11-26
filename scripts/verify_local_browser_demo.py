@@ -244,6 +244,7 @@ def verify_customer_workspace(sync_playwright, expect, output, runner):
             expect(evidence.locator("tbody tr")).to_have_count(5)
             expect(evidence.get_by_text("Policy pending")).to_have_count(4)
             expect(page.locator("#assessment-open-seats")).to_have_text("65 open seats")
+            expect(page.locator("#enrollment-preview-maximum")).to_have_text("$1,000.00")
             expect(page.locator("#assessment-combined-status")).to_contain_text("Combined recommendation unavailable")
             expect(page.locator("#director-example-total")).to_have_count(0)
             print("ASSESSMENT EVIDENCE: saved need and four unresolved categories: PASS", flush=True)
