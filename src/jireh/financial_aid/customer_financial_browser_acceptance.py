@@ -1,5 +1,6 @@
 """Opt-in browser acceptance of the existing fixture-only financial profile."""
 import base64
+from decimal import Decimal
 
 from cryptography.hazmat.primitives import serialization
 from django.test import TransactionTestCase, override_settings
@@ -92,8 +93,7 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
         page.get_by_role("button", name="Verify security key").click()
         expect(page.get_by_role("heading", name="Your workspace")).to_be_visible(timeout=15000)
 
-    @staticmethod
-    def _save_answers(page, expect):
+    def _save_answers(self, page, expect):
         expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 0")
         for section, category in (("income", "EMPLOYMENT"), ("assets", "CASH"),
                                   ("liabilities", "MORTGAGE"), ("expenses", "HOUSING")):
@@ -109,7 +109,7 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
         page.get_by_role("button", name="Save fictional answers").click()
         expect(page.locator("#questionnaire-revision")).to_have_text("Saved revision: 1")
         page.reload()
-        expect(page.locator("#id_income-0-value")).to_have_value("40000.00")
+        self.assertEqual(Decimal(page.locator("#id_income-0-value").input_value()), Decimal("40000.00"))
 
     def _review_family(self, page, expect, family_url, case_url):
         self._family_login(page, expect)
