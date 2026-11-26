@@ -16,6 +16,7 @@ from django.urls import path
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_GET
 
+from .customer_financial_policy import FINANCIAL_FLAGS, financial_profile_available
 from .customer_family_sessions import (
     FAMILY_SESSION_KEY, family_session_eligible, family_login, family_logout,
 )
@@ -48,11 +49,15 @@ _FORBIDDEN = (
 
 def customer_core_available(request):
     """Shared closed-by-default transport and session configuration gate."""
+    financial = financial_profile_available()
+    if getattr(settings, "JIREH_CUSTOMER_FINANCIAL_ACCEPTANCE", False) is True and not financial:
+        return False
+    forbidden = tuple(flag for flag in _FORBIDDEN if not (financial and flag in FINANCIAL_FLAGS))
     return (
         getattr(settings, "JIREH_CUSTOMER_CORE_ACCEPTANCE", False) is True
         and settings.DEBUG is False and request.is_secure()
         and all(getattr(settings, name, False) is True for name in _REQUIRED)
-        and all(getattr(settings, name, False) is False for name in _FORBIDDEN)
+        and all(getattr(settings, name, False) is False for name in forbidden)
         and settings.SESSION_ENGINE == "django.contrib.sessions.backends.db"
     )
 
