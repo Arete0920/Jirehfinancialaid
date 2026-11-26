@@ -16,6 +16,7 @@ on:
       - "docs/RELEASE_PACKAGING.md"
       - ".github/workflows/release-bundle.yml"
       - "requirements*.txt"
+      - "docs/PRODUCTION_READINESS.md"
   workflow_dispatch:
 permissions:
   contents: read

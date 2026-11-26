@@ -16,6 +16,8 @@ on:
       - "tests/test_current_dependency_audit.py"
       - ".github/workflows/browser-demo.yml"
       - ".github/workflows/dependency-audit.yml"
+      - "docs/PRODUCTION_READINESS.md"
+  workflow_dispatch:
 permissions:
   contents: read
 jobs:
