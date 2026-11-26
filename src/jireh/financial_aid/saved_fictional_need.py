@@ -209,7 +209,7 @@ def _require_changed_income_review(review, *, assessment_date, user, draft, snap
 
 
 @transaction.atomic
-def calculate_saved_fictional_need(*, user, context, catalog, key):
+def calculate_saved_fictional_need(*, user, context, catalog, key, fixture_scope=None):
     """Read actual revision-bound fictional evidence, never raw answers to caller.
 
     Acquire school, year and draft locks in that order to serialize grant
@@ -217,7 +217,22 @@ def calculate_saved_fictional_need(*, user, context, catalog, key):
     independently supplies the fictional geography and category policy. The
     result is indicative, not proof of verified income or current legal consent.
     """
-    require_synthetic_questionnaire_preview()
+    if fixture_scope is None:
+        require_synthetic_questionnaire_preview()
+        case_scope = {}
+    else:
+        from jireh.runtime.customer_financial_policy import financial_scope_allowed
+
+        if (type(context) is not SavedFictionalNeedContext
+                or type(fixture_scope) is not tuple or len(fixture_scope) != 3
+                or fixture_scope[0] != context.school_id
+                or fixture_scope[2] != context.academic_year_id
+                or not financial_scope_allowed(*fixture_scope)
+                or context.changed_income_review is not None
+                or context.scenario_committed_aid_cents != 0
+                or context.scenario_proposed_aid_cents != 0):
+            raise Http404("Fictional assessment unavailable.")
+        case_scope = {"household_id": fixture_scope[1]}
     _guard(key)
     assignments = _require_context(context)
     school = _lock_authorized_school(actor=user, school_id=context.school_id)
@@ -231,12 +246,14 @@ def calculate_saved_fictional_need(*, user, context, catalog, key):
     draft = AidApplication.objects.for_school(school.pk).select_for_update().filter(
         pk=context.application_id, academic_year_id=year.pk,
         household__school_id=school.pk, household__is_active=True,
-        status=AidApplication.STATUS_DRAFT,
+        status=AidApplication.STATUS_DRAFT, **case_scope,
     ).first()
     if draft is None:
         raise Http404("Fictional assessment unavailable.")
+    if fixture_scope is not None and contributor_review_pending(draft.pk):
+        raise SavedFictionalNeedError("saved_need_contributor_review_pending")
     plan_row = read_fictional_school_plan(
-        user=user, school_id=school.pk, academic_year_id=year.pk,
+        user=user, school_id=school.pk, academic_year_id=year.pk, fixture_scope=fixture_scope,
     )
     if plan_row is None or plan_row.revision != context.plan_revision:
         raise SavedFictionalNeedError("saved_need_plan_revision_unavailable")

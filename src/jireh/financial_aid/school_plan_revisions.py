@@ -24,9 +24,19 @@ def _authorized_year(user, school_id, academic_year_id, *, lock=False):
     return get_object_or_404(years, pk=academic_year_id)
 
 
-def read_fictional_school_plan(*, user, school_id, academic_year_id, revision=None):
+def read_fictional_school_plan(*, user, school_id, academic_year_id, revision=None, fixture_scope=None):
     """Read the current or an exact historical revision in the director's school."""
-    year = _authorized_year(user, school_id, academic_year_id)
+    if fixture_scope is None:
+        year = _authorized_year(user, school_id, academic_year_id)
+    else:
+        from jireh.runtime.customer_financial_policy import financial_scope_allowed
+
+        if (type(fixture_scope) is not tuple or len(fixture_scope) != 3
+                or fixture_scope[0] != school_id or fixture_scope[2] != academic_year_id
+                or not financial_scope_allowed(*fixture_scope)):
+            raise PermissionDenied("Fictional school planning is disabled.")
+        school = require_aid_director_access(user, school_id=school_id)
+        year = get_object_or_404(AcademicYear.objects.for_school(school.pk), pk=academic_year_id)
     plans = FictionalSchoolPlanRevision.objects.filter(school_id=year.school_id, academic_year=year)
     if revision is not None:
         if type(revision) is not int or revision < 1:
