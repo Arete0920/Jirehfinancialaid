@@ -79,8 +79,10 @@ class OperatorPreparationPortalTests(FirstDirectorProofFixture, FictionalOnboard
         self.assertEqual(self.command("QUEUE", str(uuid4())).status_code, 200)
         conflict = School.objects.create(code=self.candidate.code, name="Fictional conflict", is_active=False)
         self.assertEqual(self.command("RUN", str(uuid4())).json(), {"event": "FAILED", "attempt": 1})
+        self.assertFalse(self.current()["retry_available"])
         self.assertEqual(self.command("RETRY", str(uuid4())).status_code, 400)
         conflict.delete()
+        self.assertTrue(self.current()["retry_available"])
         self.assertEqual(self.command("RETRY", str(uuid4())).json(), {"event": "REQUEUED", "attempt": 2})
         self.assertEqual(self.command("RUN", str(uuid4())).json(), {"event": "PREPARED", "attempt": 2})
         self.assertEqual(self.current()["state"], "PREPARED")
@@ -90,6 +92,9 @@ class OperatorPreparationPortalTests(FirstDirectorProofFixture, FictionalOnboard
 
     def test_scope_profile_revoke_and_unmodified_provisioning_guards(self):
         self.assertEqual(self.verify().status_code, 200)
+        self.assertContains(self.get(), 'id="preparation-form"')
+        with self.settings(JIREH_OPERATOR_PREPARATION_ACCEPTANCE=False):
+            self.assertNotContains(self.get(), 'id="preparation-form"')
         csrf_token = self.get("login").json()["csrf_token"]
         for flag in ("JIREH_OPERATOR_PREPARATION_ACCEPTANCE", "JIREH_OPERATOR_PORTAL_ACCEPTANCE",
                      "JIREH_SYNTHETIC_SETUP_INTENT_ONLY", "JIREH_SYNTHETIC_PREPARATION_JOB_ONLY"):
@@ -98,6 +103,7 @@ class OperatorPreparationPortalTests(FirstDirectorProofFixture, FictionalOnboard
                 self.assertEqual(response.status_code, 404, flag)
         second = Client(enforce_csrf_checks=True)
         self.assertEqual(self.verify(client=second, second=True).status_code, 200)
+        self.assertNotContains(self.get(client=second), 'id="preparation-form"')
         self.assertEqual(self.get("preparation", client=second).status_code, 403)
         self.assertEqual(self.command("RECORD", client=second).status_code, 403)
         self.assertEqual(self.post("preparation", {"command": "RECORD", "request_key": None,

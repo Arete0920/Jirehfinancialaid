@@ -89,6 +89,13 @@ def _append(intent, actor, history, request_key, action, attempt):
     return event
 
 
+def preparation_retry_available(candidate_code, event):
+    return (
+        event is not None and event.action == "FAILED" and event.attempt < _MAX_ATTEMPTS
+        and not School.objects.filter(code=candidate_code).exists()
+    )
+
+
 def _apply_command(intent, actor, candidate, history, command, request_key):
     matches = [event for event in history if event.request_key == request_key]
     if matches:
@@ -105,8 +112,7 @@ def _apply_command(intent, actor, candidate, history, command, request_key):
         raise ValidationError("Preparation must first be queued.")
     last = history[-1]
     if command == "RETRY":
-        if (last.action != "FAILED" or last.attempt >= _MAX_ATTEMPTS
-                or School.objects.filter(code=candidate.code).exists()):
+        if not preparation_retry_available(candidate.code, last):
             raise ValidationError("Preparation retry denied.")
         return _append(
             intent, actor, history, request_key, "REQUEUED", last.attempt + 1,

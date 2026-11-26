@@ -9,30 +9,24 @@ from django.http import HttpResponseNotFound, JsonResponse
 from django.views.decorators.csrf import csrf_protect
 from django.views.decorators.http import require_http_methods
 
-from jireh.schools.demo_preparation_jobs import _verified_history, advance_synthetic_preparation
+from jireh.schools.demo_preparation_jobs import (
+    _verified_history, advance_synthetic_preparation, preparation_retry_available,
+)
 from jireh.schools.demo_setup_intents import (
     _candidate_evidence, _locked_setup_operator, record_synthetic_setup_intent,
 )
 from jireh.schools.models import SchoolSetupIntent
-from jireh.schools.school_setup_preflight import SchoolSetupCandidate
 from jireh.schools.synthetic_school_registry import RegistryIntegrityError
 from .customer_director_sessions import _body
 from .operator_portal import operator_authorized
-from .operator_portal_policy import operations_profile_available
+from .operator_portal_policy import configured_preparation_candidate, operations_profile_available
 
 
 def _fixture_payload(request):
-    fixture = getattr(settings, "JIREH_OPERATOR_PREPARATION_FIXTURE", None)
-    if (
-        getattr(settings, "JIREH_OPERATOR_PREPARATION_ACCEPTANCE", False) is not True
-        or not operations_profile_available()
-        or not operator_authorized(request)
-        or type(fixture) is not tuple or len(fixture) != 2
-        or type(fixture[0]) is not int or fixture[0] != request.user.pk
-        or type(fixture[1]) is not SchoolSetupCandidate
-    ):
+    candidate = configured_preparation_candidate(request)
+    if candidate is None or not operations_profile_available() or not operator_authorized(request):
         raise PermissionDenied("Fictional preparation unavailable.")
-    payload = asdict(fixture[1])
+    payload = asdict(candidate)
     try:
         _candidate_evidence(payload, privileged=True)
     except ValidationError:
@@ -65,6 +59,7 @@ def _read_current(request, payload):
         return JsonResponse({
             "candidate": {field: payload[field] for field in ("code", "name", "timezone")},
             "state": state, "attempt": attempt,
+            "retry_available": preparation_retry_available(payload["code"], history[-1] if history else None),
         })
 
 
