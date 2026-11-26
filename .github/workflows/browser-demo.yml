@@ -63,6 +63,10 @@ jobs:
         run: |
           cd "$RUNNER_TEMP/jireh-browser-source/jireh"
           PYTHONPATH=src python scripts/verify_authenticated_customer_portal.py
+      - name: Verify independent operator portal on disposable HTTPS
+        run: |
+          cd "$RUNNER_TEMP/jireh-browser-source/jireh"
+          PYTHONPATH=src python manage.py test jireh.schools.operator_browser_acceptance.OperatorBrowserAcceptance.test_https_fixture_boundary jireh.schools.operator_browser_acceptance.OperatorBrowserAcceptance.test_operator_browser --settings=jireh.schools.test_settings --noinput
       - name: Inspect public SonarCloud PR findings (diagnostic only)
         if: always() && github.event_name == 'pull_request'
         env:
