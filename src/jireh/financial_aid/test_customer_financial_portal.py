@@ -235,7 +235,7 @@ class CustomerFinancialPortalTests(TransactionTestCase):
                 "amount_cents", "need_cents", "remaining_budget_cents", "calculation_version", "dataset_sha256",
             ).get()
             with self.assertRaises(IntegrityError), transaction.atomic():
-                FictionalNeedDecision.objects.create(**values, revision=2)
+                FictionalNeedDecision.objects.bulk_create([FictionalNeedDecision(**values, revision=2)])
         self.actor.user_permissions.remove(permission)
         self.assertEqual(post_decision().status_code, 403)
         self.draft.refresh_from_db()
