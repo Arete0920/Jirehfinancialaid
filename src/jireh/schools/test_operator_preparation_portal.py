@@ -90,10 +90,12 @@ class OperatorPreparationPortalTests(FirstDirectorProofFixture, FictionalOnboard
 
     def test_scope_profile_revoke_and_unmodified_provisioning_guards(self):
         self.assertEqual(self.verify().status_code, 200)
+        csrf_token = self.get("login").json()["csrf_token"]
         for flag in ("JIREH_OPERATOR_PREPARATION_ACCEPTANCE", "JIREH_OPERATOR_PORTAL_ACCEPTANCE",
                      "JIREH_SYNTHETIC_SETUP_INTENT_ONLY", "JIREH_SYNTHETIC_PREPARATION_JOB_ONLY"):
             with self.settings(**{flag: False}):
-                self.assertEqual(self.command("RECORD").status_code, 404)
+                response = self.command("RECORD", csrf=False, HTTP_X_CSRFTOKEN=csrf_token)
+                self.assertEqual(response.status_code, 404, flag)
         second = Client(enforce_csrf_checks=True)
         self.assertEqual(self.verify(client=second, second=True).status_code, 200)
         self.assertEqual(self.get("preparation", client=second).status_code, 403)
