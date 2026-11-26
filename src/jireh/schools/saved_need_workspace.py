@@ -30,7 +30,7 @@ class SavedNeedFixture:
     academic_year_id: UUID
     household_id: UUID
     grades: tuple[tuple[UUID, str], ...]
-    enrollment_plan_id: UUID
+    enrollment_plan_id: UUID | None = None
 
 
 def configure_saved_need_fixture(demo):

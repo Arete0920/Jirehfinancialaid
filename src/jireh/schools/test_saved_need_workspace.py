@@ -189,6 +189,10 @@ class SavedNeedWorkspaceTests(TestCase):
         from jireh.financial_aid.school_plan_revisions import record_fictional_school_plan
 
         self.assertNotContains(self.get_case(), 'id="enrollment-preview-maximum"')
+        with self.settings(JIREH_SAVED_NEED_FIXTURE=replace(self.fixture, enrollment_plan_id=None)):
+            need_only = self.get_case()
+            self.assertNotContains(need_only, 'id="enrollment-preview-maximum"')
+            self.assertNotContains(need_only, "Refresh the fictional enrollment scenario")
         with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
             page = self.get_case()
             self.assertContains(page, 'id="assessment-need-state">Evidence unavailable</td>')

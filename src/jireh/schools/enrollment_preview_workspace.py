@@ -30,8 +30,10 @@ def read_fictional_enrollment_case(*, user, school, year, application_id, select
     """Use the current immutable plan and the seeded scenario, never family amounts."""
     if not fixture_matches(school.pk, year.pk):
         return None
-    require_synthetic_questionnaire_preview()
     fixture = settings.JIREH_SAVED_NEED_FIXTURE
+    if fixture.enrollment_plan_id is None:
+        return None
+    require_synthetic_questionnaire_preview()
     plan_row = read_fictional_school_plan(user=user, school_id=school.pk, academic_year_id=year.pk)
     if not AidApplication.objects.for_school(school.pk).filter(
         pk=application_id, academic_year=year, household_id=fixture.household_id,
