@@ -1,7 +1,51 @@
 # Standalone Jireh production readiness — NO-GO
 
 **Status:** NO-GO. **Scope:** `Arete0920/Jirehfinancialaid`, not CROWN.
-**Verified protected-main source checkpoint (2026-11-26 Eastern):**
+**Verified protected-main application checkpoint (2026-11-26 Eastern):**
+[`f94d41d120be3efb0880086d0263f66684a26c78`](https://github.com/Arete0920/Jirehfinancialaid/commit/f94d41d120be3efb0880086d0263f66684a26c78), merged
+[#169](https://github.com/Arete0920/Jirehfinancialaid/pull/169) — six completed successful check contexts:
+Python contracts (240/240), Django (684 executed, 622 passed, 62 skipped),
+disposable PostgreSQL 16 (684/684), extracted-source Chromium, SonarCloud and
+repository presentation. See [foundation 45861933158](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45861933158),
+[browser 45861933019](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45861933019)
+and [presentation 45861933110](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45861933110).
+
+The local presenter now navigates to the existing family and director financial
+workspace using the existing fictional persona session. The expanded script
+is an alternative to the fixed $250 rehearsal. The local operator registry
+remains read-only; the signed HTTPS acceptance profiles remain separate.
+No production route, database migration, authentication bypass or financial
+engine was introduced. The exact-main [browser evidence 15137304870](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45861933019/artifacts/15137304870)
+has ZIP SHA-256 `d42aff1ea40b356dffa47442a6ab0063bb31e76d86ca0963cde123aa5dcfd49f`,
+28 entries, source tree `e95c29e9d10e32a81503f0d8add852ed9761fa75`,
+260 tracked source hashes, and source tar SHA-256
+`3534c43185f4197b87a8e5bf8cdff4bbf191a6eca77b4c1e964324336bcee610`.
+The archive digest and manifest were checked independently. Screenshot previews
+and sampled video frames were reviewed; full presentation and owner sign-off
+remain outstanding.
+
+[#168](https://github.com/Arete0920/Jirehfinancialaid/pull/168) integrated coordinated release
+triggers. At the preceding protected-main commit
+`093edf69c785f8eacf5eced5ae9f7d3b7b6ecb70`, all eight checks succeeded,
+including [offline package 15138061109](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45859792201/artifacts/15138061109)
+and [dependency evidence 15138106071](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45859792219/artifacts/15138106071).
+The latter reported 12 inspected pins, zero public OSV matches and no missing
+or yanked pinned hashes. The six files changed by #169 do not include
+requirements, dependency audit code or workflows. A locally reconstructed
+#169 demonstration archive matches the exact CI source tar digest and all
+260 source hashes; its ten wheels are unchanged from the preceding official
+bundle. Reconstructed ZIP SHA-256:
+`3fc02edbeb269f5789965717a4fbeb28a93d4cc48fead96bac8c2d6fbf8ee198`.
+It is not an official #169 release-bundle workflow artifact. A supplemental
+disposable SQLite HTTP rehearsal used Python 3.13 rather than the locked
+3.12 runtime; it is not packaged-workstation acceptance. The updated ledger
+triggers the existing synchronized evidence workflows on protected main.
+Record resulting exact-commit workflow/artifact links and acceptance
+outcomes in existing issues #48, #47 and #109 without a further source
+change merely to restate a new SHA. Preserve the application candidate
+unless acceptance exposes a material defect.
+
+**Earlier verified protected-main source checkpoint (2026-11-26 Eastern):**
 [`33fdeaccc05621d479be9962c87a304b2844c878`](https://github.com/Arete0920/Jirehfinancialaid/commit/33fdeaccc05621d479be9962c87a304b2844c878), merged [#167](https://github.com/Arete0920/Jirehfinancialaid/pull/167) —
 **six completed SUCCESS check contexts**: Python 3.12 contracts (240/240),
 Django 5.2 (684 tests, 622 passed, 62 skipped, no failures), disposable PostgreSQL 16
@@ -98,21 +142,23 @@ stop duplicate writes through explicit coordination and current GitHub checks.
   financial and operator profiles require disposable identity/database contexts;
   the operator profile expressly excludes customer profile flags.
 - **Browser evidence:** the pinned
-  [Chromium run](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45853892038) verified the extracted
+  [Chromium run](https://github.com/Arete0920/Jirehfinancialaid/actions/runs/45861933019) verified the extracted
   acceptance source, including fictional document selection/version/readback/
   removal, contributor review, changed income, saved need, decision/budget
   readback, authenticated family questionnaire/document/review/handoff,
   signed director nonbinding decision, family readback and the separately
   authenticated operator preparation failure/retry journey. This is disposable
   fixture acceptance, not deployed customer acceptance. The existing guided
-  presenter uses fictional data only; exact-build rehearsal and owner approval
-  remain separate.
+  presenter uses fictional data only. #169 connects the existing persona
+  navigation to the saved-financial workspace; exact-workstation rehearsal,
+  commercial claims review and owner approval remain separate.
 - **PR inventory at the checkpoint:** ten open issues (#43–#51 and #109)
   and zero open PRs. #149 and #151 are merged; #161 exposes the fictional
   enrollment preview in the director case; #162 displays existing assessment
   evidence in the authenticated case. #165–#167 integrate the current
   prepayment handoff, operator preparation and signed fictional decisions.
-  #65 is closed without merge; do not reopen or import its retired frontend
+  #168 synchronizes release evidence triggers and #169 connects the local
+  presenter to the existing financial workspace. #65 is closed without merge; do not reopen or import its retired frontend
   dependency graph. Historical branch refs are not active work assignments.
 - **Operations:** existing fictional setup validation, immutable receipts,
   preparation/retry, action-bound WebAuthn, inactive-school provisioning and
@@ -127,17 +173,19 @@ stop duplicate writes through explicit coordination and current GitHub checks.
   [active main ruleset](https://github.com/Arete0920/Jirehfinancialaid/rules/27810515) requires PRs, strict current-head
   Python, Django, PostgreSQL and SonarCloud checks, with no bypass actors and
   zero required approving reviewers. Browser and presentation checks passed
-  on the pinned SHA; dependency evidence is from the previous checkpoint.
+  on the pinned SHA; the immediately preceding #168 dependency and packaging
+  evidence passed and the locked dependencies are unchanged in #169.
   These are not separately required by that ruleset. Independent human review
   is unavailable in the solo-maintainer path; do not imply human approval
-  from automated checks. The November 25 dependency audit reported 12 pinned
-  packages, zero public OSV matches, and no missing or yanked hashes for the
-  inspected pins; it is not a new exact-SHA dependency audit. This does not establish absence of other vulnerabilities,
+  from automated checks. The November 26 #168 dependency audit reported 12
+  pinned packages, zero public OSV matches, and no missing or yanked hashes
+  for the inspected pins; it is not a new exact-#169 dependency audit. This does not establish absence of other vulnerabilities,
   repository security alerts, or licensing issues.
 - **Packaging:** exact-source offline acceptance bundle construction exists
-  and the browser run exercised extracted tracked source. The dedicated
-  offline wheelhouse/release-bundle workflow did not run on this pinned SHA;
-  obtain its own exact-SHA evidence before accepting an offline release package.
+  and the browser run exercised extracted tracked source. The locally
+  reconstructed #169 package matches that source tar digest and the unchanged
+  official #168 wheelhouse. Obtain official synchronized final-candidate
+  bundle and dependency evidence via the existing checkpoint-triggered workflows.
 - **Not established:** approved hosting, deployed authenticated customer
   routes, actual runtime role topology/TLS/key management, monitored alerts,
   incident exercises, encrypted production backups and restore, institutional
@@ -185,7 +233,7 @@ them when future customers voluntarily submit applications.
 | P1 | Onboarding and recovery | Grants, invitation dual proof, loopback SMTP, verified recovery foundations, director WebAuthn and authenticated sessions (#153–#155) | Institutional identity, real delivery, authorized onboarding, helpdesk and recovery acceptance [#49](https://github.com/Arete0920/Jirehfinancialaid/issues/49) |
 | P1 | Independent operations | Setup validation, durable receipts, preparation/retry, inactive-school fictional provisioning, scoped registry and authenticated operator registry, preparation readback and opt-in fictional preparation commands (#131, #135, #158, #164, #166) | Authorized inactive provisioning browser integration, activation policy, institutional onboarding and operational acceptance [#109](https://github.com/Arete0920/Jirehfinancialaid/issues/109) |
 | P0 | Runtime and release packaging | Closed production URLConf; distinct guarded acceptance profiles; exact-source offline bundle builder and extracted-source browser verification | Complete reviewed prepayment acceptance profile, exact-release packaging evidence, hosting selection and deployment certification |
-| P0 | Security and release | Six exact-main source checks passed; historical dependency audit; sanitized telemetry, readiness and direct-journal ACL audit | Verify the eleven target-environment D/T/S/M/I/A gates below [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48) |
+| P0 | Security and release | Six exact-main source checks passed; #168 dependency audit with unchanged pins; sanitized telemetry, readiness and direct-journal ACL audit | Verify the eleven target-environment D/T/S/M/I/A gates below [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48) |
 | Deferred | Paid final submission / CompuWerx | $55 once per household fee and mandatory reconciliation contract | No provider-specific activity before separate owner authorization; paid commercial release remains blocked [#50](https://github.com/Arete0920/Jirehfinancialaid/issues/50) |
 | Deferred | Partnerships, branding and exceptional multi-school use | Independent architecture and school-scoped identity; historical CROWN code is test-only reference | Optional SIS, approved configurable identity/branding and multi-school policy; do not make a CROWN dependency [#51](https://github.com/Arete0920/Jirehfinancialaid/issues/51) |
 
@@ -196,7 +244,7 @@ checks, target-environment acceptance, and actual business activation separately
 
 ### Execution order
 
-1. Preserve the integrated #166/#167 implementation. At the November 26
+1. Preserve the integrated #166–#169 implementation. At the November 26
    checkpoint there are zero open PRs; do not reopen merged PRs or create
    competing financial/operations engines. Refetch current main, open issues,
    PRs, exact heads, changed-file overlap, rules and checks before further work.
