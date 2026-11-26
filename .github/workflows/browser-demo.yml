@@ -10,6 +10,8 @@ on:
       - "scripts/verify_local_browser_demo.py"
       - "scripts/verify_authenticated_customer_portal.py"
       - "scripts/build_release_bundle.py"
+      - "manage.py"
+      - "docs/questionnaire_v1_field_catalog.json"
       - "src/**"
       - "requirements*.txt"
 
@@ -21,8 +23,13 @@ on:
       - "scripts/verify_local_browser_demo.py"
       - "scripts/verify_authenticated_customer_portal.py"
       - "scripts/build_release_bundle.py"
+      - "manage.py"
+      - "docs/questionnaire_v1_field_catalog.json"
       - "src/**"
       - "requirements*.txt"
+      - "docs/PRODUCTION_READINESS.md"
+
+  workflow_dispatch:
 
 permissions:
   contents: read

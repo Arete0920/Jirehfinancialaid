@@ -42,9 +42,14 @@ test tools, not included in the offline application wheelhouse. The Linux
 wheelhouse is not a native Windows installer. A presenter using a preinstalled
 browser does not need Playwright to run the demo.
 
-The bundle workflow remains path-filtered and manually dispatchable. Its
-startup rehearsal is not a replacement for the Chromium suite. For the final
-candidate, obtain both the offline-bundle evidence and the packaged Chromium
+The bundle, Chromium and dependency workflows remain path-filtered and are
+manually dispatchable. A protected-main push that changes the canonical
+`docs/PRODUCTION_READINESS.md` checkpoint runs all three automatically.
+The Chromium workflow also watches `manage.py` and the questionnaire field
+catalog, which affect extracted-source browser acceptance. This does not
+change required branch protection or authorize deployment. The bundle startup
+rehearsal is not a replacement for the Chromium suite. For the final
+candidate, obtain the offline-bundle, packaged Chromium and dependency
 evidence for the same protected-main SHA, inspect the actual presentation,
 and record the owner's acceptance separately.
 
