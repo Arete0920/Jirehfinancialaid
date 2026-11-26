@@ -1,0 +1,27 @@
+<section class="panel" aria-labelledby="saved-evidence-heading"><h2 id="saved-evidence-heading">Saved fictional evidence</h2>
+<p id="director-evidence-revision">Saved questionnaire revision: {{ metadata.questionnaire_revision|default_if_none:"None" }}</p>
+<p id="director-document-status">{% if metadata.has_pending_document_removal %}Document removal pending{% elif metadata.has_active_document_metadata %}Supporting document metadata present{% else %}No supporting document metadata{% endif %}</p>
+<p id="director-review-history">{% if metadata.has_confirmation_at_saved_revision %}Historical confirmation at saved revision{% elif metadata.has_historical_confirmation %}Historical confirmation at an earlier revision{% else %}No saved confirmation{% endif %}</p>
+<p class="muted">Metadata only. A historical confirmation is not current review verification, legal consent or payment.</p>
+</section>
+{% if saved_need %}
+<section class="panel" aria-labelledby="saved-need-heading"><h2 id="saved-need-heading">Saved-evidence fictional tuition need</h2>
+<p>Uses the saved fictional household amounts and current school plan, with the seeded Pittsburgh residence, two adults, two children, elementary and middle grade bands, and pinned HUD FY 2027 example rules. Not verified residence, approved financial policy, legal consent or an award.</p>
+{% if saved_need.status == "available" %}
+<p id="saved-need-revisions">Questionnaire revision {{ saved_need.questionnaire_revision }} · School plan revision {{ saved_need.plan_revision }}</p>
+<div class="grid">
+<div class="metric"><strong id="saved-need-tuition">${{ saved_need.net_tuition }}</strong>Net tuition after sibling discount</div>
+<div class="metric"><strong id="saved-need-allowance">${{ saved_need.allowance }}</strong>Fictional regional living allowance</div>
+<div class="metric"><strong id="saved-need-contribution">${{ saved_need.contribution }}</strong>Calculated household contribution</div>
+<div class="metric"><strong id="saved-need-unmet">${{ saved_need.unmet_tuition }}</strong>Calculated unmet tuition</div>
+</div><p class="muted">Required fees and separate proposed awards are not included in unmet tuition. Itemized living costs are not deducted again. This calculation does not create an offer or consume the school budget.</p>
+{% elif saved_need.status == "held" %}<p id="saved-need-status">Saved-evidence calculation unavailable. Additional contributor review is pending.</p>
+{% else %}<p id="saved-need-status">Saved-evidence calculation unavailable. Complete the required fictional records and review before continuing.</p>{% endif %}
+</section>{% endif %}
+{% if read_only %}
+<section class="panel" aria-labelledby="authenticated-assessment-heading"><h2 id="authenticated-assessment-heading">Assessment availability</h2>
+<p id="assessment-combined-status">Combined recommendation unavailable until all categories have approved rules and current evidence.</p>
+<p id="authenticated-award-status">Award decision unavailable in this read-only acceptance profile.</p>
+{% if metadata.contributor_review_pending %}<p id="authenticated-contributor-status">Additional contributor review is pending.</p>{% endif %}
+<p class="muted">School authorization is required. No verified financial information, binding award, budget commitment, submission or payment is established.</p></section>
+{% endif %}

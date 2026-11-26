@@ -1,6 +1,7 @@
 """Disposable HTML adapter for the existing customer workflow, not live routing."""
 import json
 import secrets
+from decimal import Decimal
 from functools import wraps
 from uuid import UUID
 
@@ -208,4 +209,13 @@ def portal_case(request, school_id, academic_year_id, application_id):
     result = staff_application_detail(request, school_id, academic_year_id, application_id)
     if result.status_code != 200:
         return result
-    return _page(request, "case", school=school, year=year, case=json.loads(result.content))
+    case = json.loads(result.content)
+    evidence = case.get("financial_evidence")
+    need = None
+    if evidence is not None:
+        need = dict(evidence["need"])
+        if need["status"] == "available":
+            for name in ("net_tuition", "allowance", "contribution", "unmet_tuition"):
+                need[name] = f"{Decimal(need[name + '_cents']) / 100:,.2f}"
+    return _page(request, "case", school=school, year=year, case=case,
+                 authenticated_need=need)

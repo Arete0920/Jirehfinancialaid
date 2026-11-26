@@ -281,24 +281,14 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% elif contributor_decision %}
 <section class="panel"><h2>Private contributor review</h2><p>{{ contributor_decision.get_outcome_display }}</p></section>
 {% endif %}
+{% if case.financial_evidence %}
+{% include "jireh/director_assessment_evidence.html" with metadata=case.financial_evidence saved_need=authenticated_need read_only=True only %}
+{% elif rehearsal %}
+{% include "jireh/director_assessment_evidence.html" with metadata=rehearsal.metadata saved_need=rehearsal.saved_need only %}
+{% endif %}
 {% if rehearsal %}
-<section class="panel" aria-labelledby="saved-evidence-heading"><h2 id="saved-evidence-heading">Saved fictional evidence</h2>
-<p id="director-evidence-revision">Saved questionnaire revision: {{ rehearsal.metadata.questionnaire_revision|default_if_none:"None" }}</p>
-<p id="director-document-status">{% if rehearsal.metadata.has_pending_document_removal %}Document removal pending{% elif rehearsal.metadata.has_active_document_metadata %}Supporting document metadata present{% else %}No supporting document metadata{% endif %}</p>
-<p id="director-review-history">{% if rehearsal.metadata.has_confirmation_at_saved_revision %}Historical confirmation at saved revision{% elif rehearsal.metadata.has_historical_confirmation %}Historical confirmation at an earlier revision{% else %}No saved confirmation{% endif %}</p>
-<p class="muted">Metadata only. A historical confirmation is not current review verification, legal consent or payment.</p>
-</section>
-{% if rehearsal.saved_need %}
-<section class="panel" aria-labelledby="saved-need-heading"><h2 id="saved-need-heading">Saved-evidence fictional tuition need</h2>
-<p>Uses the saved fictional household amounts and current school plan, with the seeded Pittsburgh residence, two adults, two children, elementary and middle grade bands, and pinned HUD FY 2027 example rules. Not verified residence, approved financial policy, legal consent or an award.</p>
 {% if rehearsal.saved_need.status == "available" %}
-<p id="saved-need-revisions">Questionnaire revision {{ rehearsal.saved_need.questionnaire_revision }} · School plan revision {{ rehearsal.saved_need.plan_revision }}</p>
-<div class="grid">
-<div class="metric"><strong id="saved-need-tuition">${{ rehearsal.saved_need.net_tuition }}</strong>Net tuition after sibling discount</div>
-<div class="metric"><strong id="saved-need-allowance">${{ rehearsal.saved_need.allowance }}</strong>Fictional regional living allowance</div>
-<div class="metric"><strong id="saved-need-contribution">${{ rehearsal.saved_need.contribution }}</strong>Calculated household contribution</div>
-<div class="metric"><strong id="saved-need-unmet">${{ rehearsal.saved_need.unmet_tuition }}</strong>Calculated unmet tuition</div>
-</div><p class="muted">Required fees and separate proposed awards are not included in unmet tuition. Itemized living costs are not deducted again. This calculation does not create an offer or consume the school budget.</p>
+<section class="panel" aria-labelledby="need-planning-heading"><h2 id="need-planning-heading">Fictional need planning</h2>
 {% if rehearsal.income_evidence %}
 <div class="panel">
 <h3>Fictional changed-income evidence</h3>
@@ -332,7 +322,6 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <label for="projection-proposed">Proposed need aid in dollars</label>
 <input type="text" id="projection-proposed" name="proposed" inputmode="decimal" maxlength="11" required>
 <button type="submit">Project fictional need aid</button></form>
-{% else %}<p id="saved-need-status">Saved-evidence calculation unavailable. Complete the required fictional records and review before continuing.</p>{% endif %}
 </section>{% endif %}
 {% if rehearsal.saved_need %}
 <section class="panel" aria-labelledby="assessment-evidence-heading">
