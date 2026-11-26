@@ -320,3 +320,12 @@ The scenario uses a fixed calendar for reproducible offline review. The
 comparison leaves the original projection, recorded decision and simulated
 budget on their existing calculation. No evidence uploads, live financial
 intake or school policy changes are part of this rehearsal.
+
+### Fictional assessment evidence
+
+The director case shows saved regional tuition need when the current fictional
+evidence and school plan support an estimate. The assessment table identifies
+the pending school rules for mission, marketing and enrollment, merit, and
+hardship. Grade-band vacancies are planning context. An accepted fictional
+income review informs the separate need comparison. Until current evidence and
+approved rules cover all categories, the case shows no combined recommendation.

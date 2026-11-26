@@ -65,11 +65,21 @@ class SavedNeedWorkspaceTests(TestCase):
 
     def test_saved_evidence_changes_visible_need_and_remains_nonbinding(self):
         with self.settings(JIREH_SAVED_NEED_FIXTURE=self.fixture):
-            self.assertContains(self.get_case(), "Saved-evidence calculation unavailable.")
+            missing = self.get_case()
+            self.assertContains(missing, "Saved-evidence calculation unavailable.")
+            self.assertContains(missing, 'id="assessment-need-state">Evidence unavailable</td>')
+            self.assertNotContains(missing, 'id="assessment-open-seats"')
             self.save(0, self.answers)
             first = self.get_case()
             self.assertContains(first, 'id="saved-need-unmet">$13,959.00</strong>')
             self.assertContains(first, "Questionnaire revision 1")
+            self.assertContains(first, 'aria-label="Assessment evidence by category"')
+            self.assertContains(first, 'id="assessment-need-state">Estimate available</td>')
+            self.assertContains(first, 'id="assessment-open-seats">65 open seats</span>')
+            for bucket in ("mission", "marketing", "merit", "hardship"):
+                self.assertContains(first, f'data-assessment-bucket="{bucket}"')
+            self.assertContains(first, "Combined recommendation unavailable")
+            self.assertNotContains(first, 'id="director-example-total"')
             self.assertNotContains(first, self.policy.member_ids[0])
             self.assertNotContains(first, "4000000")
             changed = copy.deepcopy(self.answers)
@@ -80,9 +90,15 @@ class SavedNeedWorkspaceTests(TestCase):
             self.assertContains(next_page, "Questionnaire revision 2")
             self.assertContains(next_page, "School plan revision 1")
             self.assertNotContains(next_page, "$13,959.00")
+            no_need = copy.deepcopy(changed)
+            no_need["income"][0]["amount"] = 9_000_000
+            self.save(2, no_need)
+            zero = self.get_case()
+            self.assertContains(zero, 'id="assessment-need-state">Estimate available</td>')
+            self.assertContains(zero, 'id="saved-need-unmet">$0.00</strong>')
             partial = copy.deepcopy(changed)
             partial["income"][0]["period_end"] = "2026-06-30"
-            self.save(2, partial)
+            self.save(3, partial)
             unavailable = self.get_case()
             self.assertContains(unavailable, "Saved-evidence calculation unavailable.")
             self.assertNotContains(unavailable, 'id="saved-need-unmet"')
@@ -143,6 +159,7 @@ class SavedNeedWorkspaceTests(TestCase):
             result = self.get_case()
             self.assertContains(result, 'id="income-evidence-baseline">$13,959.00</strong>')
             self.assertContains(result, 'id="income-evidence-adjusted">$18,959.00</strong>')
+            self.assertContains(result, "A dated income review is available for the need estimate.")
             self.assertNotContains(result, "3000000")
             self.assertFalse(FictionalNeedDecision.objects.exists())
             self.assertFalse(SyntheticAidSubmission.objects.exists())

@@ -126,6 +126,7 @@ def read_saved_need_preview(
         "questionnaire_revision": result.questionnaire_revision,
         "plan_id": result.plan_id,
         "plan_revision": result.plan_revision,
+        "open_seats": plan.as_plan().open_seats,
         "calculation_version": result.regional_need.calculation_version,
         "dataset_sha256": result.regional_need.dataset_sha256,
         "net_tuition_cents": result.cost.net_tuition_cents,
