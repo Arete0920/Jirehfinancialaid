@@ -1,6 +1,7 @@
 """Focused tests for the repository presentation and attribution guard."""
 
 import hashlib
+import io
 import json
 from pathlib import Path
 import subprocess
@@ -64,6 +65,34 @@ class PresentationGateTests(unittest.TestCase):
         self.assertTrue(gate.metadata_violations(dict(clean, description='Made with Codex')))
         self.assertTrue(gate.metadata_violations(dict(clean, homepage='https://example.invalid/chatgpt')))
         self.assertTrue(gate.metadata_violations(dict(clean, topics=None)))
+
+    def test_metadata_stdin_cli_fails_closed(self):
+        clean = {'name': 'Jirehfinancialaid', 'description': 'Financial aid',
+                 'homepage': None, 'topics': ['schools']}
+        cases = (
+            (json.dumps(clean), 0),
+            (json.dumps(dict(clean, description='Made with Codex')), 1),
+            ('{', 1),
+            ('null', 1),
+            ('', 1),
+        )
+        for payload, expected in cases:
+            with self.subTest(payload=payload):
+                with patch.object(sys, 'argv', ['gate', '--metadata-stdin']), \
+                     patch.object(sys, 'stdin', io.StringIO(payload)), \
+                     patch.object(sys, 'stdout', io.StringIO()), \
+                     patch.dict(gate.os.environ, {}, clear=True), \
+                     patch.object(gate, 'tracked_violations', return_value=([], 0)):
+                    self.assertEqual(gate.main(), expected)
+
+    def test_arbitrary_metadata_file_argument_is_rejected(self):
+        with patch.object(sys, 'argv', ['gate', '--metadata-file', '../../example']), \
+             patch.object(sys, 'stderr', io.StringIO()), \
+             patch.object(gate, 'tracked_violations') as scan:
+            with self.assertRaises(SystemExit) as raised:
+                gate.main()
+            self.assertEqual(raised.exception.code, 2)
+            scan.assert_not_called()
 
     def test_release_requires_review_of_exact_uploaded_asset(self):
         digest = 'sha256:' + 'a' * 64

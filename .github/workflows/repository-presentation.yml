@@ -38,4 +38,4 @@ jobs:
             -H "Accept: application/vnd.github+json" \
             "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY" \
             -o "$RUNNER_TEMP/repository-metadata.json"
-          python scripts/ci/repository_presentation_gate.py --metadata-file "$RUNNER_TEMP/repository-metadata.json"
+          python scripts/ci/repository_presentation_gate.py --metadata-stdin < "$RUNNER_TEMP/repository-metadata.json"

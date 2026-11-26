@@ -244,7 +244,8 @@ def metadata_violations(metadata: dict) -> list[str]:
 
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--metadata-file', type=Path)
+    parser.add_argument('--metadata-stdin', action='store_true',
+                        help='Read repository metadata JSON from standard input')
     args = parser.parse_args()
     try:
         violations, asset_count = tracked_violations(ROOT)
@@ -254,9 +255,9 @@ def main() -> int:
     violations.extend(pr_violations(os.environ))
     violations.extend(issue_violations(os.environ))
     violations.extend(release_violations(os.environ))
-    if args.metadata_file is not None:
+    if args.metadata_stdin:
         try:
-            metadata = json.loads(args.metadata_file.read_text(encoding='utf-8'))
+            metadata = json.load(sys.stdin)
             violations.extend(metadata_violations(metadata))
         except (OSError, UnicodeError, ValueError, TypeError) as exc:
             violations.append(f'Cannot read repository metadata ({type(exc).__name__})')
@@ -266,7 +267,7 @@ def main() -> int:
             print(violation)
         return 1
     print('Repository presentation gate: PASS (tracked objects, applicable event narrative'
-          + (', repository metadata' if args.metadata_file is not None else '')
+          + (', repository metadata' if args.metadata_stdin else '')
           + '; manual review obligations remain)')
     return 0
 
