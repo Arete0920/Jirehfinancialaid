@@ -23,7 +23,9 @@ from jireh.schools.operator_webauthn_registry import (
     begin_registered_operator_challenge, complete_registered_operator_challenge,
 )
 from jireh.schools.session_views import authenticate_session, end_session
-from jireh.schools.synthetic_school_registry import RegistryIntegrityError, read_synthetic_school_registry
+from jireh.schools.synthetic_school_registry import (
+    RegistryIntegrityError, read_synthetic_preparation_counts, read_synthetic_school_registry,
+)
 from .customer_director_sessions import _body, DIRECTOR_SESSION_KEY
 from .customer_family_sessions import FAMILY_SESSION_KEY
 from .customer_onboarding import ONBOARDING_SESSION_KEY
@@ -217,7 +219,9 @@ def operator_home(request):
     context = {"csp_nonce": nonce, "authenticated": request.user.is_authenticated}
     if operator_authorized(request):
         context["schools"] = read_synthetic_school_registry(operator=request.user)
-        # Recheck after registry readback, including a concurrent credential revoke.
+        context["preparation_counts"] = read_synthetic_preparation_counts(operator=request.user)
+        context["preparation_total"] = sum(context["preparation_counts"].values())
+        # Recheck after both readbacks, including a concurrent credential revoke.
         if not operator_authorized(request):
             raise PermissionDenied()
         context["verified"] = True

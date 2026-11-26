@@ -1,4 +1,5 @@
 """Disposable acceptance of MFA-protected read-only school operations."""
+from unittest.mock import patch
 from uuid import uuid4
 
 from django.contrib.auth import get_user_model
@@ -7,8 +8,12 @@ from django.urls import reverse
 from fido2.webauthn import PublicKeyCredentialRequestOptions
 
 from jireh.runtime.operator_portal import SESSION_KEY
+from .demo_preparation_jobs import advance_synthetic_preparation
 from .demo_setup_intents import record_synthetic_setup_intent
-from .models import OperatorWebAuthnChallenge, School, SyntheticSchoolProvisioningReceipt
+from .models import (
+    OperatorWebAuthnChallenge, School, SchoolPreparationEvent, SchoolSetupIntent,
+    SyntheticSchoolProvisioningReceipt,
+)
 from .operator_webauthn_registry import revoke_registered_operator_credential
 from .test_first_director_mfa import FirstDirectorProofFixture
 from .test_onboarding_rehearsal import FictionalOnboardingRehearsal
@@ -84,12 +89,14 @@ class OperatorPortalTests(FirstDirectorProofFixture, FictionalOnboardingRehearsa
         page = self.get()
         self.assertContains(page, "Operator sign-in")
         self.assertNotContains(page, self.payload["name"])
+        self.assertNotContains(page, "School preparation status")
         self.assertIn("no-store", page["Cache-Control"])
         self.assertIn("frame-ancestors 'none'", page["Content-Security-Policy"])
         self.assertEqual(self.login().status_code, 200)
         pending = self.get()
         self.assertContains(pending, "Verify operator security key")
         self.assertNotContains(pending, self.payload["name"])
+        self.assertNotContains(pending, "School preparation status")
         options = self.begin_portal()
         key_before = self.client.session.session_key
         result = self.post("complete", {"assertion": self.assertion_for(options)})
@@ -99,13 +106,18 @@ class OperatorPortalTests(FirstDirectorProofFixture, FictionalOnboardingRehearsa
         self.assertContains(registry, self.payload["name"])
         self.assertContains(registry, "Inactive fixture")
         self.assertContains(registry, "SCHOOL_INACTIVE")
+        self.assertContains(registry, "School preparation status")
+        self.assertEqual(registry.context["preparation_total"], 1)
+        self.assertEqual(registry.context["preparation_counts"]["PREPARED"], 1)
         self.assertNotContains(registry, self.digest)
         self.assertEqual(School.objects.count(), 1)
         self.assertEqual(SyntheticSchoolProvisioningReceipt.objects.count(), 1)
         self.assertFalse(School.objects.get(pk=self.receipt.school_id).is_active)
         self.assertEqual(self.post("complete", {"assertion": self.assertion_for(options)}).status_code, 403)
         self.assertEqual(self.post("logout", {}).status_code, 200)
-        self.assertNotContains(self.get(), self.payload["name"])
+        page = self.get()
+        self.assertNotContains(page, self.payload["name"])
+        self.assertNotContains(page, "School preparation status")
 
     def test_unmarked_other_session_bad_signature_and_revocation(self):
         self.client.force_login(self.operator)
@@ -125,7 +137,9 @@ class OperatorPortalTests(FirstDirectorProofFixture, FictionalOnboardingRehearsa
         self.assertEqual(self.post("complete", {"assertion": self.assertion_for(options)}).status_code, 200)
         self.assertContains(self.get(), self.payload["name"])
         revoke_registered_operator_credential(operator=self.operator, credential_id_digest=self.digest)
-        self.assertNotContains(self.get(), self.payload["name"])
+        page = self.get()
+        self.assertNotContains(page, self.payload["name"])
+        self.assertNotContains(page, "School preparation status")
         outsider = get_user_model().objects.create_superuser(username="unlisted-operator", password=PASSWORD)
         self.assertEqual(self.login(client=Client(enforce_csrf_checks=True), user=outsider).status_code, 401)
 
@@ -157,3 +171,82 @@ class OperatorPortalTests(FirstDirectorProofFixture, FictionalOnboardingRehearsa
         result = self.get()
         self.assertEqual(result.status_code, 503)
         self.assertNotIn(b"Synthetic changed identity", result.content)
+
+    def test_preparation_counts_are_owned_current_and_read_only(self):
+        def seed(code, operator=None):
+            actor = operator or self.operator
+            payload = {**self.payload, "code": code, "idempotency_key": str(uuid4())}
+            receipt = record_synthetic_setup_intent(operator=actor, payload=payload, privileged=True)
+            return payload, receipt
+
+        def advance(payload, command):
+            return advance_synthetic_preparation(
+                operator=self.operator, payload=payload, command=command,
+                request_key=uuid4(), privileged=True,
+            )
+
+        with self.settings(ROOT_URLCONF="jireh.schools.urls"):
+            _, received = seed("synthetic-portal-received")
+            queued, _ = seed("synthetic-portal-queued")
+            advance(queued, "QUEUE")
+            failed, _ = seed(self.payload["code"])
+            advance(failed, "QUEUE")
+            self.assertEqual(advance(failed, "RUN").action, "FAILED")
+            retry, _ = seed("synthetic-portal-retry")
+            conflict = School.objects.create(
+                code=retry["code"], name="Fictional conflict", is_active=False,
+            )
+            advance(retry, "QUEUE")
+            self.assertEqual(advance(retry, "RUN").action, "FAILED")
+            conflict.delete()
+            self.assertEqual(advance(retry, "RETRY").action, "REQUEUED")
+            _, foreign = seed("synthetic-portal-other", self.second)
+
+        self.assertEqual(self.verify().status_code, 200)
+        models = (School, SchoolSetupIntent, SchoolPreparationEvent, SyntheticSchoolProvisioningReceipt)
+        before = tuple(model.objects.count() for model in models)
+        page = self.get()
+        self.assertEqual(page.status_code, 200)
+        self.assertEqual(page.context["preparation_counts"], {
+            "RECEIVED": 1, "QUEUED": 1, "REQUEUED": 1, "PREPARED": 1, "FAILED": 1,
+        })
+        self.assertEqual(page.context["preparation_total"], 5)
+        for receipt in (received, foreign, self.setup):
+            for value in (receipt.pk, receipt.idempotency_key, receipt.candidate_digest):
+                self.assertNotContains(page, str(value))
+        self.assertEqual(tuple(model.objects.count() for model in models), before)
+
+        second = Client(enforce_csrf_checks=True)
+        self.assertEqual(self.verify(client=second, second=True).status_code, 200)
+        other = self.get(client=second)
+        self.assertEqual(other.status_code, 200)
+        self.assertContains(other, self.payload["name"])
+        self.assertEqual(other.context["preparation_counts"], {
+            "RECEIVED": 1, "QUEUED": 0, "REQUEUED": 0, "PREPARED": 0, "FAILED": 0,
+        })
+        self.assertEqual(tuple(model.objects.count() for model in models), before)
+
+        with self.settings(ROOT_URLCONF="jireh.schools.urls"):
+            self.assertEqual(advance(queued, "RUN").action, "PREPARED")
+        page = self.get()
+        self.assertEqual(page.context["preparation_counts"]["QUEUED"], 0)
+        self.assertEqual(page.context["preparation_counts"]["PREPARED"], 2)
+
+    def test_preparation_limit_and_invalid_history_fail_closed(self):
+        payload = {**self.payload, "code": "synthetic-portal-invalid", "idempotency_key": str(uuid4())}
+        with self.settings(ROOT_URLCONF="jireh.schools.urls"):
+            receipt = record_synthetic_setup_intent(operator=self.operator, payload=payload, privileged=True)
+        self.assertEqual(self.verify().status_code, 200)
+        with patch("jireh.schools.synthetic_school_registry._MAX_ROWS", 1):
+            page = self.get()
+            self.assertEqual(page.status_code, 503)
+            self.assertNotIn(self.payload["name"].encode(), page.content)
+        SchoolPreparationEvent.objects.create(
+            intent=receipt, actor=self.operator, request_key=uuid4(),
+            sequence=1, attempt=1, action="STARTED",
+        )
+        page = self.get()
+        self.assertEqual(page.status_code, 503)
+        self.assertNotIn(self.payload["name"].encode(), page.content)
+        self.assertNotIn(str(receipt.pk).encode(), page.content)
+        self.assertNotIn(b"STARTED", page.content)
