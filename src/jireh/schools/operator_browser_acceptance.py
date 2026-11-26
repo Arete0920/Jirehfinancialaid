@@ -130,11 +130,13 @@ class OperatorBrowserAcceptance(OperatorPortalTests):
                 self.assertTrue(page.evaluate("window.isSecureContext"))
                 expect(page.get_by_role("heading", name="Operator sign-in")).to_be_visible()
                 expect(page.get_by_text(self.payload["name"], exact=True)).to_have_count(0)
+                expect(page.get_by_role("heading", name="School preparation status")).to_have_count(0)
                 page.get_by_label("Username").fill(self.operator.username)
                 page.get_by_label("Password").fill(PASSWORD)
                 page.get_by_role("button", name="Continue to security key").click()
                 expect(page.get_by_role("heading", name="Verify operator security key")).to_be_visible(timeout=15000)
                 expect(page.get_by_text(self.payload["name"], exact=True)).to_have_count(0)
+                expect(page.get_by_role("heading", name="School preparation status")).to_have_count(0)
                 count = _database_readback(lambda: OperatorWebAuthnCredential.objects.values_list(
                     "sign_count", flat=True).get(pk=self.credential.pk))
                 cdp = context.new_cdp_session(page)
@@ -154,6 +156,9 @@ class OperatorBrowserAcceptance(OperatorPortalTests):
                 expect(page.get_by_role("heading", name="Verified school registry")).to_be_visible(timeout=15000)
                 expect(page.get_by_text(self.payload["name"], exact=True)).to_be_visible()
                 expect(page.get_by_text("Inactive fixture", exact=True)).to_be_visible()
+                expect(page.get_by_role("heading", name="School preparation status")).to_be_visible()
+                expect(page.locator("#preparation-total")).to_have_text("1")
+                expect(page.locator('[data-preparation-state="PREPARED"] td')).to_have_text("1")
                 self.assertGreater(_database_readback(lambda: OperatorWebAuthnCredential.objects.values_list(
                     "sign_count", flat=True).get(pk=self.credential.pk)), count)
                 self.assertEqual(page.goto(_ORIGIN + "/operations/create/").status, 404)
@@ -163,6 +168,7 @@ class OperatorBrowserAcceptance(OperatorPortalTests):
                 page.get_by_role("button", name="Sign out").click()
                 expect(page.get_by_role("heading", name="Operator sign-in")).to_be_visible(timeout=15000)
                 expect(page.get_by_text(self.payload["name"], exact=True)).to_have_count(0)
+                expect(page.get_by_role("heading", name="School preparation status")).to_have_count(0)
                 self.assertEqual(_database_readback(lambda: School.objects.count()), 1)
                 self.assertEqual(_database_readback(lambda: SyntheticSchoolProvisioningReceipt.objects.count()), 1)
                 self.assertFalse(_database_readback(lambda: School.objects.values_list(

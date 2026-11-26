@@ -72,7 +72,7 @@ def _saved_school_inventory():
     return rows
 
 
-def _saved_preparation_counts(operator):
+def _saved_preparation_counts(operator, *, max_rows=None):
     """Read only the operator's verified preparation history, never credentials.
 
     This is an observational summary of disposable receipts, not a claim
@@ -84,6 +84,10 @@ def _saved_preparation_counts(operator):
 
     counts = dict.fromkeys(("RECEIVED", "QUEUED", "REQUEUED", "PREPARED", "FAILED"), 0)
     receipts = SchoolSetupIntent.objects.filter(proposed_by_id=operator.pk).order_by("pk")
+    if max_rows is not None:
+        receipts = list(receipts[:max_rows + 1])
+        if len(receipts) > max_rows:
+            raise OperationsPreviewIntegrityError("Preparation readback exceeds the rehearsal limit.")
     for receipt in receipts:
         history = _verified_history(receipt)
         state = history[-1].action if history else "RECEIVED"

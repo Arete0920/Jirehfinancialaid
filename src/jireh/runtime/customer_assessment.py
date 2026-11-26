@@ -23,6 +23,7 @@ from jireh.financial_aid.saved_fictional_need import (
     SavedFictionalNeedContext, SavedFictionalNeedError, calculate_saved_fictional_need,
 )
 from jireh.financial_aid.school_plan_revisions import read_fictional_school_plan
+from jireh.financial_aid.synthetic_prepayment_handoff import current_prepayment_handoff
 from jireh.schools.demo_seed import DEMO_SCHOOL_A_CODE
 from jireh.schools.grant_admin import _lock_authorized_school
 from jireh.schools.workspace_contributor_exception import contributor_review_pending
@@ -111,6 +112,7 @@ def read_authenticated_case_assessment(request, school_id, academic_year_id, app
         "has_confirmation_at_saved_revision": metadata.has_confirmation_at_saved_revision,
         "contributor_review_pending": contributor_review_pending(draft.pk),
         "need": _need(request.user, draft, scope, metadata),
+        "prepayment_handoff_current": current_prepayment_handoff(draft, metadata.questionnaire_revision),
         "combined_recommendation": "unavailable",
         "award_decision_available": False,
     }

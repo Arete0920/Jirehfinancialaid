@@ -6,6 +6,11 @@ on:
     types: [opened, synchronize, reopened, edited, ready_for_review]
   push:
     branches: [main]
+  issues:
+    types: [opened, edited, reopened]
+  release:
+    types: [published, edited]
+  workflow_dispatch:
 
 permissions:
   contents: read
@@ -24,5 +29,13 @@ jobs:
           python-version: '3.12'
       - name: Test presentation guard
         run: python -m unittest discover -s tests -p 'test_repository_presentation_gate.py' -v
-      - name: Check first-party files and pull request narrative
-        run: python scripts/ci/repository_presentation_gate.py
+      - name: Check tracked objects, applicable narrative and repository metadata
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          curl --fail --silent --show-error --retry 2 --max-time 20 \
+            -H "Authorization: Bearer $GITHUB_TOKEN" \
+            -H "Accept: application/vnd.github+json" \
+            "$GITHUB_API_URL/repos/$GITHUB_REPOSITORY" \
+            -o "$RUNNER_TEMP/repository-metadata.json"
+          python scripts/ci/repository_presentation_gate.py --metadata-stdin < "$RUNNER_TEMP/repository-metadata.json"

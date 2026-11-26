@@ -149,6 +149,18 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 </ul>
 <p>No payment is collected or simulated here. Final paid submission is disabled; confirmation is not consent or a completed application.</p>
 </section>
+{% if handoff %}
+<section class="panel"><h2>Fictional director handoff</h2>
+{% if handoff.current %}<p id="prepayment-handoff-status">Current draft handed off</p>
+{% elif handoff.available %}
+<form method="post" action="{% url 'jireh_workspace_prepayment_handoff' household.school_id household.pk year.pk %}">
+{% csrf_token %}<input type="hidden" name="state_digest" value="{{ review.digest }}">
+<label><input type="checkbox" name="handed_off" value="yes" required> Share this confirmed fictional draft for director review.</label>
+<button type="submit">Hand off confirmed draft</button>
+</form>
+{% else %}<p>Confirm the current review and resolve any pending contributor review to hand off this draft.</p>{% endif %}
+<p>The application remains DRAFT.</p></section>
+{% endif %}
 {% if rehearsal_receipt %}
 <section class="panel"><h2>Fictional rehearsal receipt</h2>
 {% if rehearsal_receipt.recorded %}<p id="rehearsal-receipt-status">Fictional rehearsal receipt recorded</p>
@@ -272,6 +284,8 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% if evidence %}
 <section class="panel" aria-labelledby="authenticated-assessment-heading">
 <h2 id="authenticated-assessment-heading">Fictional assessment evidence</h2>
+{% if evidence.prepayment_handoff_current %}<p id="director-prepayment-handoff">Current fictional draft handed off</p>
+{% else %}<p id="director-prepayment-handoff">No current fictional handoff</p>{% endif %}
 {% if evidence.need.status == "available" %}
 <p>Questionnaire revision {{ evidence.need.questionnaire_revision }} · School plan revision {{ evidence.need.plan_revision }}</p>
 <div class="grid">
