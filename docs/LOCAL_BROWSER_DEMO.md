@@ -329,3 +329,14 @@ the pending school rules for mission, marketing and enrollment, merit, and
 hardship. Grade-band vacancies are planning context. An accepted fictional
 income review informs the separate need comparison. Until current evidence and
 approved rules cover all categories, the case shows no combined recommendation.
+
+The enrollment row can also show one explicitly labeled fictional scenario for
+a first-time elementary entrant. The sample uses a $15,000 enrollment pool
+and $1,000 student cap. Other applicable aid would be subtracted before the
+ceiling is calculated. This sample assumes no other aid or commitments and
+applies the existing sibling discount to the lower-priced elementary tuition
+when both fictional students are selected. The snapshot is dated November 25,
+2026 and is tied to the seeded school plan. A new plan revision withholds the
+preview until the scenario is refreshed. This ceiling is separate from saved
+need and does not reserve a seat, record an award, or change the recorded
+budget.

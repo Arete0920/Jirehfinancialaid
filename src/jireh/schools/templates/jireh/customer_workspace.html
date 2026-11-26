@@ -370,7 +370,17 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <tr data-assessment-bucket="mission"><th scope="row">Mission</th><td>Policy pending</td>
 <td>Requires approved eligibility criteria and permitted supporting evidence.</td></tr>
 <tr data-assessment-bucket="marketing"><th scope="row">Marketing and enrollment</th><td>Policy pending</td>
-<td>{% if rehearsal.saved_need.status == "available" %}Current fictional school plan: <span id="assessment-open-seats">{{ rehearsal.saved_need.open_seats }} open seats</span>. {% endif %}Requires approved grade or cohort eligibility and a budget limit.</td></tr>
+<td>{% if rehearsal.saved_need.status == "available" %}Current fictional school plan: <span id="assessment-open-seats">{{ rehearsal.saved_need.open_seats }} open seats</span>. {% endif %}Requires approved grade or cohort eligibility and a budget limit.
+{% if rehearsal.enrollment.state == "available" %}
+<details open>
+<summary>Fictional enrollment preview</summary>
+<p><strong id="enrollment-preview-maximum">${{ rehearsal.enrollment.maximum }}</strong> maximum for director review. {{ rehearsal.enrollment.open_seats }} elementary seats on the sample plan. Limit: {{ rehearsal.enrollment.limits|join:", " }}.</p>
+<p>First-time elementary entrant. Sample pool ${{ rehearsal.enrollment.pool }} and student cap ${{ rehearsal.enrollment.cap }}. The scenario allows stacking after other aid and assumes no other aid or committed funds.</p>
+<p>Scenario date {{ rehearsal.enrollment.as_of|date:"M j, Y" }} · Plan revision {{ rehearsal.enrollment.plan_revision }} · {{ rehearsal.enrollment.policy_version }}</p>
+</details>
+{% elif rehearsal.enrollment.state == "plan_stale" %}<p>Refresh the fictional enrollment scenario for the current school plan.</p>
+{% elif rehearsal.enrollment.state == "student_unselected" %}<p>Select the fictional elementary student to see the scenario.</p>
+{% endif %}</td></tr>
 <tr data-assessment-bucket="merit"><th scope="row">Merit</th><td>Policy pending</td>
 <td>Requires an approved achievement rubric and supporting evidence.</td></tr>
 <tr data-assessment-bucket="hardship"><th scope="row">Hardship</th><td>Policy pending</td>
