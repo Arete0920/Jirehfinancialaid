@@ -197,6 +197,7 @@ class CustomerFinancialPortalTests(TransactionTestCase):
             )
 
         self.assertNotContains(self.get(director, case), "Record a fictional need decision")
+        self.assertNotContains(self.get(director, case), "Fictional school-year aid budget")
         self.assertEqual(post_decision().status_code, 403)
         permission = Permission.objects.get(content_type__app_label="financial_aid", codename="add_fictionalneeddecision")
         self.actor.user_permissions.add(permission)
@@ -216,7 +217,14 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         row = FictionalNeedDecision.objects.get()
         self.assertEqual((row.revision, row.handoff_id, row.receipt_id, row.amount_cents),
                          (1, handoff.pk, None, 25_000))
-        self.assertContains(self.get(self.client, self.family()), "$250.00")
+        page = self.get(director, case)
+        self.assertContains(page, "Fictional school-year aid budget")
+        self.assertContains(page, '<dd id="signed-budget-allocated">$250.00</dd>', html=True)
+        remaining = FICTIONAL_15145_PLAN.annual_aid_budget_cents - 25_000
+        self.assertContains(page, f'<dd id="signed-budget-remaining">${remaining / 100:,.2f}</dd>', html=True)
+        family = self.get(self.client, self.family())
+        self.assertContains(family, "$250.00")
+        self.assertNotContains(family, "Fictional school-year aid budget")
         other_parent = get_user_model().objects.create_user(
             username="second-fictional-parent", password=fixtures.PASSWORD,
         )
@@ -225,21 +233,30 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         self.assertEqual(self.login_family(other_family, other_parent).status_code, 200)
         self.assertNotContains(self.get(other_family, self.family()), "$250.00")
 
+        adjustment = {**payload, "decision_revision": 1, "amount": "175.50"}
+        self.assertRedirects(post_decision(adjustment), case, fetch_redirect_response=False)
+        page = self.get(director, case)
+        self.assertContains(page, '<dd id="signed-budget-allocated">$175.50</dd>', html=True)
+        remaining = FICTIONAL_15145_PLAN.annual_aid_budget_cents - 17_550
+        self.assertContains(page, f'<dd id="signed-budget-remaining">${remaining / 100:,.2f}</dd>', html=True)
+        self.assertContains(self.get(self.client, self.family()), "$175.50")
+
         self.assertEqual(self.upload(_ALLOWED_FIXTURES[1]).status_code, 200)
-        self.assertEqual(post_decision().status_code, 409)
-        self.assertNotContains(self.get(self.client, self.family()), "$250.00")
-        self.assertEqual(FictionalNeedDecision.objects.count(), 1)
+        self.assertEqual(post_decision(adjustment).status_code, 409)
+        self.assertNotContains(self.get(self.client, self.family()), "$175.50")
+        self.assertEqual(FictionalNeedDecision.objects.count(), 2)
         if connection.vendor == "postgresql":
             with self.assertRaises(IntegrityError), transaction.atomic():
                 FictionalNeedDecision.objects.update(amount_cents=1)
             values = FictionalNeedDecision.objects.values(
                 "application_id", "questionnaire_id", "questionnaire_revision", "plan_id", "actor_user_id",
                 "amount_cents", "need_cents", "remaining_budget_cents", "calculation_version", "dataset_sha256",
-            ).get()
+            ).get(revision=2)
             with self.assertRaises(IntegrityError), transaction.atomic():
-                FictionalNeedDecision.objects.bulk_create([FictionalNeedDecision(**values, revision=2)])
+                FictionalNeedDecision.objects.bulk_create([FictionalNeedDecision(**values, revision=3)])
         self.actor.user_permissions.remove(permission)
         self.assertEqual(post_decision().status_code, 403)
+        self.assertNotContains(self.get(director, case), "Fictional school-year aid budget")
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
         self.assertFalse(SyntheticAidSubmission.objects.exists())

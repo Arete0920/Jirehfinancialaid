@@ -310,6 +310,13 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 <p>Latest decision: <strong id="signed-director-decision-amount">{{ signed_decision.dollars }}</strong> · Revision {{ signed_decision.revision }}</p>
 {% endif %}
 <p>This is a nonbinding fictional decision.</p>
+{% if signed_decision.budget %}
+<h3>Fictional school-year aid budget</h3>
+<dl>
+<dt>Allocated in the decision journal</dt><dd id="signed-budget-allocated">{{ signed_decision.budget.allocated_dollars }}</dd>
+<dt>Remaining under school plan revision {{ signed_decision.budget.plan_revision }}</dt><dd id="signed-budget-remaining">{{ signed_decision.budget.remaining_dollars }}</dd>
+</dl>
+{% endif %}
 <form method="post" action="{% url 'jireh_signed_need_decision' school.pk year.pk case.application_id %}">
 {% csrf_token %}
 <input type="hidden" name="handoff" value="{{ signed_decision.handoff_id }}">

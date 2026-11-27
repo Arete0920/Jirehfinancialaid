@@ -202,7 +202,12 @@ def read_decision_budget(*, user, school_id, year_id):
     plan = read_fictional_school_plan(user=user, school_id=school.pk, academic_year_id=year_id)
     if plan is None:
         return None
-    allocated = _current(school.pk, year_id).aggregate(total=Sum("amount_cents"))["total"] or 0
+    return decision_budget_for_plan(plan)
+
+
+def decision_budget_for_plan(plan):
+    """Reconcile the latest journal entries against an already authorized plan."""
+    allocated = _current(plan.school_id, plan.academic_year_id).aggregate(total=Sum("amount_cents"))["total"] or 0
     remaining = plan.as_plan().annual_aid_budget_cents - allocated
     return {"allocated_cents": allocated, "remaining_cents": remaining,
             "overallocated": remaining < 0, "plan_revision": plan.revision}

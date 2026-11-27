@@ -25,7 +25,7 @@ from jireh.financial_aid.saved_fictional_need import (
 from jireh.financial_aid.school_plan_revisions import read_fictional_school_plan
 from jireh.financial_aid.synthetic_prepayment_handoff import current_prepayment_handoff
 from jireh.schools.demo_seed import DEMO_SCHOOL_A_CODE
-from jireh.schools.fictional_need_decisions import _journal, decision_authorized
+from jireh.schools.fictional_need_decisions import _journal, decision_authorized, decision_budget_for_plan
 from jireh.schools.grant_admin import _lock_authorized_school
 from jireh.schools.workspace_contributor_exception import contributor_review_pending
 from .customer_director_sessions import director_session_authorized
@@ -108,10 +108,15 @@ def read_authenticated_case_assessment(request, school_id, academic_year_id, app
     fictional_decision = None
     if handoff and need["status"] == "available" and decision_authorized(request.user):
         latest = _journal(draft).first()
+        plan = read_fictional_school_plan(
+            user=request.user, school_id=school.pk, academic_year_id=academic_year_id,
+            revision=need["plan_revision"], fixture_scope=scope,
+        )
         fictional_decision = {
             "handoff_id": str(handoff.pk),
             "revision": latest.revision if latest else 0,
             "amount_cents": latest.amount_cents if latest and latest.handoff_id == handoff.pk else None,
+            "budget": decision_budget_for_plan(plan) if plan is not None else None,
         }
     result = {
         "fictional_only": True,

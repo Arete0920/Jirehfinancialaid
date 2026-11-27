@@ -233,6 +233,10 @@ def portal_case(request, school_id, academic_year_id, application_id):
     decision = evidence.get("fictional_decision") if evidence else None
     if decision is not None and decision["amount_cents"] is not None:
         decision["dollars"] = f'${Decimal(decision["amount_cents"]) / 100:,.2f}'
+    budget = decision["budget"] if decision is not None else None
+    if budget is not None:
+        budget["allocated_dollars"] = f'${Decimal(budget["allocated_cents"]) / 100:,.2f}'
+        budget["remaining_dollars"] = f'${Decimal(budget["remaining_cents"]) / 100:,.2f}'
     contributor_pending = False
     contributor_decision = None
     if evidence and can_read_contributor_review(request.user):
