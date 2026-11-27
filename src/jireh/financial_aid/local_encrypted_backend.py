@@ -11,6 +11,7 @@ All file creation is exclusive; ciphertext is bound to its object key by AAD.
 import os
 import stat
 import uuid
+from contextlib import suppress
 from pathlib import Path
 
 from cryptography.exceptions import InvalidTag
@@ -82,10 +83,10 @@ class LocalEncryptedDocumentDeleter:
         filename = self._key_name(object_key)
         with self._open_root() as directory:
             try:
-                os.unlink(filename, dir_fd=directory.fd)
+                with suppress(FileNotFoundError):
+                    os.unlink(filename, dir_fd=directory.fd)
+                # A previous attempt may have unlinked the file before fsync failed.
                 os.fsync(directory.fd)
-            except FileNotFoundError:
-                return  # Idempotent retry after successful prior deletion.
             except OSError:
                 _reject("private_storage_delete_failed")
 

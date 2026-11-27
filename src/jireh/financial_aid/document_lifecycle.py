@@ -288,9 +288,10 @@ def recover_synthetic_document_deletion(
         raise PermissionDenied("Document recovery assignment required.")
     row = FinancialDocument.objects.for_school(school_id).select_for_update().only(
         "school_id", "object_key", "state",
-    ).filter(pk=document_id, state__in=(
-        FinancialDocument.STATE_DELETE_PENDING, FinancialDocument.STATE_DELETED,
-    )).first()
+    ).filter(
+        pk=document_id, application__status=AidApplication.STATUS_DRAFT,
+        state__in=(FinancialDocument.STATE_DELETE_PENDING, FinancialDocument.STATE_DELETED),
+    ).first()
     if row is None:
         raise Http404("Document not found.")
     if row.state == FinancialDocument.STATE_DELETE_PENDING:

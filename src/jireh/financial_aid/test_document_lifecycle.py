@@ -229,6 +229,12 @@ class DocumentLifecycleTests(TestCase):
 
             deleter = LocalEncryptedDocumentDeleter(root=directory)
             params = dict(operator=operator, school_id=self.school.pk, document_id=doc.pk, backend=deleter)
+            with self.settings(JIREH_SYNTHETIC_DOCUMENT_RECOVERY_ASSIGNMENTS=((operator.pk, self.other_school.pk),)):
+                with self.assertRaises(Http404):
+                    recover_synthetic_document_deletion(**{**params, "school_id": self.other_school.pk})
+            self.assertEqual(len(list(Path(directory).iterdir())), 1)
+            self.assertFalse(doc.events.filter(action=FinancialDocumentEvent.ACTION_DELETED).exists())
+
             with patch.object(deleter, "delete", side_effect=OSError("fictional failure")):
                 with self.assertRaisesRegex(DocumentLifecycleError, "document_storage_delete_failed"):
                     recover_synthetic_document_deletion(**params)
@@ -236,6 +242,17 @@ class DocumentLifecycleTests(TestCase):
             self.assertEqual(doc.state, FinancialDocument.STATE_DELETE_PENDING)
             self.assertFalse(doc.events.filter(action=FinancialDocumentEvent.ACTION_DELETED).exists())
             self.assertEqual(len(list(Path(directory).iterdir())), 1)
+
+            # The first failure follows unlink. The next attempt sees no file
+            # but must still sync the directory before confirming removal.
+            with patch("jireh.financial_aid.local_encrypted_backend.os.fsync", side_effect=OSError):
+                for _ in range(2):
+                    with self.assertRaisesRegex(DocumentLifecycleError, "document_storage_delete_failed"):
+                        recover_synthetic_document_deletion(**params)
+            doc.refresh_from_db()
+            self.assertEqual(doc.state, FinancialDocument.STATE_DELETE_PENDING)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+            self.assertFalse(doc.events.filter(action=FinancialDocumentEvent.ACTION_DELETED).exists())
 
             with patch.object(FinancialDocumentEvent.objects, "create", side_effect=IntegrityError("audit failed")):
                 with self.assertRaises(IntegrityError):
