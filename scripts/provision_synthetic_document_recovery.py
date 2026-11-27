@@ -100,7 +100,7 @@ def provision_recovery_v1(connection, *, school_id, operator_id):
                         'SELECT, INSERT, UPDATE, REFERENCES')
             )
         """, ([login, storage_login], [
-            "public.auth_user", "public.financial_aid_aidapplication",
+            "public.auth_user", "public.schools_school", "public.financial_aid_aidapplication",
             "public.financial_aid_financialdocument", "public.financial_aid_financialdocumentevent",
             f"public.{receipt_name}",
         ]))

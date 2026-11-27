@@ -484,6 +484,7 @@ class DocumentPostgresGuardTests(TransactionTestCase):
         self.assertEqual(FinancialDocumentEvent.objects.count(), 1)
 
     def test_versioned_recovery_provisioning_separates_and_removes_grants(self):
+        from psycopg import sql
         from scripts.provision_synthetic_document_recovery import provision_recovery_v1
 
         operator = get_user_model().objects.create_user(username="synthetic-storage-operator", is_staff=True)
@@ -498,15 +499,18 @@ class DocumentPostgresGuardTests(TransactionTestCase):
             with connection.cursor() as cursor:
                 cursor.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
 
-        with connection.cursor() as cursor:
-            cursor.execute("GRANT UPDATE (action) ON public.financial_aid_financialdocumentevent TO PUBLIC")
-        try:
-            with self.assertRaisesRegex(ValueError, "Direct recovery table privileges rejected"):
-                with provision_recovery_v1(connection.connection, **assigned):
-                    self.fail("Direct audit access should reject provisioning")
-        finally:
-            with connection.cursor() as cursor:
-                cursor.execute("REVOKE UPDATE (action) ON public.financial_aid_financialdocumentevent FROM PUBLIC")
+        for table, column in (("financial_aid_financialdocumentevent", "action"), ("schools_school", "is_active")):
+            privilege = sql.SQL("UPDATE ({}) ON {}").format(
+                sql.Identifier(column), sql.Identifier("public", table),
+            )
+            with self.subTest(table=table), connection.cursor() as cursor:
+                cursor.execute(sql.SQL("GRANT {} TO PUBLIC").format(privilege))
+                try:
+                    with self.assertRaisesRegex(ValueError, "Direct recovery table privileges rejected"):
+                        with provision_recovery_v1(connection.connection, **assigned):
+                            self.fail("Direct recovery authority should reject provisioning")
+                finally:
+                    cursor.execute(sql.SQL("REVOKE {} FROM PUBLIC").format(privilege))
 
         with provision_recovery_v1(connection.connection, **assigned) as roles:
             self.assertTrue(roles.claim.startswith("jireh_recovery_claim_v1_"))
