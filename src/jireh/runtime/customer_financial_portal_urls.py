@@ -7,7 +7,9 @@ from django.http import Http404
 from django.urls import path
 
 from jireh.schools.customer_workspace import workspace_need_decision
-from jireh.schools.workspace_contributor_exception import workspace_contributor_exception
+from jireh.schools.workspace_contributor_exception import (
+    workspace_contributor_decision, workspace_contributor_exception,
+)
 from jireh.schools.workspace_documents import (
     workspace_documents, workspace_document_sample, workspace_document_upload,
     workspace_document_read, workspace_document_remove,
@@ -44,10 +46,25 @@ def signed_need_decision(request, school_id, academic_year_id, application_id):
     return result
 
 
+@portal_only
+@transaction.atomic
+def signed_contributor_decision(request, school_id, academic_year_id, application_id):
+    if not financial_profile_available():
+        raise Http404()
+    if not _director_allowed(request, school_id):
+        raise PermissionDenied()
+    result = workspace_contributor_decision(request, school_id, academic_year_id, application_id, signed=True)
+    if not _director_allowed(request, school_id):
+        raise PermissionDenied()
+    return result
+
+
 _FAMILY = "customer/family/<uuid:school_id>/<uuid:household_id>/<uuid:academic_year_id>/"
 urlpatterns = [*portal_patterns,
     path("customer/director/<uuid:school_id>/<uuid:academic_year_id>/cases/<uuid:application_id>/decision/",
          signed_need_decision, name="jireh_signed_need_decision"),
+    path("customer/director/<uuid:school_id>/<uuid:academic_year_id>/cases/<uuid:application_id>/contributor-decision/",
+         signed_contributor_decision, name="jireh_workspace_contributor_decision"),
     path(_FAMILY + "questionnaire/", fixture_family_only(workspace_questionnaire),
          name="jireh_workspace_questionnaire"),
     path(_FAMILY + "documents/", fixture_family_only(workspace_documents), name="jireh_workspace_documents"),

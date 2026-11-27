@@ -62,6 +62,9 @@ def _director_credentials(user, school_id):
         permissions = permissions.exclude(
             content_type__app_label="financial_aid", content_type__model="fictionalneeddecision",
             codename="add_fictionalneeddecision",
+        ).exclude(
+            content_type__app_label="schools", content_type__model="fictionalcontributorexception",
+            codename="view_fictionalcontributorexception",
         )
     if permissions.exists():
         return DirectorWebAuthnCredential.objects.none()

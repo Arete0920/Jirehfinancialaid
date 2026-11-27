@@ -17,7 +17,9 @@ from jireh.financial_aid.models import (
 from jireh.financial_aid.synthetic_document_views import _ALLOWED_FIXTURES
 from jireh.schools.demo_seed import DEMO_SCHOOL_A_CODE
 from jireh.schools.saved_need_workspace import SavedNeedFixture
-from jireh.schools.models import FictionalContributorException, Household, HouseholdAccess, Student
+from jireh.schools.models import (
+    FictionalContributorDecision, FictionalContributorException, Household, HouseholdAccess, Student,
+)
 from jireh.schools.services import link_student_to_household
 from .annual_school_plan import FICTIONAL_15145_PLAN
 from .school_plan_revisions import record_fictional_school_plan
@@ -290,6 +292,69 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
         self.draft.refresh_from_db()
         self.assertEqual(self.draft.status, AidApplication.STATUS_DRAFT)
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
+
+    def test_signed_director_can_resolve_contributor_hold_and_family_can_handoff(self):
+        child = Student.objects.create(school=self.school, first_name="Fictional", last_name="Child")
+        link_student_to_household(school_id=self.school.pk, household_id=self.household.pk, student_id=child.pk)
+        self.assertEqual(self.post(self.client, self.url("select", child.pk), {}, self.csrf()).status_code, 200)
+        self.assertEqual(self.form("questionnaire", self.rows()).status_code, 302)
+        self.assertEqual(self.upload(_ALLOWED_FIXTURES[0]).status_code, 200)
+        digest = self.get(self.client, self.url("review")).context["review"]["digest"]
+        self.assertEqual(self.form("review", {"state_digest": digest, "reviewed": "yes"}).status_code, 302)
+        self.assertEqual(self.form("contributor_exception", {}).status_code, 302)
+        handoff = {"state_digest": digest, "handed_off": "yes"}
+        self.assertEqual(self.form("prepayment_handoff", handoff).status_code, 409)
+
+        director = Client(enforce_csrf_checks=True)
+        self.verified(director)
+        args = (self.school.pk, self.year.pk, self.draft.pk)
+        case = reverse("jireh_workspace_case", args=args)
+        self.assertNotContains(self.get(director, case), "Record contributor decision")
+        self.assertNotContains(self.get(director, case), "Additional review is pending.")
+        permission = Permission.objects.get(
+            content_type__app_label="schools", codename="view_fictionalcontributorexception",
+        )
+        self.actor.user_permissions.add(permission)
+        page = self.get(director, case)
+        self.assertContains(page, "Record contributor decision")
+        self.assertEqual(page["Referrer-Policy"], "same-origin")
+
+        def decide(outcome="alternate_evidence_accepted", *, client=director, csrf=True, case_args=args):
+            headers = {"HTTP_HOST": fixtures.RP, "HTTP_ORIGIN": fixtures.ORIGIN}
+            if csrf:
+                headers["HTTP_X_CSRFTOKEN"] = client.cookies[settings.CSRF_COOKIE_NAME].value
+            return client.post(
+                reverse("jireh_workspace_contributor_decision", args=case_args),
+                urlencode({"decision": outcome}), content_type="application/x-www-form-urlencoded",
+                secure=True, **headers,
+            )
+
+        self.assertEqual(decide(csrf=False).status_code, 403)
+        self.assertEqual(decide(client=self.client).status_code, 403)
+        self.assertEqual(decide(case_args=(self.other_school.pk, self.other_year.pk, self.draft.pk)).status_code, 403)
+        out_of_scope_household = Household.objects.create(school=self.school, name="Out-of-scope fictional family")
+        with self.settings(JIREH_FINANCIAL_FIXTURE_SCOPES=((self.school.pk, out_of_scope_household.pk, self.year.pk),)):
+            self.assertEqual(decide().status_code, 404)
+        self.actor.user_permissions.remove(permission)
+        self.assertEqual(decide().status_code, 404)
+        self.assertFalse(FictionalContributorDecision.objects.exists())
+        self.actor.user_permissions.add(permission)
+
+        for _ in range(2):
+            self.assertRedirects(decide(), case, fetch_redirect_response=False)
+        self.assertEqual(decide("contributor_exception_approved").status_code, 409)
+        resolution = FictionalContributorDecision.objects.get(marker__application=self.draft)
+        self.assertEqual(resolution.decided_by_id, self.actor.pk)
+        self.assertEqual(resolution.outcome, "alternate_evidence_accepted")
+        self.assertContains(self.get(director, case), "Alternate evidence accepted")
+        self.actor.user_permissions.remove(permission)
+        self.assertNotContains(self.get(director, case), "Alternate evidence accepted")
+        family_review = self.get(self.client, self.url("review"))
+        self.assertContains(family_review, "Additional review completed.")
+        self.assertNotContains(family_review, "Alternate evidence accepted")
+        self.assertEqual(self.form("prepayment_handoff", handoff).status_code, 302)
+        self.assertEqual(SyntheticPrepaymentHandoff.objects.count(), 1)
         self.assertFalse(SyntheticAidSubmission.objects.exists())
 
     def test_exact_scope_roles_revocation_and_profile_boundaries(self):

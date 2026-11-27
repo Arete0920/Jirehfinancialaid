@@ -19,9 +19,10 @@ from jireh.financial_aid.student_views import selected_students
 from jireh.financial_aid.views import staff_application_detail, staff_application_index, staff_draft_workload
 from jireh.schools.access import require_aid_director_access, require_household_access
 from jireh.schools.fictional_need_decisions import read_signed_family_decision
-from jireh.schools.models import AcademicYear, HouseholdAccess, SchoolStaffAccess
+from jireh.schools.models import AcademicYear, FictionalContributorDecision, HouseholdAccess, SchoolStaffAccess
 from jireh.schools.session_views import end_session
 from jireh.schools.views import household_students
+from jireh.schools.workspace_contributor_exception import can_read_contributor_review
 from .customer_director_sessions import (
     DIRECTOR_SESSION_KEY, _director_credentials, _pending, director_session_authorized,
     disposable_identity_context,
@@ -232,9 +233,18 @@ def portal_case(request, school_id, academic_year_id, application_id):
     decision = evidence.get("fictional_decision") if evidence else None
     if decision is not None and decision["amount_cents"] is not None:
         decision["dollars"] = f'${Decimal(decision["amount_cents"]) / 100:,.2f}'
+    contributor_pending = False
+    contributor_decision = None
+    if evidence and can_read_contributor_review(request.user):
+        contributor_pending = evidence["contributor_review_pending"]
+        if not contributor_pending:
+            contributor_decision = FictionalContributorDecision.objects.filter(
+                marker__application_id=application_id,
+            ).first()
     response = _page(request, "case", school=school, year=year, case=case, need_amounts=need_amounts,
-                     signed_decision=decision)
-    if decision is not None:
+                     signed_decision=decision, contributor_review_pending=contributor_pending,
+                     contributor_decision=contributor_decision)
+    if decision is not None or contributor_pending:
         # The same-origin form POST needs an Origin or Referer for Django CSRF.
         response["Referrer-Policy"] = "same-origin"
     return response
