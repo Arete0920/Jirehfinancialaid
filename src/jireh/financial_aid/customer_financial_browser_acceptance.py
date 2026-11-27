@@ -49,9 +49,10 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
                 user=self.actor, school_id=self.school.pk,
                 academic_year_id=self.year.pk, plan=FICTIONAL_15145_PLAN,
             )
-        self.actor.user_permissions.add(Permission.objects.get(
-            content_type__app_label="financial_aid", codename="add_fictionalneeddecision",
-        ))
+        self.actor.user_permissions.add(
+            Permission.objects.get(content_type__app_label="financial_aid", codename="add_fictionalneeddecision"),
+            Permission.objects.get(content_type__app_label="schools", codename="view_fictionalcontributorexception"),
+        )
         self.enterContext(self.settings(
             JIREH_FINANCIAL_FIXTURE_SCOPES=(self.scope,),
             JIREH_SAVED_NEED_FIXTURE=SavedNeedFixture(
@@ -147,6 +148,8 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
         expect(page.locator("#prepayment-handoff-status")).to_have_text("Current draft handed off")
         expect(page.locator("#submission-state")).to_have_text("Application state: DRAFT")
         expect(page.locator("#submission-readiness-status")).to_have_text("Final submission unavailable")
+        page.get_by_role("button", name="Request private contributor review").click()
+        expect(page.get_by_text("Return to this page for your private review update.")).to_be_visible()
         self.assertEqual(page.goto(case_url).status, 403)
         page.goto(fixtures.ORIGIN + "/customer/")
         page.get_by_role("button", name="Sign out").click()
@@ -185,6 +188,12 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
                 self.assertEqual(page.goto(case_page).status, 200)
                 expect(page.locator("#case-child-count")).to_have_text("2")
                 panel = page.get_by_role("region", name="Fictional assessment evidence")
+                expect(panel.get_by_text("Need estimate held pending contributor review.")).to_be_visible()
+                expect(panel.locator("#director-prepayment-handoff")).to_have_text("No current fictional handoff")
+                expect(page.get_by_role("button", name="Record fictional need decision")).to_have_count(0)
+                page.get_by_label("Review decision").select_option("alternate_evidence_accepted")
+                page.get_by_role("button", name="Record contributor decision").click()
+                expect(page.get_by_text("Alternate evidence accepted", exact=True)).to_be_visible()
                 expect(panel.get_by_text("$13,959.00", exact=True)).to_be_visible()
                 expect(panel.locator("#director-prepayment-handoff")).to_have_text("Current fictional draft handed off")
                 expect(panel.get_by_text("Questionnaire revision 1 · School plan revision 1", exact=True)).to_be_visible()
@@ -220,6 +229,9 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
                 self._family_login(page, expect)
                 self.assertEqual(page.goto(family_url).status, 200)
                 expect(page.locator("#family-decision-amount")).to_have_text("$250.00")
+                page.get_by_role("link", name="Review fictional application").click()
+                expect(page.get_by_text("Additional review completed.", exact=True)).to_be_visible()
+                expect(page.get_by_text("Alternate evidence accepted", exact=True)).to_have_count(0)
                 self.assertEqual(page.goto(case_page).status, 403)
                 self.assertFalse(errors, errors)
                 print("PASS: authenticated family financial browser, saved PDF and review, signed director case readback", flush=True)

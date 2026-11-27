@@ -66,8 +66,8 @@ def workspace_contributor_exception(request, school_id, household_id, academic_y
 @require_POST
 @csrf_protect
 @transaction.atomic
-def workspace_contributor_decision(request, school_id, academic_year_id, application_id):
-    if getattr(settings, "JIREH_SYNTHETIC_SUBMISSION_ONLY", False) is not True:
+def workspace_contributor_decision(request, school_id, academic_year_id, application_id, *, signed=False):
+    if not signed and getattr(settings, "JIREH_SYNTHETIC_SUBMISSION_ONLY", False) is not True:
         raise Http404("Fictional review unavailable.")
     school = require_aid_director_access(request.user, school_id=school_id)
     get_object_or_404(School.objects.select_for_update(), pk=school.pk, is_active=True)
@@ -86,6 +86,8 @@ def workspace_contributor_decision(request, school_id, academic_year_id, applica
                               pk=application_id, academic_year_id=academic_year_id,
                               academic_year__school_id=school.pk, household__school_id=school.pk,
                               household__is_active=True, status=AidApplication.STATUS_DRAFT)
+    if signed and not financial_scope_allowed(school_id, draft.household_id, academic_year_id):
+        raise Http404("Fictional review unavailable.")
     marker = get_object_or_404(FictionalContributorException, application=draft)
     record, _ = FictionalContributorDecision.objects.get_or_create(
         marker=marker, defaults={"decided_by": request.user, "outcome": outcomes[0]},
