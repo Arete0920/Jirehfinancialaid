@@ -1,4 +1,5 @@
 """Disposable scoped document lifecycle acceptance: never use customer bytes."""
+import json
 import os
 import tempfile
 import uuid
@@ -299,6 +300,47 @@ class DocumentLifecycleTests(TestCase):
         doc.refresh_from_db()
         self.assertEqual(doc.state, FinancialDocument.STATE_ACTIVE)
         self.assertEqual(doc.events.count(), 1)
+
+    def test_delete_only_adapter_rejects_replaced_storage_root(self):
+        from .local_encrypted_backend import LocalEncryptedDocumentDeleter, PrivateDocumentStorageError
+
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory) / "storage"
+            root.mkdir(mode=0o700)
+            original = root.stat()
+            deleter = LocalEncryptedDocumentDeleter(
+                root=root, root_identity=(original.st_dev, original.st_ino),
+            )
+            root.rename(Path(directory) / "original")
+            root.mkdir(mode=0o700)
+            object_key = uuid.uuid4()
+            replacement_file = root / f"{object_key.hex}.jenc"
+            replacement_file.write_bytes(b"disposable replacement file")
+
+            with self.assertRaisesRegex(PrivateDocumentStorageError, "private_storage_root_changed"):
+                deleter.delete(str(object_key))
+            self.assertTrue(replacement_file.exists())
+
+    def test_storage_worker_requires_private_storage_launch_configuration(self):
+        from scripts.run_synthetic_document_recovery_storage import _read_launch_config
+
+        with tempfile.TemporaryDirectory() as directory:
+            config_path = Path(directory) / "launch.json"
+            config = {
+                "role": "jireh_storage_fixture", "password": "synthetic-test-password",
+                "root": directory, "device": 1, "inode": 2,
+                "claim": "jireh_recovery_claim_fixture", "confirm": "jireh_recovery_confirm_fixture",
+            }
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            config_path.chmod(0o644)
+            with self.assertRaisesRegex(ValueError, "Private launch configuration required"):
+                _read_launch_config(config_path)
+            config_path.chmod(0o600)
+            self.assertEqual(_read_launch_config(config_path), config)
+            config["role"] = "jireh_worker_fixture"
+            config_path.write_text(json.dumps(config), encoding="utf-8")
+            with self.assertRaisesRegex(ValueError, "Invalid launch configuration"):
+                _read_launch_config(config_path)
 
     def test_scan_content_and_backend_gate_are_enforced(self):
         self.store.scan_ok = False
