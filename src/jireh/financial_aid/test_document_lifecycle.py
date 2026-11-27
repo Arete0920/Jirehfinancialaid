@@ -333,14 +333,17 @@ class DocumentLifecycleTests(TestCase):
             }
             config_path.write_text(json.dumps(config), encoding="utf-8")
             config_path.chmod(0o644)
-            with self.assertRaisesRegex(ValueError, "Private launch configuration required"):
-                _read_launch_config(config_path)
+            with config_path.open("rb") as launch_config:
+                with self.assertRaisesRegex(ValueError, "Private launch configuration required"):
+                    _read_launch_config(launch_config)
             config_path.chmod(0o600)
-            self.assertEqual(_read_launch_config(config_path), config)
+            with config_path.open("rb") as launch_config:
+                self.assertEqual(_read_launch_config(launch_config), config)
             config["role"] = "jireh_worker_fixture"
             config_path.write_text(json.dumps(config), encoding="utf-8")
-            with self.assertRaisesRegex(ValueError, "Invalid launch configuration"):
-                _read_launch_config(config_path)
+            with config_path.open("rb") as launch_config:
+                with self.assertRaisesRegex(ValueError, "Invalid launch configuration"):
+                    _read_launch_config(launch_config)
 
     def test_scan_content_and_backend_gate_are_enforced(self):
         self.store.scan_ok = False

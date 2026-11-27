@@ -4,6 +4,7 @@ import json
 import os
 import re
 import stat
+import sys
 from uuid import UUID
 
 import psycopg
@@ -17,14 +18,12 @@ _FIELDS = {"role", "password", "root", "device", "inode", "claim", "confirm"}
 _OPTIONS = "-c lock_timeout=500ms -c statement_timeout=2s -c idle_in_transaction_session_timeout=3s"
 
 
-def _read_launch_config(path):
-    fd = os.open(path, os.O_RDONLY | os.O_NOFOLLOW | os.O_NONBLOCK)
-    with os.fdopen(fd, "rb") as file:
-        metadata = os.fstat(file.fileno())
-        if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
-                or stat.S_IMODE(metadata.st_mode) != 0o600):
-            raise ValueError("Private launch configuration required")
-        raw = file.read(16_385)
+def _read_launch_config(file):
+    metadata = os.fstat(file.fileno())
+    if (not stat.S_ISREG(metadata.st_mode) or metadata.st_uid != os.geteuid()
+            or stat.S_IMODE(metadata.st_mode) != 0o600):
+        raise ValueError("Private launch configuration required")
+    raw = file.read(16_385)
     if len(raw) > 16_384:
         raise ValueError("Launch configuration too large")
     config = json.loads(raw)
@@ -84,12 +83,11 @@ def run_storage_job(config, school_id, document_id):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--launch-config", required=True)
     parser.add_argument("school", type=UUID)
     parser.add_argument("document", type=UUID)
     args = parser.parse_args()
     try:
-        result = run_storage_job(_read_launch_config(args.launch_config), args.school, args.document)
+        result = run_storage_job(_read_launch_config(sys.stdin.buffer), args.school, args.document)
     except (OSError, ValueError, psycopg.Error):
         print("storage_worker_failed")
         return 1
