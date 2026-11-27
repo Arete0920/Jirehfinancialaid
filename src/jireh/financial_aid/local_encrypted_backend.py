@@ -32,37 +32,21 @@ def _reject(code):
     raise PrivateDocumentStorageError(code)
 
 
-class LocalEncryptedClamdBackend:
-    """Locked-down, testable encrypted object store for local preproduction.
-
-    ClamAV must be separately installed, configured, and managed. A clean
-    result is required before an object is written; scanning is not a
-    substitute for an operational review or sandbox.
-    """
+class LocalEncryptedDocumentDeleter:
+    """Remove local ciphertext by object key without a scanner or encryption key."""
 
     synthetic_only = True
     private_storage = True
     encrypted_storage = True
 
-    def __init__(self, *, root, encryption_key, scanner, max_bytes=10 * 1024 * 1024):
+    def __init__(self, *, root):
         if os.name != "posix" or not hasattr(os, "O_NOFOLLOW"):
             _reject("private_storage_platform_unsupported")
         if not isinstance(root, (str, Path)):
             _reject("private_storage_root_invalid")
-        if type(encryption_key) is not bytes or len(encryption_key) != 32:
-            _reject("private_storage_key_invalid")
-        if (
-            type(max_bytes) is not int or not 1 <= max_bytes <= _MAX_PLAINTEXT
-            or not callable(getattr(scanner, "scan", None))
-        ):
-            _reject("private_storage_policy_invalid")
         self._root = os.fspath(root)
         if not self._root or not os.path.isabs(self._root):
             _reject("private_storage_root_invalid")
-        self._key = encryption_key
-        self._scanner = scanner
-        self._max_bytes = max_bytes
-        # Validate at construction and again for every operation.
         self._open_root().close()
 
     def _open_root(self):
@@ -93,6 +77,39 @@ class LocalEncryptedClamdBackend:
         if str(identifier) != object_key:
             _reject("private_storage_key_name_invalid")
         return identifier.hex + ".jenc"
+
+    def delete(self, object_key):
+        filename = self._key_name(object_key)
+        with self._open_root() as directory:
+            try:
+                os.unlink(filename, dir_fd=directory.fd)
+                os.fsync(directory.fd)
+            except FileNotFoundError:
+                return  # Idempotent retry after successful prior deletion.
+            except OSError:
+                _reject("private_storage_delete_failed")
+
+
+class LocalEncryptedClamdBackend(LocalEncryptedDocumentDeleter):
+    """Locked-down, testable encrypted object store for local preproduction.
+
+    ClamAV must be separately installed, configured, and managed. A clean
+    result is required before an object is written; scanning is not a
+    substitute for an operational review or sandbox.
+    """
+
+    def __init__(self, *, root, encryption_key, scanner, max_bytes=10 * 1024 * 1024):
+        if type(encryption_key) is not bytes or len(encryption_key) != 32:
+            _reject("private_storage_key_invalid")
+        if (
+            type(max_bytes) is not int or not 1 <= max_bytes <= _MAX_PLAINTEXT
+            or not callable(getattr(scanner, "scan", None))
+        ):
+            _reject("private_storage_policy_invalid")
+        self._key = encryption_key
+        self._scanner = scanner
+        self._max_bytes = max_bytes
+        super().__init__(root=root)
 
     @staticmethod
     def _aad(object_key):
@@ -195,17 +212,6 @@ class LocalEncryptedClamdBackend:
             )
         except (InvalidTag, ValueError):
             _reject("private_storage_authentication_failed")
-
-    def delete(self, object_key):
-        filename = self._key_name(object_key)
-        with self._open_root() as directory:
-            try:
-                os.unlink(filename, dir_fd=directory.fd)
-                os.fsync(directory.fd)
-            except FileNotFoundError:
-                return  # Idempotent retry after successful prior deletion.
-            except OSError:
-                _reject("private_storage_delete_failed")
 
 
 class _RootHandle:

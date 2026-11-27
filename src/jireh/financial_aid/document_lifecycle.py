@@ -12,6 +12,7 @@ from dataclasses import dataclass
 from typing import Protocol
 
 from django.conf import settings
+from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
 from django.db import transaction
 from django.db.models import Max
@@ -27,15 +28,18 @@ class DocumentLifecycleError(ValueError):
     """Stable, non-sensitive error code; no contents or object keys in errors."""
 
 
-class SyntheticDocumentBackend(Protocol):
+class SyntheticDocumentDeletionBackend(Protocol):
     synthetic_only: bool
     private_storage: bool
     encrypted_storage: bool
 
+    def delete(self, object_key: str) -> None: ...
+
+
+class SyntheticDocumentBackend(SyntheticDocumentDeletionBackend, Protocol):
     def inspect(self, data: bytes) -> tuple[str, bool]: ...
     def put(self, object_key: str, data: bytes) -> None: ...
     def get(self, object_key: str) -> bytes: ...
-    def delete(self, object_key: str) -> None: ...
 
 
 @dataclass(frozen=True, slots=True)
@@ -50,7 +54,7 @@ def _deny(reason):
     raise DocumentLifecycleError(reason)
 
 
-def _require_backend(backend):
+def _require_deletion_backend(backend):
     if getattr(settings, "JIREH_SYNTHETIC_DOCUMENTS_ONLY", False) is not True:
         raise PermissionDenied("Financial document service is not activated.")
     if not all(
@@ -58,7 +62,13 @@ def _require_backend(backend):
         for name in ("synthetic_only", "private_storage", "encrypted_storage")
     ):
         _deny("synthetic_backend_required")
-    for method in ("inspect", "put", "get", "delete"):
+    if not callable(getattr(backend, "delete", None)):
+        _deny("synthetic_backend_required")
+
+
+def _require_backend(backend):
+    _require_deletion_backend(backend)
+    for method in ("inspect", "put", "get"):
         if not callable(getattr(backend, method, None)):
             _deny("synthetic_backend_required")
 
@@ -246,18 +256,60 @@ def delete_synthetic_document(
             row.save(update_fields=["state", "updated_at"])
     # The pending tombstone commits before the backend call: storage failure
     # cannot make document content readable to application clients.
-    try:
-        backend.delete(str(row.object_key))
-    except Exception:
-        _deny("document_storage_delete_failed")
+    _remove_ciphertext(row, backend)
     with transaction.atomic():
         row = FinancialDocument.objects.select_for_update().get(pk=row.pk)
         if row.state == FinancialDocument.STATE_DELETE_PENDING:
-            row.state = FinancialDocument.STATE_DELETED
-            row.deleted_at = timezone.now()
-            row.save(update_fields=["state", "deleted_at", "updated_at"])
-            FinancialDocumentEvent.objects.create(
-                school_id=row.school_id, document=row, actor_user=user,
-                action=FinancialDocumentEvent.ACTION_DELETED,
-            )
+            _finish_document_deletion(row, user.pk)
     return row
+
+
+@transaction.atomic(durable=True)
+def recover_synthetic_document_deletion(
+    *, operator, school_id, document_id, backend: SyntheticDocumentDeletionBackend,
+):
+    """Finish a committed tombstone for a trusted caller's authenticated operator.
+
+    The disposable profile assigns exact (operator ID, school UUID) pairs in
+    JIREH_SYNTHETIC_DOCUMENT_RECOVERY_ASSIGNMENTS. No assignment is implicit.
+    """
+    _require_deletion_backend(backend)
+    assignments = getattr(settings, "JIREH_SYNTHETIC_DOCUMENT_RECOVERY_ASSIGNMENTS", ())
+    users = get_user_model()
+    if (not isinstance(operator, users) or type(school_id) is not uuid.UUID
+            or not isinstance(assignments, (tuple, frozenset))
+            or (operator.pk, school_id) not in assignments):
+        raise PermissionDenied("Document recovery assignment required.")
+    if not School.objects.select_for_update().filter(pk=school_id, is_active=True).exists():
+        raise Http404("Document not found.")
+    if not users.objects.select_for_update().filter(
+        pk=operator.pk, is_active=True, is_staff=True, is_superuser=False,
+    ).exists():
+        raise PermissionDenied("Document recovery assignment required.")
+    row = FinancialDocument.objects.for_school(school_id).select_for_update().only(
+        "school_id", "object_key", "state",
+    ).filter(pk=document_id, state__in=(
+        FinancialDocument.STATE_DELETE_PENDING, FinancialDocument.STATE_DELETED,
+    )).first()
+    if row is None:
+        raise Http404("Document not found.")
+    if row.state == FinancialDocument.STATE_DELETE_PENDING:
+        _remove_ciphertext(row, backend)
+        _finish_document_deletion(row, operator.pk)
+
+
+def _remove_ciphertext(row, backend):
+    try:
+        backend.delete(str(row.object_key))
+    except Exception:
+        raise DocumentLifecycleError("document_storage_delete_failed") from None
+
+
+def _finish_document_deletion(row, actor_id):
+    row.state = FinancialDocument.STATE_DELETED
+    row.deleted_at = timezone.now()
+    row.save(update_fields=["state", "deleted_at", "updated_at"])
+    FinancialDocumentEvent.objects.create(
+        school_id=row.school_id, document=row, actor_user_id=actor_id,
+        action=FinancialDocumentEvent.ACTION_DELETED,
+    )

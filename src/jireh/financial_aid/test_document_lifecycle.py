@@ -4,6 +4,7 @@ import tempfile
 import uuid
 from pathlib import Path
 from datetime import date
+from unittest.mock import patch
 
 from django.contrib.auth import get_user_model
 from django.core.exceptions import PermissionDenied
@@ -199,6 +200,88 @@ class DocumentLifecycleTests(TestCase):
         done = delete_synthetic_document(**self.scope(), document_id=doc.pk)
         self.assertEqual(done.state, FinancialDocument.STATE_DELETED)
         self.assertFalse(self.store.objects)
+
+    def test_assigned_recovery_operator_finishes_pending_deletion_after_revocation(self):
+        from .document_lifecycle import recover_synthetic_document_deletion
+        from .local_encrypted_backend import LocalEncryptedClamdBackend, LocalEncryptedDocumentDeleter
+
+        operator = get_user_model().objects.create_user(username="document-recovery", is_staff=True)
+        with tempfile.TemporaryDirectory() as directory, self.settings(
+            JIREH_SYNTHETIC_DOCUMENTS_ONLY=True,
+            JIREH_SYNTHETIC_DOCUMENT_RECOVERY_ASSIGNMENTS=((operator.pk, self.school.pk),),
+        ):
+            class CleanScanner:
+                def scan(self, data):
+                    return True
+
+            storage = LocalEncryptedClamdBackend(
+                root=directory, encryption_key=os.urandom(32), scanner=CleanScanner(),
+            )
+            doc = create_synthetic_document(**self.params(backend=storage))
+            with patch.object(storage, "delete", side_effect=OSError("fictional failure")):
+                with self.assertRaisesRegex(DocumentLifecycleError, "document_storage_delete_failed"):
+                    delete_synthetic_document(**self.scope(backend=storage), document_id=doc.pk)
+            HouseholdAccess.objects.filter(user=self.user, household=self.house).update(is_active=False)
+            with self.assertRaises(Http404):
+                delete_synthetic_document(**self.scope(backend=storage), document_id=doc.pk)
+            with self.assertRaises(Http404):
+                read_synthetic_document(**self.scope(backend=storage), document_id=doc.pk)
+
+            deleter = LocalEncryptedDocumentDeleter(root=directory)
+            params = dict(operator=operator, school_id=self.school.pk, document_id=doc.pk, backend=deleter)
+            with patch.object(deleter, "delete", side_effect=OSError("fictional failure")):
+                with self.assertRaisesRegex(DocumentLifecycleError, "document_storage_delete_failed"):
+                    recover_synthetic_document_deletion(**params)
+            doc.refresh_from_db()
+            self.assertEqual(doc.state, FinancialDocument.STATE_DELETE_PENDING)
+            self.assertFalse(doc.events.filter(action=FinancialDocumentEvent.ACTION_DELETED).exists())
+            self.assertEqual(len(list(Path(directory).iterdir())), 1)
+
+            with patch.object(FinancialDocumentEvent.objects, "create", side_effect=IntegrityError("audit failed")):
+                with self.assertRaises(IntegrityError):
+                    recover_synthetic_document_deletion(**params)
+            doc.refresh_from_db()
+            self.assertEqual(doc.state, FinancialDocument.STATE_DELETE_PENDING)
+            self.assertEqual(list(Path(directory).iterdir()), [])
+
+            recover_synthetic_document_deletion(**params)
+            with patch.object(deleter, "delete", side_effect=AssertionError("unexpected retry")) as delete:
+                recover_synthetic_document_deletion(**params)
+                delete.assert_not_called()
+            self.assertEqual(list(Path(directory).iterdir()), [])
+            doc.refresh_from_db()
+            self.assertEqual(doc.state, FinancialDocument.STATE_DELETED)
+            self.assertIsNotNone(doc.deleted_at)
+            self.assertEqual(doc.events.get(action=FinancialDocumentEvent.ACTION_DELETED).actor_user_id, operator.pk)
+
+    def test_recovery_cannot_start_a_deletion_or_cross_school_boundaries(self):
+        from .document_lifecycle import recover_synthetic_document_deletion
+        from .local_encrypted_backend import LocalEncryptedDocumentDeleter
+
+        operator = get_user_model().objects.create_user(username="document-recovery", is_staff=True)
+        doc = create_synthetic_document(**self.params())
+        with tempfile.TemporaryDirectory() as directory:
+            deleter = LocalEncryptedDocumentDeleter(root=directory)
+            params = dict(operator=operator, school_id=self.school.pk, document_id=doc.pk, backend=deleter)
+            with self.assertRaises(PermissionDenied):
+                recover_synthetic_document_deletion(**params)
+            with self.settings(JIREH_SYNTHETIC_DOCUMENT_RECOVERY_ASSIGNMENTS=((operator.pk, self.other_school.pk),)):
+                with self.assertRaises(PermissionDenied):
+                    recover_synthetic_document_deletion(**params)
+                with self.assertRaises(Http404):
+                    recover_synthetic_document_deletion(**{**params, "school_id": self.other_school.pk})
+            with self.settings(JIREH_SYNTHETIC_DOCUMENT_RECOVERY_ASSIGNMENTS=((operator.pk, self.school.pk),)):
+                with self.settings(JIREH_SYNTHETIC_DOCUMENTS_ONLY=False):
+                    with self.assertRaises(PermissionDenied):
+                        recover_synthetic_document_deletion(**params)
+                with self.assertRaises(Http404):
+                    recover_synthetic_document_deletion(**params)
+                get_user_model().objects.filter(pk=operator.pk).update(is_active=False)
+                with self.assertRaises(PermissionDenied):
+                    recover_synthetic_document_deletion(**params)
+        doc.refresh_from_db()
+        self.assertEqual(doc.state, FinancialDocument.STATE_ACTIVE)
+        self.assertEqual(doc.events.count(), 1)
 
     def test_scan_content_and_backend_gate_are_enforced(self):
         self.store.scan_ok = False
