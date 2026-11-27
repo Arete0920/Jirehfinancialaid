@@ -156,11 +156,12 @@ table{width:100%;border-collapse:collapse;table-layout:auto}th,td{text-align:lef
 {% elif handoff.available %}
 <form method="post" action="{% url 'jireh_workspace_prepayment_handoff' household.school_id household.pk year.pk %}">
 {% csrf_token %}<input type="hidden" name="state_digest" value="{{ review.digest }}">
-<label><input type="checkbox" name="handed_off" value="yes" required> Share this confirmed fictional draft for director review.</label>
+<input type="hidden" name="notice_version" value="{{ handoff.notice_version }}">
+<label><input type="checkbox" name="handed_off" value="yes" required> Share this confirmed fictional draft with your school’s financial aid director.</label>
 <button type="submit">Hand off confirmed draft</button>
 </form>
 {% else %}<p>Confirm the current review and resolve any pending contributor review to hand off this draft.</p>{% endif %}
-<p>The application remains DRAFT.</p></section>
+<p>Your application stays in draft. No fee is charged, no final application is submitted, and no award is approved by sharing it.</p></section>
 {% endif %}
 {% if rehearsal_receipt %}
 <section class="panel"><h2>Fictional rehearsal receipt</h2>

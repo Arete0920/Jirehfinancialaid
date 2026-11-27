@@ -706,6 +706,9 @@ class FictionalIncomeEvidenceReview(UUIDStampedModel):
         raise ValidationError("Fictional income evidence reviews are immutable.")
 
 
+SYNTHETIC_HANDOFF_NOTICE_VERSION = "fictional-handoff-v1"
+
+
 class SyntheticPrepaymentHandoff(UUIDStampedModel):
     """Explicit fictional handoff tied to an immutable family confirmation."""
 
@@ -713,9 +716,22 @@ class SyntheticPrepaymentHandoff(UUIDStampedModel):
         SyntheticApplicationReview, on_delete=models.PROTECT, related_name="prepayment_handoff",
     )
 
+    # Null preserves evidence created before the versioned notice existed.
+    notice_version = models.CharField(max_length=32, null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.CheckConstraint(
+                condition=Q(notice_version__isnull=True) | Q(notice_version="fictional-handoff-v1"),
+                name="jireh_syn_handoff_notice_version",
+            ),
+        ]
+
     def save(self, *args, **kwargs):
         if not self._state.adding:
             raise ValidationError("Fictional prepayment handoffs are immutable.")
+        if self.notice_version != SYNTHETIC_HANDOFF_NOTICE_VERSION:
+            raise ValidationError("Current fictional handoff notice required.")
         return super().save(*args, **kwargs)
 
     def delete(self, *args, **kwargs):

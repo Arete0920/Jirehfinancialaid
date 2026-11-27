@@ -143,7 +143,7 @@ class AuthenticatedFinancialBrowserAcceptance(TransactionTestCase):
         page.get_by_role("checkbox", name="I reviewed this saved fictional application.").check()
         page.get_by_role("button", name="Confirm fictional review").click()
         expect(page.locator("#review-status")).to_have_text("Current fictional review confirmed")
-        page.get_by_role("checkbox", name="Share this confirmed fictional draft for director review.").check()
+        page.get_by_role("checkbox", name="Share this confirmed fictional draft with your school’s financial aid director.").check()
         page.get_by_role("button", name="Hand off confirmed draft").click()
         expect(page.locator("#prepayment-handoff-status")).to_have_text("Current draft handed off")
         expect(page.locator("#submission-state")).to_have_text("Application state: DRAFT")

@@ -176,7 +176,7 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         self.assertEqual(self.upload(_ALLOWED_FIXTURES[0]).status_code, 200)
         digest = self.get(self.client, self.url("review")).context["review"]["digest"]
         self.assertEqual(self.form("review", {"state_digest": digest, "reviewed": "yes"}).status_code, 302)
-        self.assertEqual(self.form("prepayment_handoff", {"state_digest": digest, "handed_off": "yes"}).status_code, 302)
+        self.assertEqual(self.form("prepayment_handoff", {"state_digest": digest, "handed_off": "yes", "notice_version": "fictional-handoff-v1"}).status_code, 302)
         handoff = SyntheticPrepaymentHandoff.objects.get()
         director = Client(enforce_csrf_checks=True)
         self.verified(director)
@@ -253,7 +253,7 @@ class CustomerFinancialPortalTests(TransactionTestCase):
 
         current = self.get(self.client, self.url("review"))
         digest = current.context["review"]["digest"]
-        payload = {"state_digest": digest, "handed_off": "yes"}
+        payload = {"state_digest": digest, "handed_off": "yes", "notice_version": "fictional-handoff-v1"}
         director = Client(enforce_csrf_checks=True)
         self.verified(director)
         case = reverse("jireh_customer_case", args=(self.school.pk, self.year.pk, self.draft.pk))
@@ -262,15 +262,29 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         self.assertEqual(self.form("review", {"state_digest": digest, "reviewed": "yes"}).status_code, 302)
         self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
 
-        self.assertContains(self.get(self.client, self.url("review")), "Hand off confirmed draft")
+        review_page = self.get(self.client, self.url("review"))
+        self.assertContains(review_page, "Share this confirmed fictional draft with your school’s financial aid director.")
+        self.assertContains(review_page, 'name="notice_version" value="fictional-handoff-v1"')
+        old_payload = {"state_digest": digest, "handed_off": "yes"}
+        self.assertEqual(self.form("prepayment_handoff", old_payload).status_code, 400)
+        self.assertEqual(self.form("prepayment_handoff", {**payload, "notice_version": "old"}).status_code, 400)
+        self.assertFalse(SyntheticPrepaymentHandoff.objects.exists())
+        if connection.vendor == "postgresql":
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                SyntheticPrepaymentHandoff.objects.bulk_create([
+                    SyntheticPrepaymentHandoff(confirmation=SyntheticApplicationReview.objects.get()),
+                ])
         self.assertEqual(self.form("prepayment_handoff", payload, csrf=False).status_code, 403)
         self.assertEqual(self.form("prepayment_handoff", payload, client=director, csrf=False).status_code, 403)
         self.assertEqual(self.form("prepayment_handoff", payload).status_code, 302)
         self.assertEqual(self.form("prepayment_handoff", payload).status_code, 302)
         self.assertContains(self.get(self.client, self.url("review")), "Current draft handed off")
         self.assertTrue(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
-        self.assertEqual(SyntheticPrepaymentHandoff.objects.count(), 1)
+        recorded = SyntheticPrepaymentHandoff.objects.get()
+        self.assertEqual(recorded.notice_version, "fictional-handoff-v1")
         if connection.vendor == "postgresql":
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                SyntheticPrepaymentHandoff.objects.update(notice_version=None)
             with self.assertRaises(IntegrityError), transaction.atomic():
                 SyntheticPrepaymentHandoff.objects.update(confirmation_id=SyntheticApplicationReview.objects.get().pk)
             with self.assertRaises(IntegrityError), transaction.atomic():
@@ -283,7 +297,7 @@ class CustomerFinancialPortalTests(TransactionTestCase):
 
         new_digest = self.get(self.client, self.url("review")).context["review"]["digest"]
         self.assertEqual(self.form("review", {"state_digest": new_digest, "reviewed": "yes"}).status_code, 302)
-        new_payload = {"state_digest": new_digest, "handed_off": "yes"}
+        new_payload = {"state_digest": new_digest, "handed_off": "yes", "notice_version": "fictional-handoff-v1"}
         self.assertEqual(self.form("prepayment_handoff", new_payload).status_code, 302)
         self.assertEqual(SyntheticPrepaymentHandoff.objects.count(), 2)
         self.assertTrue(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
@@ -303,7 +317,7 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         digest = self.get(self.client, self.url("review")).context["review"]["digest"]
         self.assertEqual(self.form("review", {"state_digest": digest, "reviewed": "yes"}).status_code, 302)
         self.assertEqual(self.form("contributor_exception", {}).status_code, 302)
-        handoff = {"state_digest": digest, "handed_off": "yes"}
+        handoff = {"state_digest": digest, "handed_off": "yes", "notice_version": "fictional-handoff-v1"}
         self.assertEqual(self.form("prepayment_handoff", handoff).status_code, 409)
 
         director = Client(enforce_csrf_checks=True)
