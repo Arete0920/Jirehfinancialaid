@@ -25,11 +25,11 @@ class RecoveryProvision:
 def provision_recovery_v1(connection, *, school_id, operator_id):
     """Provision one disposable assignment and remove its roles and objects on exit."""
     if (os.environ.get("JIREH_POSTGRES_CI_ONLY") != "1" or type(school_id) is not UUID
-            or type(operator_id) is not int or operator_id < 1 or not connection.autocommit):
+            or type(operator_id) is not int or operator_id < 1 or not connection.autocommit
+            or connection.info.hostaddr != "127.0.0.1"):
         raise ValueError("Disposable recovery provisioning required")
     guard = connection.execute("""
         SELECT current_database() = 'test_jireh_ci'
-            AND inet_server_addr() = inet '127.0.0.1'
             AND current_user = 'jireh_ci' AND session_user = current_user
             AND EXISTS (
                 SELECT 1 FROM pg_catalog.pg_database
