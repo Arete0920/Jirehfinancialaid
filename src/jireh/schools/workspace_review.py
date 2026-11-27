@@ -10,7 +10,9 @@ from django.views.decorators.csrf import csrf_protect, ensure_csrf_cookie
 from django.views.decorators.http import require_POST, require_http_methods
 
 from jireh.financial_aid.document_lifecycle import DocumentLifecycleError
-from jireh.financial_aid.models import SyntheticAidSubmission, SyntheticPrepaymentHandoff
+from jireh.financial_aid.models import (
+    SYNTHETIC_HANDOFF_NOTICE_VERSION, SyntheticAidSubmission, SyntheticPrepaymentHandoff,
+)
 from jireh.financial_aid.questionnaire_validation import QuestionnaireValidationError
 from jireh.financial_aid.synthetic_document_views import PrivateDocumentStorageError
 from jireh.financial_aid.synthetic_submission import record_synthetic_demo_submission
@@ -75,6 +77,7 @@ def workspace_review(request, school_id, household_id, academic_year_id):
             state["confirmation"] is not None and preflight.contributor_review_status != "pending"
         )
         handoff = {
+            "notice_version": SYNTHETIC_HANDOFF_NOTICE_VERSION,
             "available": available,
             "current": available and SyntheticPrepaymentHandoff.objects.filter(
                 confirmation=state["confirmation"],
@@ -132,14 +135,16 @@ def workspace_prepayment_handoff(request, school_id, household_id, academic_year
     from jireh.financial_aid.synthetic_prepayment_handoff import record_prepayment_handoff
 
     if (request.GET or request.content_type != "application/x-www-form-urlencoded"
-            or set(request.POST) - {"csrfmiddlewaretoken", "state_digest", "handed_off"}
+            or set(request.POST) - {"csrfmiddlewaretoken", "state_digest", "handed_off", "notice_version"}
             or request.POST.getlist("handed_off") != ["yes"]
+            or request.POST.getlist("notice_version") != [SYNTHETIC_HANDOFF_NOTICE_VERSION]
             or len(request.POST.getlist("state_digest")) != 1):
         return HttpResponse("Explicit fictional handoff required.", status=400)
     try:
         record_prepayment_handoff(
             user=request.user, school_id=school_id, household_id=household_id,
             academic_year_id=academic_year_id, expected_digest=request.POST["state_digest"],
+            notice_version=request.POST["notice_version"],
         )
     except (FictionalReviewError, QuestionnaireValidationError, DocumentLifecycleError,
             PrivateDocumentStorageError, OSError):

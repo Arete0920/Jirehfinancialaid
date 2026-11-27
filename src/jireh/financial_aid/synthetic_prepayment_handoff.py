@@ -14,19 +14,22 @@ from jireh.runtime.customer_financial_policy import financial_scope_allowed
 from jireh.schools.workspace_contributor_exception import contributor_review_pending
 
 from .document_lifecycle import DocumentLifecycleError
-from .models import SyntheticPrepaymentHandoff
+from .models import SYNTHETIC_HANDOFF_NOTICE_VERSION, SyntheticPrepaymentHandoff
 from .questionnaire_validation import QuestionnaireValidationError
 from .synthetic_application_review import FictionalReviewError, read_fictional_application_review
 from .synthetic_document_views import PrivateDocumentStorageError
 
 
 @transaction.atomic
-def record_prepayment_handoff(*, user, school_id, household_id, academic_year_id, expected_digest):
+def record_prepayment_handoff(
+    *, user, school_id, household_id, academic_year_id, expected_digest, notice_version,
+):
     if not financial_scope_allowed(school_id, household_id, academic_year_id):
         raise Http404()
     if not nonprivileged_family_account(user):
         raise PermissionDenied()
-    if type(expected_digest) is not str or fullmatch(r"[0-9a-f]{64}", expected_digest) is None:
+    if (type(expected_digest) is not str or fullmatch(r"[0-9a-f]{64}", expected_digest) is None
+            or type(notice_version) is not str or notice_version != SYNTHETIC_HANDOFF_NOTICE_VERSION):
         raise FictionalReviewError("prepayment_handoff_unavailable")
     state = read_fictional_application_review(
         user=user, school_id=school_id, household_id=household_id, academic_year_id=academic_year_id,
@@ -35,7 +38,9 @@ def record_prepayment_handoff(*, user, school_id, household_id, academic_year_id
     if (not compare_digest(state["digest"], expected_digest)
             or state["confirmation"] is None or contributor_review_pending(state["draft"].pk)):
         raise FictionalReviewError("prepayment_handoff_unavailable")
-    handoff, _ = SyntheticPrepaymentHandoff.objects.get_or_create(confirmation=state["confirmation"])
+    handoff, _ = SyntheticPrepaymentHandoff.objects.get_or_create(
+        confirmation=state["confirmation"], defaults={"notice_version": notice_version},
+    )
     return handoff
 
 
