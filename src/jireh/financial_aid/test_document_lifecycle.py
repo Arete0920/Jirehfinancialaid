@@ -482,3 +482,50 @@ class DocumentPostgresGuardTests(TransactionTestCase):
                     attempt()
         self.assertEqual(FinancialDocument.objects.count(), 1)
         self.assertEqual(FinancialDocumentEvent.objects.count(), 1)
+
+    def test_versioned_recovery_provisioning_separates_and_removes_grants(self):
+        from scripts.provision_synthetic_document_recovery import provision_recovery_v1
+
+        operator = get_user_model().objects.create_user(username="synthetic-storage-operator", is_staff=True)
+        assigned = {"school_id": self.school.pk, "operator_id": operator.pk}
+        with connection.cursor() as cursor:
+            cursor.execute("GRANT CREATE ON SCHEMA public TO PUBLIC")
+        try:
+            with self.assertRaisesRegex(ValueError, "schema privileges rejected"):
+                with provision_recovery_v1(connection.connection, **assigned):
+                    self.fail("Unsafe public schema should reject provisioning")
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("REVOKE CREATE ON SCHEMA public FROM PUBLIC")
+
+        with connection.cursor() as cursor:
+            cursor.execute("GRANT UPDATE (action) ON public.financial_aid_financialdocumentevent TO PUBLIC")
+        try:
+            with self.assertRaisesRegex(ValueError, "Direct recovery table privileges rejected"):
+                with provision_recovery_v1(connection.connection, **assigned):
+                    self.fail("Direct audit access should reject provisioning")
+        finally:
+            with connection.cursor() as cursor:
+                cursor.execute("REVOKE UPDATE (action) ON public.financial_aid_financialdocumentevent FROM PUBLIC")
+
+        with provision_recovery_v1(connection.connection, **assigned) as roles:
+            self.assertTrue(roles.claim.startswith("jireh_recovery_claim_v1_"))
+            self.assertNotIn(roles.storage_password, repr(roles))
+            self.assertNotIn(roles.operator_password, repr(roles))
+            with connection.cursor() as cursor:
+                for role, function, allowed in (
+                    (roles.operator_role, roles.claim, False),
+                    (roles.operator_role, roles.confirm, False),
+                    (roles.operator_role, roles.finish, True),
+                    (roles.storage_role, roles.claim, True),
+                    (roles.storage_role, roles.confirm, True),
+                    (roles.storage_role, roles.finish, False),
+                ):
+                    cursor.execute("SELECT pg_catalog.has_function_privilege(%s, %s, 'EXECUTE')",
+                                   (role, f"public.{function}(uuid,uuid)"))
+                    self.assertEqual(cursor.fetchone(), (allowed,))
+        with connection.cursor() as cursor:
+            cursor.execute("SELECT to_regrole(%s), to_regrole(%s), to_regclass(%s), to_regprocedure(%s)",
+                           (roles.operator_role, roles.storage_role, f"public.{roles.receipts}",
+                            f"public.{roles.finish}(uuid,uuid)"))
+            self.assertEqual(cursor.fetchone(), (None, None, None, None))

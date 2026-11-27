@@ -27,7 +27,7 @@ def _read_launch_config(file):
     if len(raw) > 16_384:
         raise ValueError("Launch configuration too large")
     config = json.loads(raw)
-    if (type(config) is not dict or set(config) != _FIELDS
+    if (type(config) is not dict or set(config) not in (_FIELDS, _FIELDS | {"tls_ca_file"})
             or any(type(config[key]) is not str or not _NAME.fullmatch(config[key])
                    for key in ("role", "claim", "confirm"))
             or not config["role"].startswith("jireh_storage_")
@@ -37,6 +37,10 @@ def _read_launch_config(file):
             or type(config["root"]) is not str
             or any(type(config[key]) is not int or config[key] < 0 for key in ("device", "inode"))):
         raise ValueError("Invalid launch configuration")
+    if "tls_ca_file" in config and (
+        type(config["tls_ca_file"]) is not str or not os.path.isabs(config["tls_ca_file"])
+    ):
+        raise ValueError("Invalid TLS trust root")
     return config
 
 
@@ -49,10 +53,14 @@ def run_storage_job(config, school_id, document_id):
     claim = sql.SQL("SELECT {}(%s, %s)").format(sql.Identifier("public", config["claim"]))
     confirm = sql.SQL("SELECT {}(%s, %s)").format(sql.Identifier("public", config["confirm"]))
     scope = (school_id, document_id)
+    transport = {"sslmode": "disable"}
+    if "tls_ca_file" in config:
+        transport = {"sslmode": "verify-full", "sslrootcert": config["tls_ca_file"],
+                     "channel_binding": "require"}
     with psycopg.connect(
         host="127.0.0.1", hostaddr="127.0.0.1", port=5432, dbname="test_jireh_ci",
         user=config["role"], password=config["password"], connect_timeout=3,
-        require_auth="scram-sha-256", sslmode="disable", options=_OPTIONS, autocommit=True,
+        require_auth="scram-sha-256", gssencmode="disable", options=_OPTIONS, autocommit=True, **transport,
     ) as connection, connection.transaction():
         role = connection.execute("""
             SELECT session_user = %s AND current_user = session_user
