@@ -40,12 +40,13 @@ class LocalEncryptedDocumentDeleter:
     private_storage = True
     encrypted_storage = True
 
-    def __init__(self, *, root):
+    def __init__(self, *, root, root_identity=None):
         if os.name != "posix" or not hasattr(os, "O_NOFOLLOW"):
             _reject("private_storage_platform_unsupported")
         if not isinstance(root, (str, Path)):
             _reject("private_storage_root_invalid")
         self._root = os.fspath(root)
+        self._root_identity = root_identity
         if not self._root or not os.path.isabs(self._root):
             _reject("private_storage_root_invalid")
         self._open_root().close()
@@ -63,6 +64,9 @@ class LocalEncryptedDocumentDeleter:
             ):
                 os.close(fd)
                 _reject("private_storage_root_not_private")
+            if self._root_identity is not None and (metadata.st_dev, metadata.st_ino) != self._root_identity:
+                os.close(fd)
+                _reject("private_storage_root_changed")
             return _RootHandle(fd)
         except OSError:
             _reject("private_storage_root_not_private")

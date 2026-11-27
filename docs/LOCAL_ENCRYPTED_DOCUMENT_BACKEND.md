@@ -17,6 +17,8 @@ This implementation deliberately requires `JIREH_SYNTHETIC_DOCUMENTS_ONLY=True` 
 
 The Python `cryptography` package is already **pinned for existing CI-only WebAuthn tests** through `requirements-webauthn-ci.txt`; this change does not extend the runtime dependency lock or declare any production-ready packaging. For any persistent hosted service, resolve and pin its platform-specific wheel hashes and deploy the key/scanner through approved infrastructure.
 
+The disposable storage worker runs one job against a pre-provisioned `test_jireh_ci` PostgreSQL database on loopback. Its trusted launcher opens a process-owned `0600` JSON file containing the storage login (`role`, `password`), the private directory binding (`root`, `device`, `inode`), and the `claim` and `confirm` procedure names. Run `JIREH_POSTGRES_CI_ONLY=1 PYTHONPATH=src python scripts/run_synthetic_document_recovery_storage.py "$school_uuid" "$document_uuid" < "$private_config"` with libpq 16 or newer and SCRAM authentication. The worker verifies the open file before reading it. It reads the object key from the claim, unlinks and syncs using the bound directory, and commits storage confirmation in the same transaction. The rehearsal provides its PostgreSQL functions separately. Hosted use still requires an authenticated transport, service credential isolation, and reviewed database grants.
+
 ## Mandatory remaining work for #44
 
 - Approve production topology (private cloud object store vs managed encrypted volume), budget, key management and recovery process; implement the corresponding provider and deployment wiring.
