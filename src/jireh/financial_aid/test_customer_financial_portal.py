@@ -1,5 +1,7 @@
 """Authenticated fixture-only questionnaire, PDF and review journey."""
 import secrets
+from concurrent.futures import ThreadPoolExecutor
+from threading import Barrier
 from urllib.parse import urlencode
 from uuid import uuid4, uuid5
 
@@ -7,12 +9,13 @@ from django.conf import settings
 from django.contrib.auth import get_user_model
 from django.contrib.auth.models import Permission
 from django.db import IntegrityError, connection, transaction
+from django.http import Http404
 from django.test import Client, TransactionTestCase, override_settings
 from django.urls import reverse
 
 from jireh.financial_aid.models import (
     AidApplication, FictionalNeedDecision, FinancialDocument, SyntheticAidSubmission, SyntheticApplicationReview,
-    SyntheticPrepaymentHandoff, SyntheticQuestionnaireDraft, SyntheticQuestionnaireEvent,
+    SyntheticPendingPayment, SyntheticPrepaymentHandoff, SyntheticQuestionnaireDraft, SyntheticQuestionnaireEvent,
 )
 from jireh.financial_aid.synthetic_document_views import _ALLOWED_FIXTURES
 from jireh.schools.demo_seed import DEMO_SCHOOL_A_CODE
@@ -262,6 +265,10 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         self.assertFalse(SyntheticAidSubmission.objects.exists())
 
     def test_separate_prepayment_handoff_tracks_the_exact_review(self):
+        from .submission_contract import SubmissionContractError
+        from .synthetic_pending_payment import (
+            prepare_pending_payment, refresh_pending_payment, withdraw_pending_payment,
+        )
         child = Student.objects.create(school=self.school, first_name="Fictional", last_name="Child")
         link_student_to_household(school_id=self.school.pk, household_id=self.household.pk, student_id=child.pk)
         self.assertEqual(self.post(self.client, self.url("select", child.pk), {}, self.csrf()).status_code, 200)
@@ -299,7 +306,38 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         self.assertTrue(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
         recorded = SyntheticPrepaymentHandoff.objects.get()
         self.assertEqual(recorded.notice_version, "fictional-handoff-v1")
+        scope = dict(user=self.parent, school_id=self.school.pk, household_id=self.household.pk,
+                     academic_year_id=self.year.pk)
+        prepare = dict(scope, handoff_id=recorded.pk, disclosure_version="fictional-review-v1")
+        with self.assertRaises(SubmissionContractError):
+            prepare_pending_payment(**(prepare | {"disclosure_version": "unapproved"}))
+        with self.assertRaises(Http404):
+            refresh_pending_payment(**(scope | {"school_id": self.other_school.pk}))
         if connection.vendor == "postgresql":
+            barrier = Barrier(2)
+
+            def prepare_concurrently():
+                try:
+                    barrier.wait(timeout=10)
+                    return prepare_pending_payment(**prepare).pk
+                finally:
+                    connection.close()
+
+            with ThreadPoolExecutor(max_workers=2) as executor:
+                futures = [executor.submit(prepare_concurrently) for _ in range(2)]
+                first_id, second_id = [future.result(timeout=30) for future in futures]
+            self.assertEqual(first_id, second_id)
+            attempt = SyntheticPendingPayment.objects.get(pk=first_id)
+        else:
+            attempt = prepare_pending_payment(**prepare)
+        self.assertEqual(prepare_pending_payment(**prepare).pk, attempt.pk)
+        self.assertEqual(refresh_pending_payment(**scope).pk, attempt.pk)
+        self.assertEqual((attempt.fee_amount_cents, attempt.fee_currency), (5500, "USD"))
+        if connection.vendor == "postgresql":
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                SyntheticPendingPayment.objects.filter(pk=attempt.pk).update(fee_amount_cents=1)
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                SyntheticPendingPayment.objects.filter(pk=attempt.pk).delete()
             with self.assertRaises(IntegrityError), transaction.atomic():
                 SyntheticPrepaymentHandoff.objects.update(notice_version=None)
             with self.assertRaises(IntegrityError), transaction.atomic():
@@ -307,6 +345,11 @@ class CustomerFinancialPortalTests(TransactionTestCase):
             with self.assertRaises(IntegrityError), transaction.atomic():
                 SyntheticPrepaymentHandoff.objects.all().delete()
         self.assertEqual(self.upload(_ALLOWED_FIXTURES[1]).status_code, 200)
+        self.assertIsNone(refresh_pending_payment(**scope))
+        with self.assertRaises(SubmissionContractError):
+            prepare_pending_payment(**prepare)
+        attempt.refresh_from_db()
+        self.assertIsNotNone(attempt.invalidated_at)
         self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
         self.assertEqual(self.form("questionnaire", self.rows(1, "800.00")).status_code, 302)
         self.assertEqual(self.form("prepayment_handoff", payload).status_code, 409)
@@ -317,6 +360,21 @@ class CustomerFinancialPortalTests(TransactionTestCase):
         new_payload = {"state_digest": new_digest, "handed_off": "yes", "notice_version": "fictional-handoff-v1"}
         self.assertEqual(self.form("prepayment_handoff", new_payload).status_code, 302)
         self.assertEqual(SyntheticPrepaymentHandoff.objects.count(), 2)
+        next_handoff = SyntheticPrepaymentHandoff.objects.exclude(pk=recorded.pk).get()
+        next_attempt = prepare_pending_payment(**(prepare | {"handoff_id": next_handoff.pk}))
+        withdraw_pending_payment(**scope, attempt_id=attempt.pk)
+        self.assertEqual(refresh_pending_payment(**scope).pk, next_attempt.pk)
+        withdrawn = withdraw_pending_payment(**scope, attempt_id=next_attempt.pk)
+        self.assertEqual(withdraw_pending_payment(**scope, attempt_id=next_attempt.pk).pk, withdrawn.pk)
+        with self.assertRaisesRegex(SubmissionContractError, "submission_pending_attempt_invalidated"):
+            prepare_pending_payment(**(prepare | {"handoff_id": next_handoff.pk}))
+        self.draft.refresh_from_db()
+        self.assertEqual(self.draft.status, "DRAFT")
+        self.assertFalse(SyntheticAidSubmission.objects.exists())
+        if connection.vendor == "postgresql":
+            with self.assertRaises(IntegrityError), transaction.atomic():
+                SyntheticPendingPayment.objects.filter(pk=withdrawn.pk).update(invalidated_at=None)
+        self.assertIsNone(refresh_pending_payment(**scope))
         self.assertTrue(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
         self.assertEqual(self.form("contributor_exception", {}).status_code, 302)
         self.assertEqual(self.form("prepayment_handoff", new_payload).status_code, 409)

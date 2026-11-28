@@ -736,3 +736,23 @@ class SyntheticPrepaymentHandoff(UUIDStampedModel):
 
     def delete(self, *args, **kwargs):
         raise ValidationError("Fictional prepayment handoffs are immutable.")
+
+
+class SyntheticPendingPayment(UUIDStampedModel):
+    """A fictional, revision-bound payment attempt while the application stays DRAFT."""
+
+    application = models.ForeignKey(AidApplication, on_delete=models.PROTECT)
+    handoff = models.OneToOneField(SyntheticPrepaymentHandoff, on_delete=models.PROTECT)
+    disclosure_version = models.CharField(max_length=32)
+    fee_amount_cents = models.PositiveIntegerField()
+    fee_currency = models.CharField(max_length=3)
+    fee_obligation_key = models.CharField(max_length=100)
+    invalidated_at = models.DateTimeField(null=True, blank=True)
+
+    class Meta:
+        constraints = [
+            models.UniqueConstraint(
+                fields=["application"], condition=Q(invalidated_at__isnull=True),
+                name="jireh_one_current_pending_payment",
+            ),
+        ]
