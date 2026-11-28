@@ -35,6 +35,14 @@ class SubmissionIntent:
     is_retry: bool
 
 
+@dataclass(frozen=True, slots=True, repr=False)
+class PendingPaymentIntent:
+    """Readiness proposal bound to an authorized review, without persistence."""
+
+    handoff_id: UUID
+    review_revision: int
+    consent_version: str
+    fee_obligation: HouseholdApplicationFeeObligation
 
 @dataclass(frozen=True, slots=True, repr=False)
 class OfflinePaymentReconciliation:
@@ -58,14 +66,7 @@ class OfflinePaymentReconciliation:
     durably_reconciled: bool
 
 
-def _require_offline_reconciled_fee(*, fee_obligation: object, payment: object):
-    """Fail closed on any missing, mismatched, or unconfirmed $55 obligation.
-
-    Offline structural contract ONLY: checks cannot authenticate a payment
-    provider or make an untrusted reconciliation fact true. A future server
-    adapter must establish source authenticity, replay protection, durable
-    uniqueness and application linkage without accepting client claims.
-    """
+def _validated_fee_obligation(fee_obligation: object) -> HouseholdApplicationFeeObligation:
     if type(fee_obligation) is not HouseholdApplicationFeeObligation:
         raise SubmissionContractError("submission_fee_obligation_invalid")
     try:
@@ -79,6 +80,12 @@ def _require_offline_reconciled_fee(*, fee_obligation: object, payment: object):
         raise SubmissionContractError("submission_fee_obligation_invalid") from None
     if fee_obligation != expected:
         raise SubmissionContractError("submission_fee_obligation_invalid")
+    return expected
+
+
+def _require_offline_reconciled_fee(*, fee_obligation: object, payment: object):
+    """Check offline reconciliation structure; it does not authenticate a payment."""
+    expected = _validated_fee_obligation(fee_obligation)
     if type(payment) is not OfflinePaymentReconciliation:
         raise SubmissionContractError("submission_payment_unreconciled")
     if (
@@ -107,25 +114,10 @@ def _require_offline_reconciled_fee(*, fee_obligation: object, payment: object):
     ):
         raise SubmissionContractError("submission_payment_unreconciled")
 
-def validate_submission_intent(
-    *,
-    current_state: object,
-    accuracy_attested: object,
-    consent_version: object,
-    disclosure_is_approved: object,
-    questionnaire_is_complete: object,
-    authorized_household_scope: object,
-    fee_obligation: object,
-    payment_reconciliation: object,
-) -> SubmissionIntent:
-    """Validate caller-supplied gates for a synthetic submission *proposal*.
-
-    Trusted server code must independently derive all boolean gates, consent
-    version, actor, school/household/year and payment reconciliation from
-    authenticated durable facts. Request JSON must NEVER be accepted directly
-    for these trusted inputs. The offline record is NOT payment proof.
-    This function does not write or signal that an application was submitted.
-    """
+def _validate_review_gates(
+    *, current_state, accuracy_attested, consent_version, disclosure_is_approved,
+    questionnaire_is_complete, authorized_household_scope,
+) -> ApplicationState:
     try:
         state = ApplicationState(current_state) if type(current_state) is str else None
     except ValueError:
@@ -147,6 +139,53 @@ def validate_submission_intent(
         raise SubmissionContractError("submission_access_denied")
     if questionnaire_is_complete is not True:
         raise SubmissionContractError("submission_incomplete")
+    return state
+
+
+def validate_pending_payment_intent(
+    *, current_state: object, accuracy_attested: object, consent_version: object,
+    disclosure_is_approved: object, questionnaire_is_complete: object,
+    authorized_household_scope: object, fee_obligation: object,
+    handoff_id: object, review_revision: object, handoff_is_current: object,
+) -> PendingPaymentIntent:
+    """Validate offline readiness to seek payment for an authorized draft.
+
+    The trusted caller must resolve scope and freshness against the same
+    saved handoff and review. A proposal carries no payment or state change.
+    """
+    state = _validate_review_gates(
+        current_state=current_state, accuracy_attested=accuracy_attested,
+        consent_version=consent_version, disclosure_is_approved=disclosure_is_approved,
+        questionnaire_is_complete=questionnaire_is_complete,
+        authorized_household_scope=authorized_household_scope,
+    )
+    if state is not ApplicationState.DRAFT:
+        raise SubmissionContractError("submission_state_invalid")
+    if (handoff_is_current is not True or type(handoff_id) is not UUID or handoff_id.int == 0
+            or type(review_revision) is not int or review_revision < 1):
+        raise SubmissionContractError("submission_handoff_required")
+    return PendingPaymentIntent(
+        handoff_id=handoff_id, review_revision=review_revision, consent_version=consent_version,
+        fee_obligation=_validated_fee_obligation(fee_obligation),
+    )
+
+
+def validate_submission_intent(
+    *, current_state: object, accuracy_attested: object, consent_version: object,
+    disclosure_is_approved: object, questionnaire_is_complete: object,
+    authorized_household_scope: object, fee_obligation: object, payment_reconciliation: object,
+) -> SubmissionIntent:
+    """Validate a synthetic proposal. A trusted adapter must derive every gate.
+
+    These inputs must come from authorized, durable facts independent of
+    request JSON. Offline reconciliation is structural evidence only.
+    """
+    state = _validate_review_gates(
+        current_state=current_state, accuracy_attested=accuracy_attested,
+        consent_version=consent_version, disclosure_is_approved=disclosure_is_approved,
+        questionnaire_is_complete=questionnaire_is_complete,
+        authorized_household_scope=authorized_household_scope,
+    )
     _require_offline_reconciled_fee(
         fee_obligation=fee_obligation, payment=payment_reconciliation
     )
