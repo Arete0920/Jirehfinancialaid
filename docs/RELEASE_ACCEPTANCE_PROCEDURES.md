@@ -8,9 +8,38 @@ The owner approved the #45 and #50 pending-payment lifecycle and migration and r
 
 A current authorized retry returns the same record. The service revalidates the saved handoff during preparation and refresh. If it detects a changed review, it records the invalidation even when it rejects the attempted retry. An evidence-read failure blocks the retry and preserves the attempt so a later authorized retry can succeed. Withdrawal targets one attempt and can be retried without affecting a later attempt. Invalidated records remain as history and cannot be reopened. The existing application lock and database uniqueness enforce one current attempt per application.
 
-The service is available only inside the existing fictional acceptance scope. Live consent wording, expiration and amendment policy, refunds, waivers, chargebacks, and treatment of settlement after invalidation remain open. Final submission requires verified settlement against the approved obligation and a separately authorized transition with an atomic audit record. Provider evidence and settlement semantics must be confirmed before enabling that transition.
+The service is available only inside the existing fictional acceptance scope. Use the live policy baseline below for design and acceptance. Live privacy review, lifecycle implementation and provider acceptance remain open. Final submission requires verified settlement against the approved obligation and a separately authorized transition with an atomic audit record. Provider evidence and settlement semantics must be confirmed before enabling that transition.
 
 For hosted acceptance, test exact and conflicting concurrent retries, stale or withdrawn review, revoked access and cross-school scope. Once the provider contract is approved, exercise duplicate or replayed payment events, wrong amount or currency, mismatched obligations, late reversals and rollback when state and audit cannot both be recorded.
+
+## Live consent, amendments, and fee exceptions
+
+The owner delegated these product decisions for #45 and #50 on November 28. Use this baseline for contract design and acceptance. Publish the live disclosure only after privacy review confirms the wording against the approved privacy notice, collection and retention policies, and school agreements. Schema and live release approvals remain separate.
+
+### Consent and attestation
+
+Use `jireh-financial-aid-consent-v1` for the following disclosure and bind the authorized actor and purpose to the exact school, household, application, academic year, and server time. At review, bind the reaffirmed consent and accuracy evidence to the exact saved review. Pin the displayed text and its digest to that version. Any change to the text requires a new version and an affirmative response.
+
+> I confirm that I am authorized to provide the information and documents for this household’s application. I have reviewed the application and attest that the information is accurate to the best of my knowledge.
+>
+> I authorize the school named on this application and Jireh, acting on the school’s behalf, to use the information and documents to review this financial aid application for the academic year shown and administer any resulting aid, as described in the linked privacy notice. I understand that the $55 application fee covers all children in this household’s application to this school for this academic year. Award decisions follow the school’s financial aid review.
+
+Display the school, academic year, and approved privacy notice beside the text. Obtain the use consent before accepting live financial answers or documents. At application review, present the consent and accuracy attestation as distinct, unchecked affirmative controls. Future prior-year reuse requires separate permission. A withdrawal blocks further reliance on the withdrawn consent. Keep evidence only under the applicable approved retention schedule or hold. Record the evidence identifiers and times without copying financial answers or payment credentials into consent or audit logs.
+
+### Edits, withdrawal, and final submission
+
+- Keep the draft editable before final submission, including after verified payment. Applicant edits to answers, selected children, documents, or the disclosure invalidate the previous review and require fresh review and attestation. Keep school, household, and academic-year scope fixed after payment. An attempt loses eligibility when its review is stale, when withdrawn, or when the approved submission window closes.
+- A settled charge stays bound to its original fee obligation. If payment settles against an invalid attempt or the household edits the draft after payment, hold final submission and collection retries for review. After fresh consent and review, only an authorized reconciliation decision can apply that verified charge to the same school, household, and academic-year obligation. Keep the original attempt and settlement history. Apply a charge only to the originating obligation.
+- Require a distinct authorized submission action and verified settlement for the current approved obligation. Preserve the submitted snapshot. After submission, the family may request a correction or withdrawal. Require a scoped, authorized review and an auditable versioned amendment before a correction takes effect. Preserve the original submission and any authorized retention or hold.
+
+### Fee exceptions
+
+- Disclose the USD $55 fee at the submission step and collect once per annual school and household application after affirmative review. A retry or additional child creates no second obligation. Route verified duplicate or wrong-amount charges to a restricted exception review before any refund. If a verified payment cannot be applied to a valid application after review, route it to the same refund review.
+- Require a named finance approver, the verified original transaction, a reason, and a durable audit record for refunds. Return funds through the original transaction where the verified provider contract permits. A later withdrawal or aid denial after successful submission triggers no automatic refund. Apply statutory and school-agreement obligations after review.
+- Keep waivers disabled pending a separately approved eligibility and authorization policy. A waived fee, receipt screenshot, or browser redirect cannot establish verified settlement.
+- Isolate chargebacks and late or unmatched settlements in exception review. A reversal blocks any pending final submission that relies on that charge. If a case was already submitted, record the dispute against its payment history and retain the submitted snapshot and any award decision for authorized review. An event retry produces no additional collection, refund, or lifecycle transition.
+
+Provider acceptance must test each exception using the authenticated CompuWerx contract and its test environment. Customer-facing disclosures, retention schedules, role grants, and implementation of a live transition remain release gates.
 
 ## Monday Azure inventory and acceptance
 
@@ -59,7 +88,7 @@ Exercise exact $55 obligation reconciliation, duplicate and late events, invalid
 | Existing issues | Reuse and remaining decision |
 | --- | --- |
 | [#43](https://github.com/Arete0920/Jirehfinancialaid/issues/43), [#44](https://github.com/Arete0920/Jirehfinancialaid/issues/44) | Reuse the 31-field development catalog, revision-bound encrypted draft and scoped synthetic document lifecycle. Obtain approved field applicability, collection/retention, access, verification and hosted storage/scanning decisions. |
-| [#45](https://github.com/Arete0920/Jirehfinancialaid/issues/45), [#50](https://github.com/Arete0920/Jirehfinancialaid/issues/50) | Owner approved the fictional lifecycle, migration and existing $55 fee scope. Obtain live consent and commercial exception decisions, and complete provider acceptance separately. |
+| [#45](https://github.com/Arete0920/Jirehfinancialaid/issues/45), [#50](https://github.com/Arete0920/Jirehfinancialaid/issues/50) | Owner approved the fictional lifecycle, migration and existing $55 fee scope. Apply the delegated live policy baseline above. Complete privacy review, lifecycle implementation and provider acceptance separately. |
 | [#46](https://github.com/Arete0920/Jirehfinancialaid/issues/46), [#47](https://github.com/Arete0920/Jirehfinancialaid/issues/47) | Reuse current fictional need estimate, review journal and nonbinding decisions. Approve methodology, school-specific categories, award role/authority and adjustment rules before commercial awards. |
 | [#49](https://github.com/Arete0920/Jirehfinancialaid/issues/49), [#109](https://github.com/Arete0920/Jirehfinancialaid/issues/109) | Reuse synthetic invitations, registry, preparation and inactive provisioning. Verify institutional identity, support/credential recovery, two-person grants and authorized target-environment operations. |
 | [#48](https://github.com/Arete0920/Jirehfinancialaid/issues/48), [#51](https://github.com/Arete0920/Jirehfinancialaid/issues/51) | Track target release gates in #48. Keep optional partnerships and multi-school features deferred under #51. |
