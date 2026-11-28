@@ -4,7 +4,6 @@ import argparse
 import json
 from contextlib import closing
 from http.client import HTTPException, HTTPSConnection
-from urllib.parse import urlsplit
 
 from jireh.runtime.config import RuntimeConfigurationError, read_runtime_config
 
@@ -63,19 +62,16 @@ _DATABASE_FAILURES = (
 
 def verify_probes(origin, config, *, outage=False):
     """Check strict response metadata and bodies without following redirects."""
-    try:
-        url = urlsplit(origin)
-        port = url.port if url.port is not None else 443
-        if (url.scheme != "https" or url.hostname not in config.allowed_hosts
-                or url.username is not None or url.password is not None
-                or url.path not in ("", "/") or url.query or url.fragment
-                or any(char.isspace() for char in origin) or not 1 <= port <= 65535):
-            raise ValueError()
-    except ValueError:
-        raise PreflightError("HTTPS origin must match a configured allowed host") from None
+    # The CLI selects an approved host; it never supplies the connection address.
+    host = next((allowed_host for allowed_host in config.allowed_hosts if origin in (
+        f"https://{allowed_host}", f"https://{allowed_host}/",
+        f"https://{allowed_host}:443", f"https://{allowed_host}:443/",
+    )), None) if type(origin) is str else None
+    if host is None:
+        raise PreflightError("HTTPS origin must match a configured allowed host on port 443")
 
     readiness = (503, "unavailable") if outage else (200, "ready")
-    with closing(HTTPSConnection(url.hostname, port, timeout=5)) as connection:
+    with closing(HTTPSConnection(host, 443, timeout=5)) as connection:
         for path, status, expected in (("/healthz/", 200, "alive"), ("/readyz/", *readiness)):
             try:
                 connection.request("GET", path, headers={"Accept": "application/json"})
@@ -113,7 +109,7 @@ def verify_database(config):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("origin", help="Approved HTTPS origin for the closed runtime")
+    parser.add_argument("origin", help="Approved HTTPS origin on port 443 for the closed runtime")
     parser.add_argument("--outage", action="store_true", help="Observe an independently authorized outage")
     args = parser.parse_args()
     try:

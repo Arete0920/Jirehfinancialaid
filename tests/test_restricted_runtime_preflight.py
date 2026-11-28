@@ -30,8 +30,31 @@ class RestrictedRuntimePreflightTests(TestCase):
                                      (True, 503, b'{"status":"unavailable"}')):
             with self.subTest(outage=outage):
                 connection = self.probe([Response(200, b'{"status":"alive"}'), Response(status, body)], outage=outage)
+                connection.assert_called_once_with("acceptance.example.invalid", 443, timeout=5)
                 methods = [call.args[:2] for call in connection.return_value.request.call_args_list]
                 self.assertEqual(methods, [("GET", "/healthz/"), ("GET", "/readyz/")])
+
+    def test_cli_selects_only_a_configured_https_destination(self):
+        config = SimpleNamespace(allowed_hosts=("first.example.invalid", "second.example.invalid"))
+        with patch("scripts.verify_restricted_runtime.HTTPSConnection") as connection:
+            connection.return_value.getresponse.side_effect = [
+                Response(200, b'{"status":"alive"}'), Response(200, b'{"status":"ready"}'),
+            ]
+            verify_probes("https://second.example.invalid:443/", config)
+            connection.assert_called_once_with(config.allowed_hosts[1], 443, timeout=5)
+
+        for origin in (
+            "https://second.example.invalid:8443", "https://second.example.invalid:0443",
+            "https://second.example.invalid@outside.example.invalid",
+            "https://second.example.invalid.outside.example.invalid",
+            "https://second.example.invalid?", "https://second.example.invalid#",
+            "https://second.example.invalid/%2f", " https://second.example.invalid",
+            "https://127.0.0.1", "https://169.254.169.254", None,
+        ):
+            with self.subTest(origin=origin), patch("scripts.verify_restricted_runtime.HTTPSConnection") as connection:
+                with self.assertRaisesRegex(PreflightError, "origin"):
+                    verify_probes(origin, config)
+                connection.assert_not_called()
 
     def test_unapproved_origins_redirects_and_extra_response_fields_fail(self):
         for origin in ("http://acceptance.example.invalid", "https://outside.example.invalid",
