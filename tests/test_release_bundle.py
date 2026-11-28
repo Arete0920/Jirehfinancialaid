@@ -26,7 +26,9 @@ class ReleaseBundleTests(unittest.TestCase):
         self.git("init", "-q")
         self.git("config", "user.name", "Fictional Test")
         self.git("config", "user.email", "fictional@example.invalid")
-        for path in _MODULE.PATHS:
+        fixture_paths = {*_MODULE.PATHS, "scripts/verify_restricted_runtime.py",
+                         "docs/RELEASE_ACCEPTANCE_PROCEDURES.md"}
+        for path in sorted(fixture_paths):
             name = path + "/__init__.py" if path == "src/jireh" else path
             file = self.repo / name
             file.parent.mkdir(parents=True, exist_ok=True)
@@ -64,6 +66,8 @@ class ReleaseBundleTests(unittest.TestCase):
             "scripts/run_local_browser_demo.py",
             "scripts/verify_local_browser_demo.py",
             "scripts/rehearse_synthetic_demo.py",
+            "scripts/verify_restricted_runtime.py",
+            "docs/RELEASE_ACCEPTANCE_PROCEDURES.md",
             "docs/LOCAL_BROWSER_DEMO.md",
             "docs/LOCAL_ENCRYPTED_DOCUMENT_BACKEND.md",
             "docs/SYNTHETIC_DEMO_REHEARSAL.md",
@@ -78,6 +82,19 @@ class ReleaseBundleTests(unittest.TestCase):
                     self.assertEqual(hashlib.file_digest(stream, "sha256").hexdigest(),
                                      evidence["files"][path])
             self.assertNotIn("jireh/excluded.txt", archive.getnames())
+
+    def test_reject_missing_operational_acceptance_files(self):
+        for index, path in enumerate(("scripts/verify_restricted_runtime.py",
+                                      "docs/RELEASE_ACCEPTANCE_PROCEDURES.md")):
+            with self.subTest(path=path):
+                file = self.repo / path
+                file.unlink()
+                self.commit()
+                with self.assertRaisesRegex(ValueError, "Required source paths missing"):
+                    _MODULE.build_bundle(self.repo, self.sha, self.root / f"missing-{index}")
+                file.parent.mkdir(parents=True, exist_ok=True)
+                file.write_text("fixture\n", encoding="utf-8")
+                self.commit()
 
     def test_reject_symbolic_revision_missing_path_and_overwrite(self):
         with self.assertRaises(ValueError):

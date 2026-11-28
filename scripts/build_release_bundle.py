@@ -15,6 +15,7 @@ PATHS = (
     "scripts/run_local_browser_demo.py", "scripts/verify_local_browser_demo.py",
     "scripts/verify_authenticated_customer_portal.py",
     "scripts/rehearse_synthetic_demo.py",
+    "scripts/verify_restricted_runtime.py", "docs/RELEASE_ACCEPTANCE_PROCEDURES.md",
     "docs/LOCAL_BROWSER_DEMO.md", "docs/LOCAL_ENCRYPTED_DOCUMENT_BACKEND.md",
     "docs/SYNTHETIC_DEMO_REHEARSAL.md", "docs/RELEASE_PACKAGING.md",
     "docs/PRODUCTION_READINESS.md", "docs/REPOSITORY_PRESENTATION_AND_ATTRIBUTION_POLICY.md",
