@@ -66,14 +66,16 @@ Review resource roles and entitlement for inventory, deployment, operations, dia
 
 ### Restricted runtime evidence
 
-After topology and deployment authorization, check the closed runtime at the approved HTTPS hostname. Record the served SHA, status and sanitized body for each request. Use the platform's TLS trust chain and the installed PostgreSQL CA bundle.
+After topology and deployment authorization, run the closed-runtime preflight from the release SHA using the approved hostname and the same runtime configuration and database login. Inject the database secret through the approved runtime mechanism. Record the served SHA from deployment metadata separately.
 
 ```sh
-curl -sS -i --max-time 10 "${JIREH_HTTPS_ORIGIN:?Set the approved HTTPS origin}/healthz/"
-curl -sS -i --max-time 10 "${JIREH_HTTPS_ORIGIN:?Set the approved HTTPS origin}/readyz/"
+PYTHONPATH=src python scripts/verify_restricted_runtime.py "${JIREH_HTTPS_ORIGIN:?Set the approved HTTPS origin}"
+PYTHONPATH=src python scripts/verify_restricted_runtime.py --outage "${JIREH_HTTPS_ORIGIN:?Set the approved HTTPS origin}"
 ```
 
-Expect HTTP 200 with `{"status":"alive"}` from liveness and HTTP 200 with `{"status":"ready"}` from readiness during normal operation. In an authorized outage exercise on the isolated environment, expect liveness to stay 200 and readiness to return 503 with only `{"status":"unavailable"}`. Restore database connectivity and record readiness recovery and alert receipt. Verify `DEBUG=False`, the exact allowed hostname, and `sslmode=verify-full` under the runtime identity. Verify that the runtime database role lacks migration authority. Capture the TLS and role checks without printing connection strings or secrets.
+Run the second command only during an independently authorized outage exercise on the isolated environment. It observes liveness 200 and sanitized readiness 503 without initiating an outage. Repeat the normal command after database connectivity returns and record alert delivery separately.
+
+The normal command verifies server trust for its HTTPS and PostgreSQL connections. Its PostgreSQL connection uses the configured runtime login with `sslmode=verify-full`. It checks the configured login’s identity, reachable PostgreSQL predefined roles and direct privileges on the database, the `public` schema, and application relations in that schema. It reads only PostgreSQL catalogs. Review the deployed route configuration, `DEBUG=False`, and indirect access through database functions separately. Both commands emit fixed evidence summaries without response bodies, connection strings, or credentials.
 
 Treat successful probes as process and database-connectivity evidence. The current runtime exposes only those two routes. The financial and operator test profiles require disposable environments. Hosted customer and operator journeys require a separately approved restricted runtime and target-environment evidence for authorization, data protection and audit continuity.
 
