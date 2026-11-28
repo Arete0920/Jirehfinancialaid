@@ -48,16 +48,26 @@ def _refresh(draft):
     return active
 
 
-@transaction.atomic
 def prepare_pending_payment(*, user, school_id, household_id, academic_year_id, handoff_id, disclosure_version):
     """Persist a current synthetic attempt or return the same authorized retry."""
     _require_scope(user, school_id, household_id, academic_year_id)
     if type(handoff_id) is not UUID or handoff_id.int == 0:
         raise SubmissionContractError("submission_handoff_required")
-    review = read_fictional_application_review(
-        user=user, school_id=school_id, household_id=household_id, academic_year_id=academic_year_id,
-        key=settings.JIREH_SYNTHETIC_QUESTIONNAIRE_KEY,
-    )
+    with transaction.atomic():
+        review = read_fictional_application_review(
+            user=user, school_id=school_id, household_id=household_id, academic_year_id=academic_year_id,
+            key=settings.JIREH_SYNTHETIC_QUESTIONNAIRE_KEY,
+        )
+        active = _refresh(review["draft"])
+        try:
+            return _prepare_from_review(review, active, handoff_id, disclosure_version)
+        except SubmissionContractError as exc:
+            # Preserve an observed invalidation even when this request is rejected.
+            rejection = exc
+    raise rejection
+
+
+def _prepare_from_review(review, active, handoff_id, disclosure_version):
     draft = review["draft"]
     handoff = SyntheticPrepaymentHandoff.objects.filter(
         pk=handoff_id, confirmation=review["confirmation"],
@@ -81,7 +91,7 @@ def prepare_pending_payment(*, user, school_id, household_id, academic_year_id, 
         if prior.invalidated_at is not None:
             raise SubmissionContractError("submission_pending_attempt_invalidated")
         return prior
-    if _refresh(draft) is not None:
+    if active is not None:
         raise SubmissionContractError("submission_pending_attempt_conflict")
     fee = proposal.fee_obligation
     return SyntheticPendingPayment.objects.create(

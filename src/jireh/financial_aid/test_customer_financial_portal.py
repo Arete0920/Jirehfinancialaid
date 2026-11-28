@@ -345,11 +345,11 @@ class CustomerFinancialPortalTests(TransactionTestCase):
             with self.assertRaises(IntegrityError), transaction.atomic():
                 SyntheticPrepaymentHandoff.objects.all().delete()
         self.assertEqual(self.upload(_ALLOWED_FIXTURES[1]).status_code, 200)
-        self.assertIsNone(refresh_pending_payment(**scope))
         with self.assertRaises(SubmissionContractError):
             prepare_pending_payment(**prepare)
         attempt.refresh_from_db()
         self.assertIsNotNone(attempt.invalidated_at)
+        self.assertIsNone(refresh_pending_payment(**scope))
         self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
         self.assertEqual(self.form("questionnaire", self.rows(1, "800.00")).status_code, 302)
         self.assertEqual(self.form("prepayment_handoff", payload).status_code, 409)
