@@ -42,14 +42,21 @@ def _refresh(draft):
     if active is None:
         return None
     revision = SyntheticQuestionnaireDraft.objects.filter(application=draft).values_list("revision", flat=True).first()
-    if current_prepayment_handoff(draft, revision, handoff_id=active.handoff_id) is None:
+    handoff = current_prepayment_handoff(
+        draft, revision, handoff_id=active.handoff_id, propagate_evidence_errors=True,
+    )
+    if handoff is None:
         _invalidate(active)
         return None
     return active
 
 
 def prepare_pending_payment(*, user, school_id, household_id, academic_year_id, handoff_id, disclosure_version):
-    """Persist a current synthetic attempt or return the same authorized retry."""
+    """Persist a current synthetic attempt or return the same authorized retry.
+
+    If the caller owns an outer transaction, that caller controls the commit
+    of any invalidation recorded before a contract rejection.
+    """
     _require_scope(user, school_id, household_id, academic_year_id)
     if type(handoff_id) is not UUID or handoff_id.int == 0:
         raise SubmissionContractError("submission_handoff_required")
@@ -83,7 +90,7 @@ def _prepare_from_review(review, active, handoff_id, disclosure_version):
         questionnaire_is_complete=not review["reasons"], authorized_household_scope=True,
         fee_obligation=fee, handoff_id=handoff_id, review_revision=review["revision"],
         handoff_is_current=handoff is not None and current_prepayment_handoff(
-            draft, review["revision"], handoff_id=handoff_id,
+            draft, review["revision"], handoff_id=handoff_id, propagate_evidence_errors=True,
         ) is not None,
     )
     prior = SyntheticPendingPayment.objects.filter(handoff_id=proposal.handoff_id).first()

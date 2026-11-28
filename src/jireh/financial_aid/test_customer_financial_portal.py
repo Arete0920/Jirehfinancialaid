@@ -2,6 +2,7 @@
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from unittest.mock import patch
 from urllib.parse import urlencode
 from uuid import uuid4, uuid5
 
@@ -330,6 +331,14 @@ class CustomerFinancialPortalTests(TransactionTestCase):
             attempt = SyntheticPendingPayment.objects.get(pk=first_id)
         else:
             attempt = prepare_pending_payment(**prepare)
+        with patch("jireh.financial_aid.synthetic_prepayment_handoff.read_fictional_application_review",
+                   side_effect=OSError("fictional evidence temporarily unavailable")):
+            with self.assertRaises(OSError):
+                prepare_pending_payment(**prepare)
+            with self.assertRaises(OSError):
+                refresh_pending_payment(**scope)
+        attempt.refresh_from_db()
+        self.assertIsNone(attempt.invalidated_at)
         self.assertEqual(prepare_pending_payment(**prepare).pk, attempt.pk)
         self.assertEqual(refresh_pending_payment(**scope).pk, attempt.pk)
         self.assertEqual((attempt.fee_amount_cents, attempt.fee_currency), (5500, "USD"))
