@@ -55,6 +55,36 @@ VALID = {
 
 
 class SubmissionContractTests(unittest.TestCase):
+    def test_pending_payment_proposal_pins_review_without_mutating_state(self):
+        from jireh.financial_aid.submission_contract import validate_pending_payment_intent
+
+        inputs = {key: value for key, value in VALID.items() if key != "payment_reconciliation"}
+        inputs.update(handoff_id=RECEIPT, review_revision=7, handoff_is_current=True)
+        intent = validate_pending_payment_intent(**inputs)
+        self.assertEqual((intent.handoff_id, intent.review_revision), (RECEIPT, 7))
+        self.assertEqual(intent.fee_obligation, OBLIGATION)
+        self.assertEqual(intent.consent_version, VALID["consent_version"])
+        self.assertNotIn(str(RECEIPT), repr(intent))
+
+    def test_pending_payment_proposal_denies_stale_or_unauthorized_facts(self):
+        from jireh.financial_aid.submission_contract import validate_pending_payment_intent
+
+        inputs = {key: value for key, value in VALID.items() if key != "payment_reconciliation"}
+        inputs.update(handoff_id=RECEIPT, review_revision=7, handoff_is_current=True)
+        for changed, error in (
+            ({"current_state": "SUBMITTED"}, "submission_state_invalid"),
+            ({"authorized_household_scope": False}, "submission_access_denied"),
+            ({"questionnaire_is_complete": False}, "submission_incomplete"),
+            ({"disclosure_is_approved": False}, "submission_disclosure_not_approved"),
+            ({"handoff_is_current": 1}, "submission_handoff_required"),
+            ({"handoff_is_current": False}, "submission_handoff_required"),
+            ({"handoff_id": UUID(int=0)}, "submission_handoff_required"),
+            ({"review_revision": True}, "submission_handoff_required"),
+            ({"fee_obligation": replace(OBLIGATION, amount_cents=0)}, "submission_fee_obligation_invalid"),
+        ):
+            with self.subTest(fields=tuple(changed)), self.assertRaisesRegex(SubmissionContractError, error):
+                validate_pending_payment_intent(**(inputs | changed))
+
     def test_only_draft_to_submitted_intent_and_explicit_retry(self):
         first = validate_submission_intent(**VALID)
         self.assertIs(first.desired_state, ApplicationState.SUBMITTED)
