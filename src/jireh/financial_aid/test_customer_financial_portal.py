@@ -2,6 +2,7 @@
 import secrets
 from concurrent.futures import ThreadPoolExecutor
 from threading import Barrier
+from unittest.mock import patch
 from urllib.parse import urlencode
 from uuid import uuid4, uuid5
 
@@ -330,6 +331,14 @@ class CustomerFinancialPortalTests(TransactionTestCase):
             attempt = SyntheticPendingPayment.objects.get(pk=first_id)
         else:
             attempt = prepare_pending_payment(**prepare)
+        with patch("jireh.financial_aid.synthetic_prepayment_handoff.read_fictional_application_review",
+                   side_effect=OSError("fictional evidence temporarily unavailable")):
+            with self.assertRaises(OSError):
+                prepare_pending_payment(**prepare)
+            with self.assertRaises(OSError):
+                refresh_pending_payment(**scope)
+        attempt.refresh_from_db()
+        self.assertIsNone(attempt.invalidated_at)
         self.assertEqual(prepare_pending_payment(**prepare).pk, attempt.pk)
         self.assertEqual(refresh_pending_payment(**scope).pk, attempt.pk)
         self.assertEqual((attempt.fee_amount_cents, attempt.fee_currency), (5500, "USD"))
@@ -345,11 +354,11 @@ class CustomerFinancialPortalTests(TransactionTestCase):
             with self.assertRaises(IntegrityError), transaction.atomic():
                 SyntheticPrepaymentHandoff.objects.all().delete()
         self.assertEqual(self.upload(_ALLOWED_FIXTURES[1]).status_code, 200)
-        self.assertIsNone(refresh_pending_payment(**scope))
         with self.assertRaises(SubmissionContractError):
             prepare_pending_payment(**prepare)
         attempt.refresh_from_db()
         self.assertIsNotNone(attempt.invalidated_at)
+        self.assertIsNone(refresh_pending_payment(**scope))
         self.assertFalse(self.get(director, case).json()["financial_evidence"]["prepayment_handoff_current"])
         self.assertEqual(self.form("questionnaire", self.rows(1, "800.00")).status_code, 302)
         self.assertEqual(self.form("prepayment_handoff", payload).status_code, 409)

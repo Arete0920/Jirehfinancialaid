@@ -44,8 +44,12 @@ def record_prepayment_handoff(
     return handoff
 
 
-def current_prepayment_handoff(draft, questionnaire_revision, *, handoff_id=None):
-    """Return revalidated family evidence under the caller's school lock."""
+def current_prepayment_handoff(draft, questionnaire_revision, *, handoff_id=None, propagate_evidence_errors=False):
+    """Return revalidated family evidence under the caller's school lock.
+
+    A caller that invalidates evidence must distinguish unreadable evidence
+    from a handoff that was confirmed stale or is no longer authorized.
+    """
     school_id, household_id, academic_year_id = draft.school_id, draft.household_id, draft.academic_year_id
     if (questionnaire_revision is None or not financial_scope_allowed(school_id, household_id, academic_year_id)
             or contributor_review_pending(draft.pk)):
@@ -65,8 +69,12 @@ def current_prepayment_handoff(draft, questionnaire_revision, *, handoff_id=None
                 user=actor, school_id=school_id, household_id=household_id, academic_year_id=academic_year_id,
                 key=settings.JIREH_SYNTHETIC_QUESTIONNAIRE_KEY,
             )
-        except (Http404, PermissionDenied, FictionalReviewError, QuestionnaireValidationError,
-                DocumentLifecycleError, PrivateDocumentStorageError, OSError):
+        except (Http404, PermissionDenied):
+            continue
+        except (FictionalReviewError, QuestionnaireValidationError, DocumentLifecycleError,
+                PrivateDocumentStorageError, OSError):
+            if propagate_evidence_errors:
+                raise
             continue
         if state["confirmation"] is not None:
             handoff = handoffs.filter(confirmation=state["confirmation"]).first()

@@ -6,7 +6,7 @@ Use the [release ledger](PRODUCTION_READINESS.md) as the authority for observed 
 
 The owner approved the #45 and #50 pending-payment lifecycle and migration and retained the $55 fee for each school's annual household application. The application remains DRAFT. The synthetic service stores the fee obligation and the exact saved handoff, which identifies the school, household, academic year, reviewing actor and questionnaire revision. It requires the current fictional disclosure. It stores no financial answers or payment credentials.
 
-A current authorized retry returns the same record. The service revalidates the saved handoff before returning a current attempt and marks the attempt invalid when the review changes. Withdrawal targets one attempt and can be retried without affecting a later attempt. Invalidated records remain as history and cannot be reopened. The existing application lock and database uniqueness enforce one current attempt per application.
+A current authorized retry returns the same record. The service revalidates the saved handoff during preparation and refresh. If it detects a changed review, it records the invalidation even when it rejects the attempted retry. An evidence-read failure blocks the retry and preserves the attempt so a later authorized retry can succeed. Withdrawal targets one attempt and can be retried without affecting a later attempt. Invalidated records remain as history and cannot be reopened. The existing application lock and database uniqueness enforce one current attempt per application.
 
 The service is available only inside the existing fictional acceptance scope. Live consent wording, expiration and amendment policy, refunds, waivers, chargebacks, and treatment of settlement after invalidation remain open. Final submission requires verified settlement against the approved obligation and a separately authorized transition with an atomic audit record. Provider evidence and settlement semantics must be confirmed before enabling that transition.
 
@@ -32,6 +32,19 @@ Review resource roles and entitlement for inventory, deployment, operations, dia
 | S2 | Check authorized object access, storage and scanner failure behavior, encryption and key separation, retention, backup and restore. Preserve sensitive diagnostics and document contents outside shared evidence. |
 | M1–M2, I1 | Name primary and backup responders, obtain approved alert destinations and thresholds, use synthetic failures to verify alert receipt and recovery behavior, and exercise the existing incident procedure. Record observed RPO/RTO against approved objectives. |
 | A1 | Link observed results for the same candidate and environment. Obtain explicit owner and operational approval for the authorized release scope. Keep real intake, activation and paid submission closed until their gates pass. |
+
+### Restricted runtime evidence
+
+After topology and deployment authorization, check the closed runtime at the approved HTTPS hostname. Record the served SHA, status and sanitized body for each request. Use the platform's TLS trust chain and the installed PostgreSQL CA bundle.
+
+```sh
+curl -sS -i --max-time 10 "${JIREH_HTTPS_ORIGIN:?Set the approved HTTPS origin}/healthz/"
+curl -sS -i --max-time 10 "${JIREH_HTTPS_ORIGIN:?Set the approved HTTPS origin}/readyz/"
+```
+
+Expect HTTP 200 with `{"status":"alive"}` from liveness and HTTP 200 with `{"status":"ready"}` from readiness during normal operation. In an authorized outage exercise on the isolated environment, expect liveness to stay 200 and readiness to return 503 with only `{"status":"unavailable"}`. Restore database connectivity and record readiness recovery and alert receipt. Verify `DEBUG=False`, the exact allowed hostname, and `sslmode=verify-full` under the runtime identity. Verify that the runtime database role lacks migration authority. Capture the TLS and role checks without printing connection strings or secrets.
+
+Treat successful probes as process and database-connectivity evidence. The current runtime exposes only those two routes. The financial and operator test profiles require disposable environments. Hosted customer and operator journeys require a separately approved restricted runtime and target-environment evidence for authorization, data protection and audit continuity.
 
 Run the independent Arete operator journey from verified identity through inactive school preparation, retry and registry readback. Verify denial for an unauthorized role, revocation, failed recovery, and attempts to activate a school prematurely. Define support routing and two-person approval before any real onboarding. Use the existing [operations incident procedure](PRODUCTION_READINESS.md#operational-incident-response-procedure-draft-not-certified) and record alert delivery and named responders only after validation.
 
