@@ -69,6 +69,7 @@ jobs:
           py="$RUNNER_TEMP/jireh-offline-venv/bin/python"
           export JIREH_SECRET_KEY="$("$py" -c 'import secrets; print(secrets.token_urlsafe(48))')"
           export JIREH_DB_PASSWORD="$("$py" -c 'import secrets; print(secrets.token_urlsafe(32))')"
+          "$py" scripts/verify_restricted_runtime.py --help > /dev/null
           "$py" - <<'PY'
           from jireh.runtime.wsgi import application
           from django.core.management import call_command
